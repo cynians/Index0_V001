@@ -1,0 +1,2754 @@
+{
+  "species_id": "spec_quercus_robur",
+  "simulation": "species",
+  "seed": 909,
+  "blueprint": {
+    "schema_version": 3,
+    "kind": "plant_blueprint",
+    "species_id": "spec_quercus_robur",
+    "display_name": "English Oak - Quercus robur",
+    "root_module_id": "root",
+    "modules": [
+      {
+        "id": "root",
+        "kind": "root",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.16,
+        "radius_m": 0.05,
+        "sockets": [
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "stem_section",
+        "kind": "stem_section",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 2.857142857142857,
+        "radius_m": 0.035,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "branch_section",
+        "kind": "branch_section",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 2.285714285714286,
+        "radius_m": 0.022,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "leaf",
+        "kind": "leaf",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.24,
+        "radius_m": 0.012,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "flower",
+        "kind": "flower",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.16,
+        "radius_m": 0.018,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "fruit",
+        "kind": "fruit",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.1,
+        "radius_m": 0.025,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      }
+    ],
+    "growth": {
+      "shape": "tree",
+      "growth_form": "tree",
+      "growth_behaviour": "branched_woody",
+      "maturity_days": 365.0,
+      "max_height_m": 40.0,
+      "internode_length_m": 2.857142857142857,
+      "branch_probability": 0.52,
+      "branch_angle_deg": 28.0,
+      "phyllotaxis_deg": 137.5,
+      "leaves_per_node": 2,
+      "apical_dominance": 0.72,
+      "growth_rate_bias": 0.55,
+      "initial_cover_bias": 0.35,
+      "plant_woodiness": "woody",
+      "leaf_phenology": "deciduous",
+      "leaf_size_class": "large",
+      "leaf_attachment_pattern": "along_stem",
+      "leaf_clustering": "distributed",
+      "shoot_dimorphism": "long_and_short_shoots",
+      "leaf_distribution": "mixed_long_short_shoots",
+      "leaf_spacing_bias": 0.52,
+      "branch_droop": 0.3,
+      "branch_angle_gradient": 0.34,
+      "crown_openness": 0.43,
+      "leaf_depth_gradient": 0.68,
+      "fine_twig_density": 0.92,
+      "leaf_cluster_density": 0.84,
+      "reproductive_mode": "sexual",
+      "root_architecture": "taproot",
+      "root_depth_class": "deep",
+      "longevity_class": "very_long",
+      "life_history": {
+        "cycle_days": 365.0,
+        "age_limit_days": null,
+        "reproductive_start_fraction": 0.35,
+        "senescence_start_fraction": 0.75,
+        "terminal_reproduction": false,
+        "overwintering": true,
+        "class": "perennial",
+        "maturity_days": 365.0,
+        "reproductive_start_days": 365.0,
+        "senescence_start_days": 456.25,
+        "source": "authored"
+      }
+    },
+    "lod_policy": {
+      "0": "skeleton",
+      "1": "major_leaves",
+      "2": "full"
+    }
+  },
+  "telemetry": [
+    {
+      "elapsed_days": 0.0,
+      "age_days": 365.0,
+      "life_phase": "reproductive",
+      "maturity": 1.0,
+      "placement_count": 80,
+      "leaf_count": 36,
+      "leaf_cluster_count": 27,
+      "estimated_leaf_count": 378,
+      "stem_count": 37,
+      "vitality": 0.7975,
+      "fecundity": 0.7975,
+      "mortality_risk": 0.2025
+    },
+    {
+      "elapsed_days": 1.0,
+      "age_days": 366.0,
+      "life_phase": "reproductive",
+      "maturity": 1.0,
+      "placement_count": 80,
+      "leaf_count": 36,
+      "leaf_cluster_count": 27,
+      "estimated_leaf_count": 378,
+      "stem_count": 37,
+      "vitality": 0.7975,
+      "fecundity": 0.7975,
+      "mortality_risk": 0.2025
+    },
+    {
+      "elapsed_days": 2.0,
+      "age_days": 367.0,
+      "life_phase": "reproductive",
+      "maturity": 1.0,
+      "placement_count": 80,
+      "leaf_count": 36,
+      "leaf_cluster_count": 27,
+      "estimated_leaf_count": 378,
+      "stem_count": 37,
+      "vitality": 0.7975,
+      "fecundity": 0.7975,
+      "mortality_risk": 0.2025
+    },
+    {
+      "elapsed_days": 3.0,
+      "age_days": 368.0,
+      "life_phase": "reproductive",
+      "maturity": 1.0,
+      "placement_count": 80,
+      "leaf_count": 36,
+      "leaf_cluster_count": 27,
+      "estimated_leaf_count": 378,
+      "stem_count": 37,
+      "vitality": 0.7975,
+      "fecundity": 0.7975,
+      "mortality_risk": 0.2025
+    },
+    {
+      "elapsed_days": 4.0,
+      "age_days": 369.0,
+      "life_phase": "reproductive",
+      "maturity": 1.0,
+      "placement_count": 80,
+      "leaf_count": 36,
+      "leaf_cluster_count": 27,
+      "estimated_leaf_count": 378,
+      "stem_count": 37,
+      "vitality": 0.7975,
+      "fecundity": 0.7975,
+      "mortality_risk": 0.2025
+    },
+    {
+      "elapsed_days": 5.0,
+      "age_days": 370.0,
+      "life_phase": "reproductive",
+      "maturity": 1.0,
+      "placement_count": 80,
+      "leaf_count": 36,
+      "leaf_cluster_count": 27,
+      "estimated_leaf_count": 378,
+      "stem_count": 37,
+      "vitality": 0.7975,
+      "fecundity": 0.7975,
+      "mortality_risk": 0.2025
+    }
+  ],
+  "snapshot": {
+    "schema_version": 3,
+    "kind": "plant_growth_snapshot",
+    "species_id": "spec_quercus_robur",
+    "blueprint_fingerprint": "ab8532ccadedde69",
+    "seed": 909,
+    "age_days": 370.0,
+    "lod": 2,
+    "modules": {
+      "root": {
+        "id": "root",
+        "kind": "root",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.16,
+        "radius_m": 0.05,
+        "sockets": [
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      "stem_section": {
+        "id": "stem_section",
+        "kind": "stem_section",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 2.857142857142857,
+        "radius_m": 0.035,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      "branch_section": {
+        "id": "branch_section",
+        "kind": "branch_section",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 2.285714285714286,
+        "radius_m": 0.022,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      "leaf": {
+        "id": "leaf",
+        "kind": "leaf",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.24,
+        "radius_m": 0.012,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      "flower": {
+        "id": "flower",
+        "kind": "flower",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.16,
+        "radius_m": 0.018,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      "fruit": {
+        "id": "fruit",
+        "kind": "fruit",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.1,
+        "radius_m": 0.025,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      }
+    },
+    "placements": [
+      [
+        "root",
+        -1,
+        0.0,
+        0.0,
+        -0.08,
+        0.0,
+        1.0,
+        0
+      ],
+      [
+        "stem_section",
+        0,
+        -0.0001,
+        0.0,
+        2.8571,
+        0.0,
+        0.7214,
+        1
+      ],
+      [
+        "stem_section",
+        1,
+        0.0022,
+        0.0,
+        5.7143,
+        0.0,
+        0.7429,
+        1
+      ],
+      [
+        "stem_section",
+        2,
+        0.0059,
+        0.0,
+        8.5714,
+        0.0,
+        0.7643,
+        1
+      ],
+      [
+        "stem_section",
+        3,
+        0.0095,
+        0.0,
+        11.4286,
+        0.0,
+        0.7857,
+        1
+      ],
+      [
+        "stem_section",
+        4,
+        0.0114,
+        0.0,
+        14.2857,
+        0.0,
+        0.8071,
+        1
+      ],
+      [
+        "stem_section",
+        5,
+        0.0109,
+        0.0,
+        17.1429,
+        0.0,
+        0.8286,
+        1
+      ],
+      [
+        "stem_section",
+        6,
+        0.008,
+        0.0,
+        20.0,
+        0.0,
+        0.85,
+        1
+      ],
+      [
+        "stem_section",
+        7,
+        0.0039,
+        0.0,
+        22.8571,
+        0.0,
+        0.8714,
+        1
+      ],
+      [
+        "stem_section",
+        8,
+        0.0003,
+        0.0,
+        25.7143,
+        0.0,
+        0.8929,
+        1
+      ],
+      [
+        "stem_section",
+        9,
+        -0.0015,
+        0.0,
+        28.5714,
+        0.0,
+        0.9143,
+        1
+      ],
+      [
+        "stem_section",
+        10,
+        -0.0008,
+        0.0,
+        31.4286,
+        0.0,
+        0.9357,
+        1
+      ],
+      [
+        "stem_section",
+        11,
+        0.0021,
+        0.0,
+        34.2857,
+        0.0,
+        0.9571,
+        1
+      ],
+      [
+        "stem_section",
+        12,
+        0.006,
+        0.0,
+        37.1429,
+        0.0,
+        0.9786,
+        1
+      ],
+      [
+        "stem_section",
+        13,
+        0.0092,
+        0.0,
+        40.0,
+        0.0,
+        1.0,
+        1
+      ],
+      [
+        "branch_section",
+        3,
+        -0.2992,
+        1.9989,
+        8.5653,
+        98.68,
+        1.0,
+        2
+      ],
+      [
+        "leaf",
+        15,
+        -0.1143,
+        0.7872,
+        8.4945,
+        98.68,
+        1.17,
+        4
+      ],
+      [
+        "leaf",
+        15,
+        -0.2159,
+        1.5247,
+        8.5582,
+        295.18,
+        1.17,
+        4
+      ],
+      [
+        "branch_section",
+        15,
+        -0.6316,
+        4.1762,
+        8.1596,
+        98.68,
+        0.86,
+        3
+      ],
+      [
+        "branch_section",
+        18,
+        -0.9912,
+        6.532,
+        7.7539,
+        98.68,
+        0.72,
+        4
+      ],
+      [
+        "leaf",
+        19,
+        -0.8943,
+        5.8971,
+        7.8675,
+        98.68,
+        1.0764,
+        4
+      ],
+      [
+        "leaf",
+        19,
+        -0.9601,
+        6.3591,
+        7.7933,
+        286.93,
+        1.0764,
+        4
+      ],
+      [
+        "branch_section",
+        3,
+        -2.0074,
+        0.1875,
+        8.8059,
+        174.68,
+        1.0,
+        2
+      ],
+      [
+        "leaf",
+        22,
+        -0.787,
+        0.0738,
+        8.7351,
+        174.68,
+        1.17,
+        4
+      ],
+      [
+        "leaf",
+        22,
+        -1.5272,
+        0.1536,
+        8.7988,
+        11.18,
+        1.17,
+        4
+      ],
+      [
+        "branch_section",
+        22,
+        -4.2005,
+        0.3917,
+        8.4002,
+        174.68,
+        0.86,
+        3
+      ],
+      [
+        "branch_section",
+        25,
+        -6.5733,
+        0.6127,
+        7.9945,
+        174.68,
+        0.72,
+        4
+      ],
+      [
+        "leaf",
+        26,
+        -5.9338,
+        0.5531,
+        8.1081,
+        174.68,
+        1.0764,
+        4
+      ],
+      [
+        "leaf",
+        26,
+        -6.398,
+        0.6011,
+        8.0338,
+        2.93,
+        1.0764,
+        4
+      ],
+      [
+        "branch_section",
+        5,
+        -1.193,
+        -1.5516,
+        14.5567,
+        232.18,
+        0.984,
+        2
+      ],
+      [
+        "leaf",
+        29,
+        -0.4634,
+        -0.6117,
+        14.3289,
+        232.18,
+        1.136,
+        4
+      ],
+      [
+        "leaf",
+        29,
+        -0.9142,
+        -1.1749,
+        14.4939,
+        68.68,
+        1.136,
+        4
+      ],
+      [
+        "branch_section",
+        29,
+        -2.5082,
+        -3.2459,
+        14.1818,
+        232.18,
+        0.844,
+        3
+      ],
+      [
+        "branch_section",
+        32,
+        -3.934,
+        -5.0827,
+        13.807,
+        232.18,
+        0.704,
+        4
+      ],
+      [
+        "leaf",
+        33,
+        -3.5501,
+        -4.5882,
+        13.9119,
+        232.18,
+        1.0451,
+        4
+      ],
+      [
+        "leaf",
+        33,
+        -3.8322,
+        -4.9438,
+        13.8444,
+        60.43,
+        1.0451,
+        4
+      ],
+      [
+        "branch_section",
+        7,
+        1.9051,
+        0.1887,
+        20.5633,
+        5.68,
+        0.968,
+        2
+      ],
+      [
+        "leaf",
+        36,
+        0.7568,
+        0.0745,
+        20.1787,
+        5.68,
+        1.102,
+        4
+      ],
+      [
+        "leaf",
+        36,
+        1.4526,
+        0.1328,
+        20.4448,
+        202.18,
+        1.102,
+        4
+      ],
+      [
+        "branch_section",
+        36,
+        3.9819,
+        0.3952,
+        20.2193,
+        5.68,
+        0.828,
+        3
+      ],
+      [
+        "branch_section",
+        39,
+        6.2383,
+        0.6196,
+        19.8753,
+        5.68,
+        0.688,
+        4
+      ],
+      [
+        "leaf",
+        40,
+        5.6314,
+        0.5593,
+        19.9716,
+        5.68,
+        1.0138,
+        4
+      ],
+      [
+        "leaf",
+        40,
+        6.0709,
+        0.5982,
+        19.9109,
+        193.93,
+        1.0138,
+        4
+      ],
+      [
+        "branch_section",
+        7,
+        -0.2468,
+        1.8894,
+        20.8455,
+        97.68,
+        0.968,
+        2
+      ],
+      [
+        "leaf",
+        43,
+        -0.0925,
+        0.7457,
+        20.4609,
+        97.68,
+        1.102,
+        4
+      ],
+      [
+        "leaf",
+        43,
+        -0.1751,
+        1.439,
+        20.727,
+        294.18,
+        1.102,
+        4
+      ],
+      [
+        "branch_section",
+        43,
+        -0.5257,
+        3.9577,
+        20.5015,
+        97.68,
+        0.828,
+        3
+      ],
+      [
+        "branch_section",
+        46,
+        -0.8287,
+        6.2049,
+        20.1575,
+        97.68,
+        0.688,
+        4
+      ],
+      [
+        "leaf",
+        47,
+        -0.7472,
+        5.6004,
+        20.2538,
+        97.68,
+        1.0138,
+        4
+      ],
+      [
+        "leaf",
+        47,
+        -0.8014,
+        6.0383,
+        20.1932,
+        285.93,
+        1.0138,
+        4
+      ],
+      [
+        "branch_section",
+        9,
+        -1.6194,
+        0.8912,
+        26.5941,
+        151.18,
+        0.952,
+        2
+      ],
+      [
+        "leaf",
+        50,
+        -0.6397,
+        0.3522,
+        26.0526,
+        151.18,
+        1.068,
+        4
+      ],
+      [
+        "leaf",
+        50,
+        -1.226,
+        0.687,
+        26.42,
+        347.68,
+        1.068,
+        4
+      ],
+      [
+        "branch_section",
+        50,
+        -3.3973,
+        1.8694,
+        26.281,
+        151.18,
+        0.812,
+        3
+      ],
+      [
+        "leaf",
+        53,
+        -2.9214,
+        1.6076,
+        26.3687,
+        151.18,
+        0.9826,
+        4
+      ],
+      [
+        "leaf",
+        53,
+        -3.2597,
+        1.7991,
+        26.3148,
+        339.43,
+        0.9826,
+        4
+      ],
+      [
+        "branch_section",
+        11,
+        0.4531,
+        -1.7325,
+        32.4348,
+        284.68,
+        0.936,
+        2
+      ],
+      [
+        "leaf",
+        56,
+        0.1788,
+        -0.6854,
+        31.7364,
+        284.68,
+        1.034,
+        4
+      ],
+      [
+        "leaf",
+        56,
+        0.3335,
+        -1.3188,
+        32.2049,
+        121.18,
+        1.034,
+        4
+      ],
+      [
+        "flower",
+        56,
+        0.4531,
+        -1.7325,
+        32.4698,
+        284.68,
+        1.0,
+        4
+      ],
+      [
+        "branch_section",
+        56,
+        0.9527,
+        -3.6396,
+        32.1525,
+        284.68,
+        0.796,
+        3
+      ],
+      [
+        "leaf",
+        60,
+        0.8191,
+        -3.1298,
+        32.2315,
+        284.68,
+        0.9513,
+        4
+      ],
+      [
+        "leaf",
+        60,
+        0.9098,
+        -3.4948,
+        32.1844,
+        112.93,
+        0.9513,
+        4
+      ],
+      [
+        "flower",
+        60,
+        0.9527,
+        -3.6396,
+        32.1875,
+        284.68,
+        1.0,
+        4
+      ],
+      [
+        "branch_section",
+        11,
+        1.7696,
+        0.2703,
+        32.6098,
+        8.68,
+        0.936,
+        2
+      ],
+      [
+        "leaf",
+        64,
+        0.6997,
+        0.1069,
+        31.9115,
+        8.68,
+        1.034,
+        4
+      ],
+      [
+        "leaf",
+        64,
+        1.3458,
+        0.1946,
+        32.38,
+        205.18,
+        1.034,
+        4
+      ],
+      [
+        "flower",
+        64,
+        1.7696,
+        0.2703,
+        32.6448,
+        8.68,
+        1.0,
+        4
+      ],
+      [
+        "branch_section",
+        64,
+        3.7185,
+        0.5678,
+        32.3275,
+        8.68,
+        0.796,
+        3
+      ],
+      [
+        "leaf",
+        68,
+        3.1975,
+        0.4882,
+        32.4066,
+        8.68,
+        0.9513,
+        4
+      ],
+      [
+        "leaf",
+        68,
+        3.57,
+        0.5403,
+        32.3595,
+        196.93,
+        0.9513,
+        4
+      ],
+      [
+        "flower",
+        68,
+        3.7185,
+        0.5678,
+        32.3625,
+        8.68,
+        1.0,
+        4
+      ],
+      [
+        "branch_section",
+        13,
+        0.9198,
+        1.4727,
+        38.66,
+        58.18,
+        0.92,
+        2
+      ],
+      [
+        "leaf",
+        72,
+        0.368,
+        0.5834,
+        37.8047,
+        58.18,
+        1.0,
+        4
+      ],
+      [
+        "leaf",
+        72,
+        0.7088,
+        1.112,
+        38.3745,
+        254.68,
+        1.0,
+        4
+      ],
+      [
+        "flower",
+        72,
+        0.9198,
+        1.4727,
+        38.695,
+        58.18,
+        1.0,
+        4
+      ],
+      [
+        "branch_section",
+        72,
+        1.9288,
+        3.0987,
+        38.4085,
+        58.18,
+        0.78,
+        3
+      ],
+      [
+        "leaf",
+        76,
+        1.6595,
+        2.6647,
+        38.4789,
+        58.18,
+        0.92,
+        4
+      ],
+      [
+        "leaf",
+        76,
+        1.8551,
+        2.9709,
+        38.4386,
+        246.43,
+        0.92,
+        4
+      ],
+      [
+        "flower",
+        76,
+        1.9288,
+        3.0987,
+        38.4435,
+        58.18,
+        1.0,
+        4
+      ]
+    ],
+    "bounds_m": [
+      -6.5733,
+      6.2383,
+      -5.0827,
+      6.532,
+      -0.08,
+      40.0
+    ],
+    "placement_paths": {
+      "1": [
+        [
+          -0.0,
+          -0.004,
+          1.0361
+        ],
+        [
+          -0.0001,
+          -0.0033,
+          2.0347
+        ],
+        [
+          -0.0001,
+          -0.0,
+          2.8571
+        ]
+      ],
+      "2": [
+        [
+          0.0008,
+          -0.004,
+          3.9428
+        ],
+        [
+          0.0015,
+          -0.0033,
+          4.9143
+        ],
+        [
+          0.0022,
+          -0.0,
+          5.7143
+        ]
+      ],
+      "3": [
+        [
+          0.0036,
+          0.004,
+          6.8
+        ],
+        [
+          0.0049,
+          0.0033,
+          7.7714
+        ],
+        [
+          0.0059,
+          0.0,
+          8.5714
+        ]
+      ],
+      "4": [
+        [
+          0.0073,
+          -0.004,
+          9.6571
+        ],
+        [
+          0.0085,
+          -0.0033,
+          10.6286
+        ],
+        [
+          0.0095,
+          -0.0,
+          11.4286
+        ]
+      ],
+      "5": [
+        [
+          0.0102,
+          0.004,
+          12.5143
+        ],
+        [
+          0.0109,
+          0.0033,
+          13.4857
+        ],
+        [
+          0.0114,
+          0.0,
+          14.2857
+        ]
+      ],
+      "6": [
+        [
+          0.0112,
+          0.004,
+          15.3714
+        ],
+        [
+          0.011,
+          0.0033,
+          16.3429
+        ],
+        [
+          0.0109,
+          0.0,
+          17.1429
+        ]
+      ],
+      "7": [
+        [
+          0.0098,
+          -0.004,
+          18.2286
+        ],
+        [
+          0.0088,
+          -0.0033,
+          19.2
+        ],
+        [
+          0.008,
+          -0.0,
+          20.0
+        ]
+      ],
+      "8": [
+        [
+          0.0065,
+          0.004,
+          21.0857
+        ],
+        [
+          0.0051,
+          0.0033,
+          22.0571
+        ],
+        [
+          0.0039,
+          0.0,
+          22.8571
+        ]
+      ],
+      "9": [
+        [
+          0.0025,
+          -0.004,
+          23.9428
+        ],
+        [
+          0.0013,
+          -0.0033,
+          24.9143
+        ],
+        [
+          0.0003,
+          -0.0,
+          25.7143
+        ]
+      ],
+      "10": [
+        [
+          -0.0004,
+          0.004,
+          26.8
+        ],
+        [
+          -0.001,
+          0.0033,
+          27.7714
+        ],
+        [
+          -0.0015,
+          0.0,
+          28.5714
+        ]
+      ],
+      "11": [
+        [
+          -0.0012,
+          0.004,
+          29.6571
+        ],
+        [
+          -0.001,
+          0.0033,
+          30.6286
+        ],
+        [
+          -0.0008,
+          0.0,
+          31.4286
+        ]
+      ],
+      "12": [
+        [
+          0.0003,
+          -0.004,
+          32.5143
+        ],
+        [
+          0.0013,
+          -0.0033,
+          33.4857
+        ],
+        [
+          0.0021,
+          -0.0,
+          34.2857
+        ]
+      ],
+      "13": [
+        [
+          0.0036,
+          0.004,
+          35.3714
+        ],
+        [
+          0.0049,
+          0.0033,
+          36.3429
+        ],
+        [
+          0.006,
+          0.0,
+          37.1429
+        ]
+      ],
+      "14": [
+        [
+          0.0072,
+          -0.004,
+          38.2286
+        ],
+        [
+          0.0083,
+          -0.0033,
+          39.2
+        ],
+        [
+          0.0092,
+          -0.0,
+          40.0
+        ]
+      ],
+      "15": [
+        [
+          -0.1045,
+          0.7604,
+          8.5691
+        ],
+        [
+          -0.2092,
+          1.4399,
+          8.567
+        ],
+        [
+          -0.2992,
+          1.9989,
+          8.5653
+        ]
+      ],
+      "18": [
+        [
+          -0.42,
+          2.8271,
+          8.4111
+        ],
+        [
+          -0.534,
+          3.5672,
+          8.2732
+        ],
+        [
+          -0.6316,
+          4.1762,
+          8.1596
+        ]
+      ],
+      "19": [
+        [
+          -0.7627,
+          5.0722,
+          8.0054
+        ],
+        [
+          -0.886,
+          5.8731,
+          7.8675
+        ],
+        [
+          -0.9912,
+          6.532,
+          7.7539
+        ]
+      ],
+      "22": [
+        [
+          -0.7597,
+          0.0657,
+          8.6605
+        ],
+        [
+          -1.4441,
+          0.1304,
+          8.7403
+        ],
+        [
+          -2.0074,
+          0.1875,
+          8.8059
+        ]
+      ],
+      "25": [
+        [
+          -2.8413,
+          0.2595,
+          8.6517
+        ],
+        [
+          -3.5868,
+          0.3299,
+          8.5138
+        ],
+        [
+          -4.2005,
+          0.3917,
+          8.4002
+        ]
+      ],
+      "26": [
+        [
+          -5.1027,
+          0.4701,
+          8.246
+        ],
+        [
+          -5.9093,
+          0.5462,
+          8.1081
+        ],
+        [
+          -6.5733,
+          0.6127,
+          7.9945
+        ]
+      ],
+      "29": [
+        [
+          -0.4511,
+          -0.5858,
+          14.3887
+        ],
+        [
+          -0.8598,
+          -1.114,
+          14.4808
+        ],
+        [
+          -1.193,
+          -1.5516,
+          14.5567
+        ]
+      ],
+      "32": [
+        [
+          -1.6976,
+          -2.1916,
+          14.4142
+        ],
+        [
+          -2.144,
+          -2.7683,
+          14.2868
+        ],
+        [
+          -2.5082,
+          -3.2459,
+          14.1818
+        ]
+      ],
+      "33": [
+        [
+          -3.0549,
+          -3.9401,
+          14.0394
+        ],
+        [
+          -3.5388,
+          -4.5653,
+          13.9119
+        ],
+        [
+          -3.934,
+          -5.0827,
+          13.807
+        ]
+      ],
+      "36": [
+        [
+          0.7296,
+          0.065,
+          20.214
+        ],
+        [
+          1.3745,
+          0.1303,
+          20.4056
+        ],
+        [
+          1.9051,
+          0.1887,
+          20.5633
+        ]
+      ],
+      "39": [
+        [
+          2.6949,
+          0.2605,
+          20.4326
+        ],
+        [
+          3.4009,
+          0.3319,
+          20.3156
+        ],
+        [
+          3.9819,
+          0.3952,
+          20.2193
+        ]
+      ],
+      "40": [
+        [
+          4.84,
+          0.4738,
+          20.0886
+        ],
+        [
+          5.6071,
+          0.5512,
+          19.9716
+        ],
+        [
+          6.2383,
+          0.6196,
+          19.8753
+        ]
+      ],
+      "43": [
+        [
+          -0.0955,
+          0.7171,
+          20.3213
+        ],
+        [
+          -0.1809,
+          1.3596,
+          20.6088
+        ],
+        [
+          -0.2468,
+          1.8894,
+          20.8455
+        ]
+      ],
+      "46": [
+        [
+          -0.3594,
+          2.6744,
+          20.7148
+        ],
+        [
+          -0.4531,
+          3.3778,
+          20.5978
+        ],
+        [
+          -0.5257,
+          3.9577,
+          20.5015
+        ]
+      ],
+      "47": [
+        [
+          -0.6475,
+          4.8107,
+          20.3708
+        ],
+        [
+          -0.7494,
+          5.5749,
+          20.2538
+        ],
+        [
+          -0.8287,
+          6.2049,
+          20.1575
+        ]
+      ],
+      "50": [
+        [
+          -0.6117,
+          0.345,
+          26.0486
+        ],
+        [
+          -1.163,
+          0.6469,
+          26.3478
+        ],
+        [
+          -1.6194,
+          0.8912,
+          26.5941
+        ]
+      ],
+      "53": [
+        [
+          -2.2915,
+          1.2693,
+          26.4751
+        ],
+        [
+          -2.8966,
+          1.6008,
+          26.3687
+        ],
+        [
+          -3.3973,
+          1.8694,
+          26.281
+        ]
+      ],
+      "56": [
+        [
+          0.1641,
+          -0.6603,
+          31.8109
+        ],
+        [
+          0.3197,
+          -1.249,
+          32.153
+        ],
+        [
+          0.4531,
+          -1.7325,
+          32.4348
+        ]
+      ],
+      "60": [
+        [
+          0.6354,
+          -2.4592,
+          32.3275
+        ],
+        [
+          0.8065,
+          -3.1072,
+          32.2315
+        ],
+        [
+          0.9527,
+          -3.6396,
+          32.1525
+        ]
+      ],
+      "64": [
+        [
+          0.6708,
+          0.1104,
+          31.8775
+        ],
+        [
+          1.2729,
+          0.201,
+          32.2791
+        ],
+        [
+          1.7696,
+          0.2703,
+          32.6098
+        ]
+      ],
+      "68": [
+        [
+          2.509,
+          0.3911,
+          32.5025
+        ],
+        [
+          3.1718,
+          0.4909,
+          32.4066
+        ],
+        [
+          3.7185,
+          0.5678,
+          32.3275
+        ]
+      ],
+      "72": [
+        [
+          0.3604,
+          0.5552,
+          37.7194
+        ],
+        [
+          0.6699,
+          1.0567,
+          38.2352
+        ],
+        [
+          0.9198,
+          1.4727,
+          38.66
+        ]
+      ],
+      "76": [
+        [
+          1.3104,
+          2.0862,
+          38.5644
+        ],
+        [
+          1.6522,
+          2.6398,
+          38.4789
+        ],
+        [
+          1.9288,
+          3.0987,
+          38.4085
+        ]
+      ]
+    },
+    "attachment_points": [
+      {
+        "stem_placement_index": 15,
+        "cluster_id": "leaf_cluster_0001",
+        "socket": "leaf",
+        "position_m": [
+          -0.1143,
+          0.7872,
+          8.4945
+        ],
+        "side": "left",
+        "rotation_deg": 98.68
+      },
+      {
+        "stem_placement_index": 15,
+        "cluster_id": "leaf_cluster_0002",
+        "socket": "leaf",
+        "position_m": [
+          -0.2159,
+          1.5247,
+          8.5582
+        ],
+        "side": "right",
+        "rotation_deg": 295.18
+      },
+      {
+        "stem_placement_index": 19,
+        "cluster_id": "leaf_cluster_0003",
+        "socket": "leaf",
+        "position_m": [
+          -0.8943,
+          5.8971,
+          7.8675
+        ],
+        "side": "left",
+        "rotation_deg": 98.68
+      },
+      {
+        "stem_placement_index": 19,
+        "cluster_id": "leaf_cluster_0003",
+        "socket": "leaf",
+        "position_m": [
+          -0.9601,
+          6.3591,
+          7.7933
+        ],
+        "side": "right",
+        "rotation_deg": 286.93
+      },
+      {
+        "stem_placement_index": 22,
+        "cluster_id": "leaf_cluster_0004",
+        "socket": "leaf",
+        "position_m": [
+          -0.787,
+          0.0738,
+          8.7351
+        ],
+        "side": "left",
+        "rotation_deg": 174.68
+      },
+      {
+        "stem_placement_index": 22,
+        "cluster_id": "leaf_cluster_0005",
+        "socket": "leaf",
+        "position_m": [
+          -1.5272,
+          0.1536,
+          8.7988
+        ],
+        "side": "right",
+        "rotation_deg": 11.18
+      },
+      {
+        "stem_placement_index": 26,
+        "cluster_id": "leaf_cluster_0006",
+        "socket": "leaf",
+        "position_m": [
+          -5.9338,
+          0.5531,
+          8.1081
+        ],
+        "side": "left",
+        "rotation_deg": 174.68
+      },
+      {
+        "stem_placement_index": 26,
+        "cluster_id": "leaf_cluster_0006",
+        "socket": "leaf",
+        "position_m": [
+          -6.398,
+          0.6011,
+          8.0338
+        ],
+        "side": "right",
+        "rotation_deg": 2.93
+      },
+      {
+        "stem_placement_index": 29,
+        "cluster_id": "leaf_cluster_0007",
+        "socket": "leaf",
+        "position_m": [
+          -0.4634,
+          -0.6117,
+          14.3289
+        ],
+        "side": "left",
+        "rotation_deg": 232.18
+      },
+      {
+        "stem_placement_index": 29,
+        "cluster_id": "leaf_cluster_0008",
+        "socket": "leaf",
+        "position_m": [
+          -0.9142,
+          -1.1749,
+          14.4939
+        ],
+        "side": "right",
+        "rotation_deg": 68.68
+      },
+      {
+        "stem_placement_index": 33,
+        "cluster_id": "leaf_cluster_0009",
+        "socket": "leaf",
+        "position_m": [
+          -3.5501,
+          -4.5882,
+          13.9119
+        ],
+        "side": "left",
+        "rotation_deg": 232.18
+      },
+      {
+        "stem_placement_index": 33,
+        "cluster_id": "leaf_cluster_0009",
+        "socket": "leaf",
+        "position_m": [
+          -3.8322,
+          -4.9438,
+          13.8444
+        ],
+        "side": "right",
+        "rotation_deg": 60.43
+      },
+      {
+        "stem_placement_index": 36,
+        "cluster_id": "leaf_cluster_0010",
+        "socket": "leaf",
+        "position_m": [
+          0.7568,
+          0.0745,
+          20.1787
+        ],
+        "side": "left",
+        "rotation_deg": 5.68
+      },
+      {
+        "stem_placement_index": 36,
+        "cluster_id": "leaf_cluster_0011",
+        "socket": "leaf",
+        "position_m": [
+          1.4526,
+          0.1328,
+          20.4448
+        ],
+        "side": "right",
+        "rotation_deg": 202.18
+      },
+      {
+        "stem_placement_index": 40,
+        "cluster_id": "leaf_cluster_0012",
+        "socket": "leaf",
+        "position_m": [
+          5.6314,
+          0.5593,
+          19.9716
+        ],
+        "side": "left",
+        "rotation_deg": 5.68
+      },
+      {
+        "stem_placement_index": 40,
+        "cluster_id": "leaf_cluster_0012",
+        "socket": "leaf",
+        "position_m": [
+          6.0709,
+          0.5982,
+          19.9109
+        ],
+        "side": "right",
+        "rotation_deg": 193.93
+      },
+      {
+        "stem_placement_index": 43,
+        "cluster_id": "leaf_cluster_0013",
+        "socket": "leaf",
+        "position_m": [
+          -0.0925,
+          0.7457,
+          20.4609
+        ],
+        "side": "left",
+        "rotation_deg": 97.68
+      },
+      {
+        "stem_placement_index": 43,
+        "cluster_id": "leaf_cluster_0014",
+        "socket": "leaf",
+        "position_m": [
+          -0.1751,
+          1.439,
+          20.727
+        ],
+        "side": "right",
+        "rotation_deg": 294.18
+      },
+      {
+        "stem_placement_index": 47,
+        "cluster_id": "leaf_cluster_0015",
+        "socket": "leaf",
+        "position_m": [
+          -0.7472,
+          5.6004,
+          20.2538
+        ],
+        "side": "left",
+        "rotation_deg": 97.68
+      },
+      {
+        "stem_placement_index": 47,
+        "cluster_id": "leaf_cluster_0015",
+        "socket": "leaf",
+        "position_m": [
+          -0.8014,
+          6.0383,
+          20.1932
+        ],
+        "side": "right",
+        "rotation_deg": 285.93
+      },
+      {
+        "stem_placement_index": 50,
+        "cluster_id": "leaf_cluster_0016",
+        "socket": "leaf",
+        "position_m": [
+          -0.6397,
+          0.3522,
+          26.0526
+        ],
+        "side": "left",
+        "rotation_deg": 151.18
+      },
+      {
+        "stem_placement_index": 50,
+        "cluster_id": "leaf_cluster_0017",
+        "socket": "leaf",
+        "position_m": [
+          -1.226,
+          0.687,
+          26.42
+        ],
+        "side": "right",
+        "rotation_deg": 347.68
+      },
+      {
+        "stem_placement_index": 53,
+        "cluster_id": "leaf_cluster_0018",
+        "socket": "leaf",
+        "position_m": [
+          -2.9214,
+          1.6076,
+          26.3687
+        ],
+        "side": "left",
+        "rotation_deg": 151.18
+      },
+      {
+        "stem_placement_index": 53,
+        "cluster_id": "leaf_cluster_0018",
+        "socket": "leaf",
+        "position_m": [
+          -3.2597,
+          1.7991,
+          26.3148
+        ],
+        "side": "right",
+        "rotation_deg": 339.43
+      },
+      {
+        "stem_placement_index": 56,
+        "cluster_id": "leaf_cluster_0019",
+        "socket": "leaf",
+        "position_m": [
+          0.1788,
+          -0.6854,
+          31.7364
+        ],
+        "side": "left",
+        "rotation_deg": 284.68
+      },
+      {
+        "stem_placement_index": 56,
+        "cluster_id": "leaf_cluster_0020",
+        "socket": "leaf",
+        "position_m": [
+          0.3335,
+          -1.3188,
+          32.2049
+        ],
+        "side": "right",
+        "rotation_deg": 121.18
+      },
+      {
+        "stem_placement_index": 60,
+        "cluster_id": "leaf_cluster_0021",
+        "socket": "leaf",
+        "position_m": [
+          0.8191,
+          -3.1298,
+          32.2315
+        ],
+        "side": "left",
+        "rotation_deg": 284.68
+      },
+      {
+        "stem_placement_index": 60,
+        "cluster_id": "leaf_cluster_0021",
+        "socket": "leaf",
+        "position_m": [
+          0.9098,
+          -3.4948,
+          32.1844
+        ],
+        "side": "right",
+        "rotation_deg": 112.93
+      },
+      {
+        "stem_placement_index": 64,
+        "cluster_id": "leaf_cluster_0022",
+        "socket": "leaf",
+        "position_m": [
+          0.6997,
+          0.1069,
+          31.9115
+        ],
+        "side": "left",
+        "rotation_deg": 8.68
+      },
+      {
+        "stem_placement_index": 64,
+        "cluster_id": "leaf_cluster_0023",
+        "socket": "leaf",
+        "position_m": [
+          1.3458,
+          0.1946,
+          32.38
+        ],
+        "side": "right",
+        "rotation_deg": 205.18
+      },
+      {
+        "stem_placement_index": 68,
+        "cluster_id": "leaf_cluster_0024",
+        "socket": "leaf",
+        "position_m": [
+          3.1975,
+          0.4882,
+          32.4066
+        ],
+        "side": "left",
+        "rotation_deg": 8.68
+      },
+      {
+        "stem_placement_index": 68,
+        "cluster_id": "leaf_cluster_0024",
+        "socket": "leaf",
+        "position_m": [
+          3.57,
+          0.5403,
+          32.3595
+        ],
+        "side": "right",
+        "rotation_deg": 196.93
+      },
+      {
+        "stem_placement_index": 72,
+        "cluster_id": "leaf_cluster_0025",
+        "socket": "leaf",
+        "position_m": [
+          0.368,
+          0.5834,
+          37.8047
+        ],
+        "side": "left",
+        "rotation_deg": 58.18
+      },
+      {
+        "stem_placement_index": 72,
+        "cluster_id": "leaf_cluster_0026",
+        "socket": "leaf",
+        "position_m": [
+          0.7088,
+          1.112,
+          38.3745
+        ],
+        "side": "right",
+        "rotation_deg": 254.68
+      },
+      {
+        "stem_placement_index": 76,
+        "cluster_id": "leaf_cluster_0027",
+        "socket": "leaf",
+        "position_m": [
+          1.6595,
+          2.6647,
+          38.4789
+        ],
+        "side": "left",
+        "rotation_deg": 58.18
+      },
+      {
+        "stem_placement_index": 76,
+        "cluster_id": "leaf_cluster_0027",
+        "socket": "leaf",
+        "position_m": [
+          1.8551,
+          2.9709,
+          38.4386
+        ],
+        "side": "right",
+        "rotation_deg": 246.43
+      }
+    ],
+    "leaf_clusters": [
+      {
+        "id": "leaf_cluster_0001",
+        "host_placement_index": 15,
+        "position_m": [
+          -0.1143,
+          0.7872,
+          8.4945
+        ],
+        "estimated_leaf_count": 18,
+        "leaf_area_m2": 0.109175,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0002",
+        "host_placement_index": 15,
+        "position_m": [
+          -0.2159,
+          1.5247,
+          8.5582
+        ],
+        "estimated_leaf_count": 18,
+        "leaf_area_m2": 0.109175,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0003",
+        "host_placement_index": 19,
+        "position_m": [
+          -0.9337,
+          6.1551,
+          7.8188
+        ],
+        "estimated_leaf_count": 8,
+        "leaf_area_m2": 0.038154,
+        "branch_order": 2,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.894
+      },
+      {
+        "id": "leaf_cluster_0004",
+        "host_placement_index": 22,
+        "position_m": [
+          -0.787,
+          0.0738,
+          8.7351
+        ],
+        "estimated_leaf_count": 18,
+        "leaf_area_m2": 0.109175,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0005",
+        "host_placement_index": 22,
+        "position_m": [
+          -1.5272,
+          0.1536,
+          8.7988
+        ],
+        "estimated_leaf_count": 18,
+        "leaf_area_m2": 0.109175,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0006",
+        "host_placement_index": 26,
+        "position_m": [
+          -6.1936,
+          0.5773,
+          8.0594
+        ],
+        "estimated_leaf_count": 8,
+        "leaf_area_m2": 0.038154,
+        "branch_order": 2,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.894
+      },
+      {
+        "id": "leaf_cluster_0007",
+        "host_placement_index": 29,
+        "position_m": [
+          -0.4634,
+          -0.6117,
+          14.3289
+        ],
+        "estimated_leaf_count": 18,
+        "leaf_area_m2": 0.106002,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0008",
+        "host_placement_index": 29,
+        "position_m": [
+          -0.9142,
+          -1.1749,
+          14.4939
+        ],
+        "estimated_leaf_count": 18,
+        "leaf_area_m2": 0.106002,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0009",
+        "host_placement_index": 33,
+        "position_m": [
+          -3.7059,
+          -4.7888,
+          13.8669
+        ],
+        "estimated_leaf_count": 8,
+        "leaf_area_m2": 0.038154,
+        "branch_order": 2,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.894
+      },
+      {
+        "id": "leaf_cluster_0010",
+        "host_placement_index": 36,
+        "position_m": [
+          0.7568,
+          0.0745,
+          20.1787
+        ],
+        "estimated_leaf_count": 17,
+        "leaf_area_m2": 0.097117,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0011",
+        "host_placement_index": 36,
+        "position_m": [
+          1.4526,
+          0.1328,
+          20.4448
+        ],
+        "estimated_leaf_count": 17,
+        "leaf_area_m2": 0.097117,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0012",
+        "host_placement_index": 40,
+        "position_m": [
+          5.8773,
+          0.5837,
+          19.9303
+        ],
+        "estimated_leaf_count": 8,
+        "leaf_area_m2": 0.038154,
+        "branch_order": 2,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.894
+      },
+      {
+        "id": "leaf_cluster_0013",
+        "host_placement_index": 43,
+        "position_m": [
+          -0.0925,
+          0.7457,
+          20.4609
+        ],
+        "estimated_leaf_count": 17,
+        "leaf_area_m2": 0.097117,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0014",
+        "host_placement_index": 43,
+        "position_m": [
+          -0.1751,
+          1.439,
+          20.727
+        ],
+        "estimated_leaf_count": 17,
+        "leaf_area_m2": 0.097117,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0015",
+        "host_placement_index": 47,
+        "position_m": [
+          -0.7802,
+          5.8453,
+          20.2126
+        ],
+        "estimated_leaf_count": 8,
+        "leaf_area_m2": 0.038154,
+        "branch_order": 2,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.894
+      },
+      {
+        "id": "leaf_cluster_0016",
+        "host_placement_index": 50,
+        "position_m": [
+          -0.6397,
+          0.3522,
+          26.0526
+        ],
+        "estimated_leaf_count": 17,
+        "leaf_area_m2": 0.094121,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0017",
+        "host_placement_index": 50,
+        "position_m": [
+          -1.226,
+          0.687,
+          26.42
+        ],
+        "estimated_leaf_count": 17,
+        "leaf_area_m2": 0.094121,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0018",
+        "host_placement_index": 53,
+        "position_m": [
+          -3.1129,
+          1.7129,
+          26.3311
+        ],
+        "estimated_leaf_count": 8,
+        "leaf_area_m2": 0.038154,
+        "branch_order": 1,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.894
+      },
+      {
+        "id": "leaf_cluster_0019",
+        "host_placement_index": 56,
+        "position_m": [
+          0.1788,
+          -0.6854,
+          31.7364
+        ],
+        "estimated_leaf_count": 16,
+        "leaf_area_m2": 0.085764,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0020",
+        "host_placement_index": 56,
+        "position_m": [
+          0.3335,
+          -1.3188,
+          32.2049
+        ],
+        "estimated_leaf_count": 16,
+        "leaf_area_m2": 0.085764,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0021",
+        "host_placement_index": 60,
+        "position_m": [
+          0.8727,
+          -3.3344,
+          32.1976
+        ],
+        "estimated_leaf_count": 8,
+        "leaf_area_m2": 0.038154,
+        "branch_order": 1,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.894
+      },
+      {
+        "id": "leaf_cluster_0022",
+        "host_placement_index": 64,
+        "position_m": [
+          0.6997,
+          0.1069,
+          31.9115
+        ],
+        "estimated_leaf_count": 16,
+        "leaf_area_m2": 0.085764,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0023",
+        "host_placement_index": 64,
+        "position_m": [
+          1.3458,
+          0.1946,
+          32.38
+        ],
+        "estimated_leaf_count": 16,
+        "leaf_area_m2": 0.085764,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0024",
+        "host_placement_index": 68,
+        "position_m": [
+          3.4067,
+          0.5202,
+          32.3727
+        ],
+        "estimated_leaf_count": 8,
+        "leaf_area_m2": 0.038154,
+        "branch_order": 1,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.894
+      },
+      {
+        "id": "leaf_cluster_0025",
+        "host_placement_index": 72,
+        "position_m": [
+          0.368,
+          0.5834,
+          37.8047
+        ],
+        "estimated_leaf_count": 16,
+        "leaf_area_m2": 0.082944,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0026",
+        "host_placement_index": 72,
+        "position_m": [
+          0.7088,
+          1.112,
+          38.3745
+        ],
+        "estimated_leaf_count": 16,
+        "leaf_area_m2": 0.082944,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.828
+      },
+      {
+        "id": "leaf_cluster_0027",
+        "host_placement_index": 76,
+        "position_m": [
+          1.7674,
+          2.8386,
+          38.4488
+        ],
+        "estimated_leaf_count": 8,
+        "leaf_area_m2": 0.038154,
+        "branch_order": 1,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 0.894
+      }
+    ],
+    "stats": {
+      "maturity": 1.0,
+      "life_history": "perennial",
+      "life_phase": "reproductive",
+      "reproductive_factor": 1.0,
+      "senescence_factor": 0.0,
+      "placement_count": 80,
+      "leaf_count": 36,
+      "leaf_sample_count": 36,
+      "leaf_cluster_count": 27,
+      "estimated_leaf_count": 378,
+      "leaf_area_m2": 2.077744,
+      "stem_count": 37,
+      "branch_count": 23,
+      "curved_segment_count": 37,
+      "representation": "module_placements_with_leaf_clusters"
+    }
+  },
+  "blueprint_path": "PlantSceneReference(species_id='spec_quercus_robur', blueprint_ref='C:/Users/logol/PycharmProjects/Index0_V001/assets/plants/blueprints/spec_quercus_robur.json.gz', snapshot_ref='C:/Users/logol/PycharmProjects/Index0_V001/assets/plants/snapshots/spec_quercus_robur/ab8532ccadedde69_s909_a370d_l2.json.gz', seed=909, lod=2, position_m=(0.0, 0.0, 0.0), rotation_deg=0.0, scale=1.0)"
+}

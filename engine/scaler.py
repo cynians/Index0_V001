@@ -9,7 +9,7 @@ class ScaleHelper:
     @staticmethod
     def extract_dimensions_m(entity):
         """
-        Extract X/Y/Z dimensions in meters when available.
+        Extract length/width/height dimensions in meters when available.
         """
         if entity is None:
             return None
@@ -22,17 +22,17 @@ class ScaleHelper:
             except (TypeError, ValueError):
                 return None
 
-        x = _safe_float(entity.get("dimension_x_m"))
-        y = _safe_float(entity.get("dimension_y_m"))
-        z = _safe_float(entity.get("dimension_z_m"))
+        length = _safe_float(entity.get("dimension_length_m"))
+        width = _safe_float(entity.get("dimension_width_m"))
+        height = _safe_float(entity.get("dimension_height_m"))
 
-        if x is None and y is None and z is None:
+        if length is None and width is None and height is None:
             return None
 
         return {
-            "x": x,
-            "y": y,
-            "z": z,
+            "x": length,
+            "y": width,
+            "z": height,
         }
 
     @staticmethod
@@ -143,9 +143,9 @@ class ScaleHelper:
         Suggest separate front / side / top placeholder canvases for vehicles.
 
         Uses:
-        - X = length
-        - Y = width
-        - Z = height
+        - length for side/top width
+        - width for front/top width
+        - height for front/side height
         """
         dims = ScaleHelper.extract_dimensions_m(entity)
 

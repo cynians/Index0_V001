@@ -16,6 +16,9 @@ __pycache__/
 # Logs
 # -----------------------------
 *.log
+.cache/
+artifacts/
+assets/maps/material_heatmaps/*.i0r
 
 # -----------------------------
 # OS

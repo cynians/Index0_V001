@@ -1,0 +1,2292 @@
+import time
+
+import pygame
+
+from engine.performance_debug import performance_debug
+from ui.card import EntityCard
+from simulations.phylogeny.clade_graph import find_clade_matches
+
+
+class KnowledgeCanvasController:
+    MAX_CARD_CANVAS_H = 8000
+    MIN_AUTO_CARD_CANVAS_H = 340
+    AUTO_CARD_VIEWPORT_MARGIN = 56
+    CARD_CANVAS_HITBOX_KEYS = (
+        "resize_hitboxes",
+        "corner_handle_rects",
+        "tab_hitboxes",
+        "subtab_hitboxes",
+        "editable_field_hitboxes",
+        "relation_hitboxes",
+        "wiki_link_hitboxes",
+        "wiki_section_hitboxes",
+        "toolbelt_hitboxes",
+        "section_hitboxes",
+        "year_hitboxes",
+        "timeline_snapshot_timeline_hitboxes",
+        "media_import_hitboxes",
+        "media_pixel_art_hitboxes",
+        "media_asset_quick_hitboxes",
+        "media_illustration_link_hitboxes",
+    )
+    CARD_DRAG_LAYOUT_KEYS = (
+        "rect",
+        "toolbelt_rect",
+        "header_drag_rect",
+        "close_rect",
+        "template_button_rect",
+        "resize_handle_rect",
+        "canvas_relation_add_rect",
+        "type_label_rect",
+        "edit_toggle_rect",
+        "lock_toggle_rect",
+        "idea_button_rect",
+        "relation_tree_rect",
+        "time_anchor_rect",
+        "delete_rect",
+        "title_edit_rect",
+        "header_description_rect",
+        "header_icon_rect",
+        "content_viewport_rect",
+        "random_year_rect",
+        "launch_rect",
+        "tag_bar_rect",
+        "general_content_rect",
+        "timeline_snapshot_rect",
+        "task_finish_checkbox_rect",
+        "task_checklist_input_rect",
+        "person_quote_section_rect",
+        "person_quote_add_rect",
+        "person_quote_empty_rect",
+        "media_add_illustration_rect",
+        "phylogeny_parent_section_rect",
+        "phylogeny_parent_panel_rect",
+        "phylogeny_parent_panel_content_rect",
+        "phylogeny_child_section_rect",
+        "phylogeny_diagram_section_rect",
+        "phylogeny_parent_input_rect",
+        "phylogeny_child_input_rect",
+        "location_section_rect",
+        "location_mode_rect",
+        "location_query_rect",
+        "location_start_rect",
+        "location_end_rect",
+        "location_add_rect",
+        "location_topology_place_rect",
+        "production_section_rect",
+        "production_group_toggle_rect",
+        "production_product_input_rect",
+        "production_product_add_rect",
+        "production_empty_rect",
+        "schema_save_rect",
+    )
+    CARD_DRAG_LAYOUT_COLLECTION_KEYS = CARD_CANVAS_HITBOX_KEYS + (
+        "field_rows",
+        "section_draw_rects",
+        "relation_picker_hitboxes",
+        "tag_chip_hitboxes",
+        "tag_suggestion_hitboxes",
+        "tag_remove_hitboxes",
+        "task_checklist_hitboxes",
+        "person_quote_input_rects",
+        "person_quote_mode_hitboxes",
+        "person_quote_rows",
+        "type_picker_hitboxes",
+        "phylogeny_node_hitboxes",
+        "phylogeny_parent_match_rows",
+        "phylogeny_child_match_rows",
+        "phylogeny_parent_tree_rows",
+        "phylogeny_child_tree_rows",
+        "phylogeny_local_tree_rows",
+        "location_rows",
+        "location_match_rows",
+        "location_topology_rows",
+        "location_topology_match_rows",
+        "location_topology_section_rects",
+        "location_topology_input_rects",
+        "location_topology_add_rects",
+        "production_line_rows",
+        "production_site_group_rows",
+        "production_hitboxes",
+        "production_match_rows",
+        "site_section_rects",
+        "site_rows",
+        "schema_field_hitboxes",
+        "media_illustration_rows",
+    )
+
+    def __init__(self, host):
+        object.__setattr__(self, "host", host)
+
+    def __getattr__(self, name):
+        return getattr(self.host, name)
+
+    def __setattr__(self, name, value):
+        setattr(self.host, name, value)
+
+    def _cards_top_to_bottom(self):
+        for index in range(len(self.cards) - 1, -1, -1):
+            yield index, self.cards[index]
+
+    def _clear_card_canvas_hitboxes(self, card):
+        for key in self.CARD_CANVAS_HITBOX_KEYS:
+            card[key] = []
+
+    def _normalize_tag_lookup_value(self, value):
+        return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    def _find_tag_entity_for_value(self, tag_value):
+        if self.world_model is None:
+            return None
+        tag_norm = self._normalize_tag_lookup_value(tag_value)
+        if not tag_norm:
+            return None
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
+        for entity in entities.values():
+            if not isinstance(entity, dict):
+                continue
+            if entity.get("_dataset") != "tags" and entity.get("type") != "tag":
+                continue
+            candidates = {
+                self._normalize_tag_lookup_value(entity.get("id")),
+                self._normalize_tag_lookup_value(entity.get("name")),
+                self._normalize_tag_lookup_value(entity.get("pretty_name")),
+                self._normalize_tag_lookup_value(entity.get("common_name")),
+            }
+            candidates.update(
+                self._normalize_tag_lookup_value(value)
+                for value in (entity.get("tags") or [])
+            )
+            expanded = set(candidates)
+            expanded.update(value[4:] for value in candidates if value.startswith("tag_"))
+            if tag_norm in expanded:
+                return entity
+        return None
+
+    def _insert_tag_suggestion_into_card(self, card, tag_value):
+        tag_value = str(tag_value or "").strip()
+        if not tag_value:
+            return False
+        card_view = card.get("card_view") if isinstance(card, dict) else None
+        if card_view is not None and hasattr(card_view, "_add_tag_value"):
+            return bool(card_view._add_tag_value(card, tag_value))
+        raw_parts = str(card.get("edit_buffer") or "").replace(",", "\n").splitlines()
+        tags = []
+        tag_keys = set()
+        for part in raw_parts:
+            text = str(part or "").strip()
+            text_key = text.lower()
+            if text and text_key not in tag_keys:
+                tags.append(text)
+                tag_keys.add(text_key)
+        if tag_value.lower() not in tag_keys:
+            tags.append(tag_value)
+        card["edit_buffer"] = "\n".join(tags)
+        card["edit_cursor"] = len(card["edit_buffer"])
+        return True
+
+    def _computed_tag_chip_rects(self, card, remove_mode=False):
+        card_view = card.get("card_view") if isinstance(card, dict) else None
+        rect = card.get("tag_bar_rect") if isinstance(card, dict) else None
+        font = card.get("layout_font") or self.font_for_layout
+        if card_view is None or rect is None or font is None:
+            return []
+        tags = card_view._tag_values() if hasattr(card_view, "_tag_values") else []
+        chip_x = rect.x + 52
+        chip_y = rect.y + 6
+        chip_right = rect.right - 8
+        hitboxes = []
+        for tag in tags:
+            max_label_w = 104 if remove_mode else 120
+            label = (
+                card_view._ellipsize_text(tag, font, max_label_w)
+                if hasattr(card_view, "_ellipsize_text")
+                else str(tag)
+            )
+            base_w = font.size(label)[0] + (30 if remove_mode else 14)
+            chip_w = min(132 if remove_mode else 134, max(48 if remove_mode else 42, base_w))
+            if chip_x + chip_w > chip_right:
+                break
+            chip_rect = pygame.Rect(chip_x, chip_y, chip_w, 22)
+            hit_rect = pygame.Rect(chip_rect.right - 20, chip_rect.y + 3, 16, 16) if remove_mode else chip_rect
+            hitboxes.append({"tag": tag, "rect": hit_rect})
+            chip_x = chip_rect.right + 6
+        return hitboxes
+
+    def _computed_tag_chip_hit_at(self, card, mouse_pos):
+        for hitbox in self._computed_tag_chip_rects(card):
+            rect = hitbox.get("rect")
+            if rect is not None and rect.collidepoint(mouse_pos):
+                return hitbox
+        return None
+
+    def _computed_tag_remove_hit_at(self, card, mouse_pos):
+        for hitbox in self._computed_tag_chip_rects(card, remove_mode=True):
+            rect = hitbox.get("rect")
+            if rect is not None and rect.collidepoint(mouse_pos):
+                return hitbox
+        return None
+
+    def _open_pending_production_site_prompt(self, card):
+        action = card.pop("pending_production_action", None)
+        if not isinstance(action, dict) or action.get("id") != "create_production_site":
+            return False
+        site_name = str(action.get("name") or "").strip()
+        if not site_name:
+            return False
+        template = self._template_by_dataset("locations")
+        if template is None:
+            return False
+        return self._open_entry_description_prompt(
+            template,
+            site_name,
+            context={
+                "production_create_site": True,
+                "producer_card_entity_id": card.get("entity_id"),
+                "production_line_index": action.get("line_index"),
+            },
+        )
+
+    def _layout_all_cards(self):
+        if self.layout is None:
+            return
+
+        right_rect = self.layout["right_rect"]
+        zoom = max(0.001, self.canvas_zoom)
+        card_font = self._card_font_for_zoom()
+        compact_mode = self._is_compact_canvas_mode()
+        layout_viewport = right_rect.inflate(600, 600)
+
+        max_right = 0
+        max_bottom = 0
+
+        for card in self.cards:
+            card_w = max(300, min(900, int(card.get("canvas_w", 420))))
+            requested_h = int(card.get("canvas_h", 340))
+            card_view = card.get("card_view")
+
+            rect_x = right_rect.x + self.canvas_offset_x + int(card.get("canvas_x", 24) * zoom)
+            rect_y = right_rect.y + self.canvas_offset_y + int(card.get("canvas_y", 84) * zoom)
+
+            if compact_mode:
+                card_h = max(260, min(self.MAX_CARD_CANVAS_H, requested_h))
+                self._layout_compact_card(card, rect_x, rect_y, card_w, card_h, zoom)
+                max_right = max(max_right, card.get("canvas_x", 24) + card_w)
+                max_bottom = max(max_bottom, card.get("canvas_y", 84) + card_h)
+                continue
+
+            approximate_h = max(260, min(self.MAX_CARD_CANVAS_H, requested_h))
+            approximate_rect = pygame.Rect(
+                rect_x,
+                rect_y,
+                max(120, int(round(card_w * zoom))),
+                max(120, int(round(approximate_h * zoom))),
+            )
+            if (
+                not approximate_rect.colliderect(layout_viewport)
+                and card.get("entity_id") != self.active_card_drag_id
+                and not card.get("is_edit_mode", False)
+            ):
+                self._layout_offscreen_card(card, approximate_rect, approximate_h)
+                max_right = max(max_right, card.get("canvas_x", 24) + card_w)
+                max_bottom = max(max_bottom, card.get("canvas_y", 84) + approximate_h)
+                continue
+
+            layout_detail = None
+            if performance_debug.enabled:
+                active_tab = getattr(card_view, "active_tab", None)
+                layout_detail = f"entity={card.get('entity_id')} tab={active_tab}"
+
+            auto_canvas_h = bool(card.get("auto_canvas_h", True))
+            if card_view is not None and self.font_for_layout is not None:
+                with performance_debug.measure("layout.get_minimum_height", layout_detail or ""):
+                    minimum_h = card_view.get_minimum_height(card, self.font_for_layout)
+            else:
+                minimum_h = 260
+
+            if auto_canvas_h:
+                auto_h_limit = self._auto_card_canvas_height_limit(right_rect)
+                card_h = max(260, min(auto_h_limit, minimum_h))
+            else:
+                card_h = max(260, min(self.MAX_CARD_CANVAS_H, requested_h))
+            card["canvas_h"] = card_h
+            card["layout_font"] = card_font
+
+            screen_card_w = max(120, int(round(card_w * zoom)))
+            screen_card_h = max(120, int(round(card_h * zoom)))
+            rect = pygame.Rect(rect_x, rect_y, screen_card_w, screen_card_h)
+
+            if card_view is not None:
+                card["is_compact_canvas_card"] = False
+                card["layout_skipped_offscreen"] = False
+                with performance_debug.measure("layout.layout_card", layout_detail or ""):
+                    card_view.layout_card(card, rect)
+
+            final_rect = card.get("rect", rect)
+            toolbelt_rect = card.get("toolbelt_rect")
+            visual_right = final_rect.right
+            if toolbelt_rect is not None:
+                visual_right = max(visual_right, toolbelt_rect.right)
+
+            max_right = max(max_right, card.get("canvas_x", 24) + (visual_right - final_rect.x) / zoom)
+            max_bottom = max(max_bottom, card.get("canvas_y", 84) + final_rect.height / zoom)
+
+        self.canvas_content_width = max(0, max_right + 24)
+        self.canvas_content_height = max(0, max_bottom + 24)
+        with performance_debug.measure("layout.timeline_rebuild"):
+            open_ids_changed = self.timeline_ui.set_open_canvas_entity_ids(
+                card.get("entity_id") for card in self.cards
+            )
+            focus_ids_changed = False
+            if hasattr(self, "_current_timeline_focus_ids") and hasattr(
+                self.timeline_ui, "set_timeline_focus_entity_ids"
+            ):
+                focus_ids_changed = self.timeline_ui.set_timeline_focus_entity_ids(
+                    self._current_timeline_focus_ids()
+                )
+            if open_ids_changed or focus_ids_changed:
+                self.timeline_ui.rebuild_layout()
+        with performance_debug.measure("layout.relation_controls"):
+            self._layout_canvas_relation_controls()
+        with performance_debug.measure("layout.relation_edges"):
+            self._rebuild_canvas_relation_edges()
+
+    def _auto_card_canvas_height_limit(self, right_rect):
+        viewport_h = int(getattr(right_rect, "height", 0) or 0)
+        if viewport_h <= 0:
+            return self.MAX_CARD_CANVAS_H
+        return max(
+            self.MIN_AUTO_CARD_CANVAS_H,
+            min(self.MAX_CARD_CANVAS_H, viewport_h - self.AUTO_CARD_VIEWPORT_MARGIN),
+        )
+
+    def _layout_offscreen_card(self, card, rect, card_h):
+        card["is_compact_canvas_card"] = False
+        card["layout_skipped_offscreen"] = True
+        card["canvas_h"] = card_h
+        card["rect"] = rect
+        card["toolbelt_rect"] = None
+        card["header_drag_rect"] = rect
+        card["close_rect"] = None
+        card["template_button_rect"] = None
+        card["timeline_focus_rect"] = None
+        card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
+        self._clear_card_canvas_hitboxes(card)
+
+    def _is_compact_canvas_mode(self):
+        return self.canvas_zoom <= self.compact_canvas_zoom_threshold
+
+    def _layout_compact_card(self, card, rect_x, rect_y, card_w, card_h, zoom):
+        compact_w = max(150, min(260, int(round(card_w * zoom))))
+        compact_h = 72
+        rect = pygame.Rect(rect_x, rect_y, compact_w, compact_h)
+        close_rect = pygame.Rect(rect.right - 22, rect.y + 6, 16, 16)
+        card["is_compact_canvas_card"] = True
+        card["layout_skipped_offscreen"] = False
+        card["layout_font"] = self.font_for_layout or pygame.font.SysFont("consolas", 14)
+        card["rect"] = rect
+        card["toolbelt_rect"] = None
+        card["header_drag_rect"] = rect
+        card["close_rect"] = close_rect
+        card["template_button_rect"] = None
+        card["timeline_focus_rect"] = None
+        card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
+        self._clear_card_canvas_hitboxes(card)
+        card["canvas_relation_add_rect"] = None
+        card["screen_scale"] = zoom
+
+    def _clamp_canvas_offsets(self):
+        # The card canvas is intentionally unbounded. Offsets are allowed to
+        # move freely so cards dragged into negative space remain recoverable by panning.
+        return
+
+    def _card_accepts_canvas_relation(self, card):
+        return (
+            isinstance(card, dict)
+            and card.get("card_kind") != "schema"
+            and not card.get("is_compact_canvas_card", False)
+            and bool(card.get("is_edit_mode", False))
+            and bool(card.get("entity_id"))
+        )
+
+    def _edit_field_requires_relation_sync(self, card, field_key):
+        field_key = str(field_key or "").strip()
+        if not field_key:
+            return False
+        card_view = card.get("card_view") if isinstance(card, dict) else None
+        if card_view is not None and getattr(card_view, "is_relation_edit_field", lambda key: False)(field_key):
+            return True
+        return field_key in {
+            "parents",
+            "offspring",
+            "related",
+            "neighbours",
+            "overlaps",
+            "constituents",
+            "parent_location",
+            "parent_entity",
+            "parent_body",
+            "star_system",
+        }
+
+    def _card_is_cladistic_entity(self, card):
+        entity = self._entity_for_card(card)
+        return isinstance(entity, dict) and (
+            entity.get("_dataset") == "cladistics"
+            or entity.get("type") == "cladistics"
+        )
+
+    def _layout_canvas_relation_controls(self):
+        for card in self.cards:
+            card["canvas_relation_add_rect"] = None
+            if not self._card_accepts_canvas_relation(card):
+                continue
+
+            rect = card.get("rect")
+            if rect is None:
+                continue
+
+            size = 28
+            card["canvas_relation_add_rect"] = pygame.Rect(
+                rect.right - size - 6,
+                rect.centery - size // 2,
+                size,
+                size,
+            )
+
+    def _relayout_cards(self):
+        self._layout_all_cards()
+
+    def _relayout_single_card(self, card):
+        if not isinstance(card, dict):
+            return False
+        card_view = card.get("card_view")
+        rect = card.get("rect")
+        if card_view is None or rect is None:
+            return False
+        if card.get("layout_font") is None:
+            card["layout_font"] = self._card_font_for_zoom()
+        card_view.layout_card(card, rect)
+        self._layout_canvas_relation_controls()
+        return True
+
+    def _card_font_for_zoom(self):
+        base_size = 16
+        if self.font_for_layout is not None:
+            base_size = max(8, int(round(self.font_for_layout.get_linesize() * 0.84)))
+        cached_font = self.card_font_cache.get(base_size)
+        if cached_font is None:
+            cached_font = pygame.font.SysFont("consolas", base_size)
+            self.card_font_cache[base_size] = cached_font
+        return cached_font
+
+    def _screen_to_canvas_pos(self, mouse_pos):
+        if self.layout is None:
+            return (0, 0)
+
+        right_rect = self.layout["right_rect"]
+        zoom = max(0.001, self.canvas_zoom)
+        return (
+            (mouse_pos[0] - right_rect.x - self.canvas_offset_x) / zoom,
+            (mouse_pos[1] - right_rect.y - self.canvas_offset_y) / zoom,
+        )
+
+    def _set_canvas_zoom_at(self, mouse_pos, zoom_factor):
+        if self.layout is None:
+            return
+
+        right_rect = self.layout["right_rect"]
+        before_x, before_y = self._screen_to_canvas_pos(mouse_pos)
+        new_zoom = max(self.canvas_min_zoom, min(self.canvas_max_zoom, self.canvas_zoom * zoom_factor))
+        if abs(new_zoom - self.canvas_zoom) < 0.001:
+            return
+
+        self.canvas_zoom = new_zoom
+        self.canvas_offset_x = mouse_pos[0] - right_rect.x - before_x * self.canvas_zoom
+        self.canvas_offset_y = mouse_pos[1] - right_rect.y - before_y * self.canvas_zoom
+        self._layout_all_cards()
+
+    def _scroll_card_at(self, mouse_pos, wheel_y):
+        for _index, card in self._cards_top_to_bottom():
+            card_rect = card.get("rect")
+            if card_rect is None or not card_rect.collidepoint(mouse_pos):
+                continue
+
+            max_scroll = max(0, int(card.get("scroll_max_y", 0) or 0))
+            if max_scroll <= 0:
+                return True
+
+            line_step = max(24, self._font_line_height() * 2)
+            old_scroll = max(0, min(max_scroll, int(card.get("scroll_y", 0) or 0)))
+            new_scroll = max(0, min(max_scroll, old_scroll - int(wheel_y) * line_step))
+            if new_scroll != old_scroll:
+                card["scroll_y"] = new_scroll
+                self._relayout_single_card(card)
+            return True
+
+        return False
+
+    def _scroll_phylogeny_parent_at(self, mouse_pos, wheel_y):
+        for _index, card in self._cards_top_to_bottom():
+            card_rect = card.get("rect")
+            panel_rect = card.get("phylogeny_parent_panel_rect")
+            card_view = card.get("card_view")
+            if card_view is None or not getattr(card_view, "_is_phylogeny_mode", lambda: False)():
+                continue
+            if card_rect is None or panel_rect is None:
+                continue
+            if not card_rect.collidepoint(mouse_pos) or not panel_rect.collidepoint(mouse_pos):
+                continue
+
+            max_scroll = max(0, int(card.get("phylogeny_parent_scroll_max_y", 0) or 0))
+            if max_scroll <= 0:
+                return False
+
+            line_step = max(24, self._font_line_height() * 2)
+            old_scroll = max(0, min(max_scroll, int(card.get("phylogeny_parent_scroll_y", 0) or 0)))
+            new_scroll = max(0, min(max_scroll, old_scroll - int(wheel_y) * line_step))
+            if new_scroll != old_scroll:
+                card["phylogeny_parent_scroll_y"] = new_scroll
+                self._relayout_cards()
+            return True
+
+        return False
+
+    def _scroll_type_picker_at(self, mouse_pos, wheel_y):
+        for _index, card in self._cards_top_to_bottom():
+            if not card.get("type_picker_open", False):
+                continue
+
+            picker_rect = card.get("type_picker_rect")
+            if picker_rect is None or not picker_rect.collidepoint(mouse_pos):
+                continue
+
+            templates = self._conversion_templates()
+            _, scroll, max_scroll = self._card_type_picker_visible_templates(card, templates)
+            if max_scroll <= 0:
+                return True
+
+            new_scroll = max(0, min(max_scroll, scroll - int(wheel_y)))
+            if new_scroll != scroll:
+                card["type_picker_scroll"] = new_scroll
+                self._relayout_cards()
+            return True
+
+        return False
+
+    def _bring_card_to_front(self, index):
+        card_obj = self.cards.pop(index)
+        self.cards.append(card_obj)
+        self.selected_entity_id = card_obj.get("entity_id")
+        return card_obj
+
+    def _close_card_at_index(self, index):
+        if index < 0 or index >= len(self.cards):
+            return False
+
+        closing_card = self.cards.pop(index)
+        closing_entity_id = closing_card.get("entity_id")
+        if (
+            closing_entity_id
+            and closing_entity_id == getattr(self, "repository_scope_entity_id", None)
+            and hasattr(self, "dismissed_repository_scope_entity_ids")
+        ):
+            self.dismissed_repository_scope_entity_ids.add(closing_entity_id)
+
+        if self.selected_entity_id == closing_entity_id:
+            self.selected_entity_id = self.cards[-1].get("entity_id") if self.cards else None
+
+        if (
+            self.relation_link_target is not None
+            and self.relation_link_target.get("source_entity_id") == closing_entity_id
+        ):
+            self.relation_link_target = None
+            self.relation_link_status = ""
+
+        if self.canvas_relation_link_source_id == closing_entity_id:
+            self.canvas_relation_link_source_id = None
+            self.canvas_relation_status = ""
+
+        if closing_entity_id and closing_entity_id in getattr(self, "timeline_focus_entity_ids", []):
+            self.timeline_focus_entity_ids = [
+                entity_id for entity_id in self.timeline_focus_entity_ids
+                if entity_id != closing_entity_id
+            ]
+
+        self._clear_timeline_edit_target()
+        self._close_wiki_link_picker(closing_card)
+        self._close_relation_picker(closing_card)
+        self.active_card_drag_id = None
+        self.active_card_resize_id = None
+        self.active_card_color_slider = None
+        self._ensure_keep_card_open(excluded_entity_ids={closing_entity_id})
+        self._relayout_cards()
+        return True
+
+    def _begin_card_resize(self, card_obj, mouse_pos, resize_edges):
+        self.active_card_resize_id = card_obj["entity_id"]
+        card_obj["auto_canvas_h"] = False
+        self.card_resize_start_mouse = mouse_pos
+        self.card_resize_start_size = (card_obj.get("canvas_w", 420), card_obj.get("canvas_h", 340))
+        self.card_resize_start_position = (card_obj.get("canvas_x", 24), card_obj.get("canvas_y", 84))
+        self.card_resize_edges = resize_edges
+
+    def _begin_card_drag(self, card_obj, mouse_pos):
+        self.active_card_drag_id = card_obj["entity_id"]
+        canvas_x, canvas_y = self._screen_to_canvas_pos(mouse_pos)
+        self.card_drag_mouse_offset = (
+            canvas_x - card_obj.get("canvas_x", 24),
+            canvas_y - card_obj.get("canvas_y", 84),
+        )
+        self.card_drag_last_mouse_pos = mouse_pos
+
+    def _move_rect_value(self, value, dx, dy):
+        if isinstance(value, pygame.Rect):
+            return value.move(dx, dy)
+        if isinstance(value, list):
+            return [self._move_rect_value(item, dx, dy) for item in value]
+        if isinstance(value, tuple):
+            return tuple(self._move_rect_value(item, dx, dy) for item in value)
+        if isinstance(value, dict):
+            return {
+                key: self._move_rect_value(item, dx, dy)
+                for key, item in value.items()
+            }
+        return value
+
+    def _move_card_screen_layout(self, card, dx, dy):
+        for key in self.CARD_DRAG_LAYOUT_KEYS:
+            if key in card:
+                card[key] = self._move_rect_value(card.get(key), dx, dy)
+        for key in self.CARD_DRAG_LAYOUT_COLLECTION_KEYS:
+            if key in card:
+                card[key] = self._move_rect_value(card.get(key), dx, dy)
+        # The card timeline is positioned from these stored vertical anchors
+        # rather than a Rect.  Keep them in step with the cached layout while
+        # dragging so the timeline (including its related-period strip) cannot
+        # remain at the card's former screen position for a frame.
+        for key in ("timeline_y", "timeline_label_y"):
+            if isinstance(card.get(key), (int, float)):
+                card[key] += dy
+        self._layout_canvas_relation_controls()
+
+    def _card_visual_rect(self, card):
+        if not isinstance(card, dict):
+            return None
+
+        card_rect = card.get("rect")
+        toolbelt_rect = card.get("toolbelt_rect")
+        if card_rect is not None and toolbelt_rect is not None:
+            return card_rect.union(toolbelt_rect)
+        return card_rect or toolbelt_rect
+
+    def _graph_relation_entity_ids_for_card(self, card):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict):
+            return []
+
+        seen = set()
+        entity_ids = []
+
+        def append_entity_id(value):
+            entity_id = str(value or "").strip()
+            if entity_id and entity_id not in seen:
+                seen.add(entity_id)
+                entity_ids.append(entity_id)
+
+        for entity_id in self._relation_tree_neighbor_ids(entity.get("id")):
+            append_entity_id(entity_id)
+
+        return entity_ids
+
+    def _rect_edge_point_toward(self, rect, target_point):
+        center_x, center_y = rect.center
+        dx = target_point[0] - center_x
+        dy = target_point[1] - center_y
+        if dx == 0 and dy == 0:
+            return rect.center
+
+        x_scale = (rect.width / 2) / abs(dx) if dx else 999999
+        y_scale = (rect.height / 2) / abs(dy) if dy else 999999
+        scale = min(x_scale, y_scale)
+        return (int(center_x + dx * scale), int(center_y + dy * scale))
+
+    def _draw_canvas_graph_line(self, screen, source_rect, target_rect, color):
+        start = self._rect_edge_point_toward(source_rect, target_rect.center)
+        end = self._rect_edge_point_toward(target_rect, source_rect.center)
+        pygame.draw.line(screen, (12, 16, 24), start, end, 6)
+        pygame.draw.line(screen, color, start, end, 3)
+        pygame.draw.circle(screen, (12, 16, 24), start, 6)
+        pygame.draw.circle(screen, color, start, 4)
+        pygame.draw.circle(screen, (12, 16, 24), end, 6)
+        pygame.draw.circle(screen, color, end, 4)
+
+    def _rebuild_canvas_relation_edges(self):
+        cards_by_id = {
+            str(card.get("entity_id")): card
+            for card in self.cards
+            if card.get("entity_id") and card.get("card_kind") != "schema" and card.get("rect") is not None
+        }
+        if len(cards_by_id) < 2:
+            self.canvas_relation_edges = []
+            return
+
+        drawn_edges = set()
+        edges = []
+        for source_id, source_card in cards_by_id.items():
+            for target_id in self._graph_relation_entity_ids_for_card(source_card):
+                target_id = str(target_id)
+                if target_id == source_id or target_id not in cards_by_id:
+                    continue
+                edge_key = tuple(sorted((source_id, target_id)))
+                if edge_key in drawn_edges:
+                    continue
+                drawn_edges.add(edge_key)
+                edges.append(edge_key)
+        self.canvas_relation_edges = edges
+
+    def _draw_canvas_relation_lines(self, screen, right_rect):
+        if len(self.cards) < 2:
+            return
+
+        cards_by_id = {
+            str(card.get("entity_id")): card
+            for card in self.cards
+            if card.get("entity_id") and card.get("card_kind") != "schema" and card.get("rect") is not None
+        }
+        if len(cards_by_id) < 2:
+            return
+
+        previous_clip = screen.get_clip()
+        screen.set_clip(previous_clip.clip(right_rect))
+        try:
+            for source_id, target_id in self.canvas_relation_edges:
+                source_card = cards_by_id.get(str(source_id))
+                target_card = cards_by_id.get(str(target_id))
+                if source_card is None or target_card is None:
+                    continue
+                source_rect = source_card.get("rect")
+                target_rect = target_card.get("rect")
+                if source_rect is None or target_rect is None:
+                    continue
+                self._draw_canvas_graph_line(screen, source_rect, target_rect, (232, 190, 92))
+
+            if self.canvas_relation_link_source_id is not None:
+                source_card = self._find_card_by_entity_id(self.canvas_relation_link_source_id)
+                source_rect = source_card.get("rect") if source_card is not None else None
+                if source_rect is not None:
+                    start = self._rect_edge_point_toward(source_rect, pygame.mouse.get_pos())
+                    pygame.draw.line(screen, (12, 16, 24), start, pygame.mouse.get_pos(), 4)
+                    pygame.draw.line(screen, (238, 214, 128), start, pygame.mouse.get_pos(), 2)
+        finally:
+            screen.set_clip(previous_clip)
+
+    def _draw_canvas_relation_target_highlights(self, screen, right_rect):
+        if self.canvas_relation_link_source_id is None:
+            return
+
+        previous_clip = screen.get_clip()
+        screen.set_clip(previous_clip.clip(right_rect))
+        try:
+            for card in self.cards:
+                rect = card.get("rect")
+                entity_id = card.get("entity_id")
+                if (
+                    rect is None
+                    or card.get("card_kind") == "schema"
+                    or entity_id == self.canvas_relation_link_source_id
+                ):
+                    continue
+                pygame.draw.rect(screen, (232, 190, 92), rect.inflate(8, 8), 2)
+        finally:
+            screen.set_clip(previous_clip)
+
+    def _draw_canvas_relation_control_for_card(self, screen, font, card):
+        button_rect = card.get("canvas_relation_add_rect")
+        if button_rect is None:
+            return
+
+        is_active = card.get("entity_id") == self.canvas_relation_link_source_id
+        hovered = button_rect.collidepoint(pygame.mouse.get_pos())
+        fill = (104, 88, 36) if is_active else ((62, 78, 104) if hovered else (42, 50, 68))
+        border = (238, 210, 130) if is_active else ((174, 204, 238) if hovered else (112, 132, 162))
+        pygame.draw.ellipse(screen, fill, button_rect)
+        pygame.draw.ellipse(screen, border, button_rect, 1)
+        plus_surface = font.render("+", True, (245, 245, 245))
+        plus_rect = plus_surface.get_rect(center=button_rect.center)
+        screen.blit(plus_surface, plus_rect)
+
+    def _draw_card_canvas(self, screen, font, right_rect):
+        """
+        Central draw order for card-canvas content.
+
+        Keep background graph/link affordances below cards, then draw each card
+        with its own controls in card z order so lower-card controls cannot cut
+        through cards above them.
+        """
+        previous_clip = screen.get_clip()
+        canvas_clip = right_rect.inflate(-8, -8)
+        active_slider = self.active_card_color_slider
+        drag_draw_started = time.perf_counter() if active_slider is not None and performance_debug.enabled else None
+        active_slider_entity_id = (
+            active_slider.get("entity_id")
+            if isinstance(active_slider, dict)
+            else None
+        )
+        if active_slider is None:
+            self._card_color_drag_surface_cache = {}
+        drag_cache = getattr(self, "_card_color_drag_surface_cache", None)
+        if drag_cache is None:
+            drag_cache = {}
+            self._card_color_drag_surface_cache = drag_cache
+        screen.set_clip(previous_clip.clip(canvas_clip))
+        try:
+            self._draw_canvas_relation_lines(screen, right_rect)
+            self._draw_canvas_relation_target_highlights(screen, right_rect)
+            for card in self.cards:
+                visual_rect = self._card_visual_rect(card)
+                if visual_rect is not None and not visual_rect.colliderect(canvas_clip):
+                    continue
+                cache_key = id(card)
+                cache_during_drag = (
+                    active_slider is not None
+                    and card.get("entity_id") != active_slider_entity_id
+                )
+                cached = drag_cache.get(cache_key) if cache_during_drag else None
+                color_signature = None
+                capture_rect = None
+                if cache_during_drag and visual_rect is not None:
+                    entity = self._entity_for_card(card)
+                    if isinstance(entity, dict):
+                        color_signature = (
+                            entity.get("card_color"),
+                            entity.get("card_header_color"),
+                            repr(entity.get("wiki_field_colors")),
+                            tuple(visual_rect),
+                        )
+                    capture_rect = visual_rect.clip(canvas_clip).clip(screen.get_rect())
+
+                if (
+                    cached is not None
+                    and cached.get("signature") == color_signature
+                    and cached.get("rect") == capture_rect
+                ):
+                    screen.blit(cached["surface"], capture_rect.topleft)
+                else:
+                    card_draw_started = time.perf_counter() if drag_draw_started is not None else None
+                    self._draw_card(screen, font, card)
+                    if card_draw_started is not None:
+                        role = "active" if card.get("entity_id") == active_slider_entity_id else "cached_source"
+                        performance_debug.record(
+                            "color.card_draw",
+                            (time.perf_counter() - card_draw_started) * 1000.0,
+                            f"role={role} size={visual_rect.width if visual_rect else 0}x{visual_rect.height if visual_rect else 0}",
+                        )
+                    if capture_rect is not None and capture_rect.width > 0 and capture_rect.height > 0:
+                        copy_started = time.perf_counter() if drag_draw_started is not None else None
+                        drag_cache[cache_key] = {
+                            "signature": color_signature,
+                            "rect": capture_rect.copy(),
+                            "surface": screen.subsurface(capture_rect).copy(),
+                        }
+                        if copy_started is not None:
+                            performance_debug.record(
+                                "color.card_cache_copy",
+                                (time.perf_counter() - copy_started) * 1000.0,
+                                f"size={capture_rect.width}x{capture_rect.height}",
+                            )
+                self._draw_canvas_relation_control_for_card(screen, font, card)
+        finally:
+            screen.set_clip(previous_clip)
+        if drag_draw_started is not None:
+            performance_debug.record(
+                "color.canvas_draw",
+                (time.perf_counter() - drag_draw_started) * 1000.0,
+                f"cards={len(self.cards)}",
+            )
+
+
+    def _insert_relation_reference_into_card(self, card, field_key, entity_id):
+        entity = self._entity_for_card(card)
+        card_view = card.get("card_view") if card is not None else None
+        if not isinstance(entity, dict) or not field_key or not entity_id or card_view is None:
+            return False
+
+        if hasattr(card_view, "is_location_topology_relation_field") and card_view.is_location_topology_relation_field(field_key):
+            card["active_edit_field"] = field_key
+            linked = card_view.insert_relation_reference(card, entity_id)
+            if not linked:
+                return False
+            related_update_ids = list(card.pop("location_related_entity_update_ids", []) or [])
+            if card.get("is_draft_entity", False):
+                self._save_card_draft(card)
+            else:
+                self._persist_card_entity(card)
+                for related_entity_id in related_update_ids:
+                    related_entity = self.world_model.get_entity(related_entity_id) if self.world_model is not None else None
+                    if isinstance(related_entity, dict):
+                        self._persist_entity_to_repository(related_entity)
+                self._sync_bidirectional_relations(persist=True)
+            return True
+
+        if field_key == "related":
+            source_id = str(entity.get("id") or card.get("entity_id") or "").strip()
+            entity_id = str(entity_id or "").strip()
+            if not source_id or not entity_id or source_id == entity_id:
+                return False
+
+            if self.world_model is not None and hasattr(self.world_model, "set_relation"):
+                changed = self.world_model.set_relation(source_id, "related", entity_id, persist=True)
+                if changed:
+                    source_entity = self.world_model.get_entity(source_id)
+                    if isinstance(source_entity, dict):
+                        entity.update(source_entity)
+                    target_card = self._find_card_by_entity_id(entity_id)
+                    if target_card is not None:
+                        target_entity = self.world_model.get_entity(entity_id)
+                        target_card_view = target_card.get("card_view")
+                        target_card_entity = getattr(target_card_view, "entity", None) if target_card_view is not None else None
+                        if isinstance(target_entity, dict) and isinstance(target_card_entity, dict):
+                            target_card_entity.update(target_entity)
+                    return True
+                if self._has_related_reference(entity, entity_id):
+                    target_entity = self.world_model.get_entity(entity_id)
+                    if not isinstance(target_entity, dict) or self._has_related_reference(target_entity, source_id):
+                        return True
+
+            linked = self._append_related_reference(entity, entity_id)
+            target_entity = self.world_model.get_entity(entity_id) if self.world_model is not None else None
+            if isinstance(target_entity, dict):
+                linked = self._append_related_reference(target_entity, source_id) or linked
+            if not linked and self._has_related_reference(entity, entity_id):
+                if not isinstance(target_entity, dict) or self._has_related_reference(target_entity, source_id):
+                    return True
+            if not linked:
+                return False
+            if card.get("is_draft_entity", False):
+                self._save_card_draft(card)
+            else:
+                self._persist_card_entity(card)
+                if isinstance(target_entity, dict):
+                    self._persist_entity_to_repository(target_entity)
+            return True
+
+        allows_many = field_key in EntityCard.CORE_RELATION_FIELDS or (
+            card_view._relation_field_allows_many(field_key)
+            if hasattr(card_view, "_relation_field_allows_many")
+            else isinstance(entity.get(field_key), list)
+        )
+
+        if allows_many:
+            current_value = entity.get(field_key)
+            if isinstance(current_value, list):
+                values = list(current_value)
+            elif current_value in (None, ""):
+                values = []
+            else:
+                values = [current_value]
+
+            if entity_id not in [str(value) for value in values]:
+                values.append(entity_id)
+            entity[field_key] = values
+        else:
+            entity[field_key] = entity_id
+
+        if card.get("is_draft_entity", False):
+            self._save_card_draft(card)
+        else:
+            self._persist_card_entity(card)
+        return True
+
+    def _append_related_reference(self, entity, target_id):
+        if not isinstance(entity, dict):
+            return False
+        source_id = str(entity.get("id") or "").strip()
+        target_id = str(target_id or "").strip()
+        if not source_id or not target_id or source_id == target_id:
+            return False
+
+        current_value = entity.get("related")
+        if isinstance(current_value, list):
+            values = list(current_value)
+        elif current_value in (None, ""):
+            values = []
+        else:
+            values = [current_value]
+
+        if target_id in [str(value) for value in values]:
+            return False
+
+        values.append(target_id)
+        entity["related"] = values
+        return True
+
+    def _has_related_reference(self, entity, target_id):
+        if not isinstance(entity, dict):
+            return False
+        target_id = str(target_id or "").strip()
+        if not target_id:
+            return False
+
+        current_value = entity.get("related")
+        if isinstance(current_value, list):
+            return target_id in [str(value).strip() for value in current_value]
+        return str(current_value or "").strip() == target_id
+
+    def _remove_related_reference(self, entity, target_id):
+        if not isinstance(entity, dict):
+            return False
+        target_id = str(target_id or "").strip()
+        if not target_id:
+            return False
+
+        current_value = entity.get("related")
+        if isinstance(current_value, list):
+            values = [value for value in current_value if str(value).strip() != target_id]
+            if len(values) == len(current_value):
+                return False
+        elif current_value in (None, ""):
+            return False
+        elif str(current_value).strip() == target_id:
+            values = []
+        else:
+            return False
+
+        entity["related"] = values
+        return True
+
+    def _remove_relation_reference_from_card(self, card, field_key, entity_id):
+        entity = self._entity_for_card(card)
+        card_view = card.get("card_view") if card is not None else None
+        entity_id = str(entity_id or "").strip()
+        if not isinstance(entity, dict) or not field_key or not entity_id or card_view is None:
+            return False
+
+        if field_key == "related":
+            source_id = str(entity.get("id") or card.get("entity_id") or "").strip()
+            if not source_id:
+                return False
+
+            if self.world_model is not None and hasattr(self.world_model, "remove_relation"):
+                changed = self.world_model.remove_relation(source_id, "related", entity_id, persist=True)
+                if changed:
+                    source_entity = self.world_model.get_entity(source_id)
+                    if isinstance(source_entity, dict):
+                        entity.update(source_entity)
+                    target_card = self._find_card_by_entity_id(entity_id)
+                    if target_card is not None:
+                        target_entity = self.world_model.get_entity(entity_id)
+                        target_card_view = target_card.get("card_view")
+                        target_card_entity = getattr(target_card_view, "entity", None) if target_card_view is not None else None
+                        if isinstance(target_entity, dict) and isinstance(target_card_entity, dict):
+                            target_card_entity.update(target_entity)
+                    return True
+
+            removed = self._remove_related_reference(entity, entity_id)
+            target_entity = self.world_model.get_entity(entity_id) if self.world_model is not None else None
+            if isinstance(target_entity, dict):
+                removed = self._remove_related_reference(target_entity, source_id) or removed
+            if not removed:
+                return False
+            if card.get("is_draft_entity", False):
+                self._save_card_draft(card)
+            else:
+                self._persist_card_entity(card)
+                if isinstance(target_entity, dict):
+                    self._persist_entity_to_repository(target_entity)
+            return True
+
+        allows_many = field_key in EntityCard.CORE_RELATION_FIELDS or (
+            card_view._relation_field_allows_many(field_key)
+            if hasattr(card_view, "_relation_field_allows_many")
+            else isinstance(entity.get(field_key), list)
+        )
+
+        current_value = entity.get(field_key)
+        if allows_many:
+            if isinstance(current_value, list):
+                values = [value for value in current_value if str(value).strip() != entity_id]
+                if len(values) == len(current_value):
+                    return False
+            elif current_value in (None, ""):
+                return False
+            elif str(current_value).strip() == entity_id:
+                values = []
+            else:
+                return False
+            entity[field_key] = values
+        else:
+            if str(current_value or "").strip() != entity_id:
+                return False
+            entity[field_key] = ""
+
+        if card.get("is_draft_entity", False):
+            self._save_card_draft(card)
+        else:
+            self._persist_card_entity(card)
+        return True
+
+    def _find_card_by_entity_id(self, entity_id):
+        entity_id = str(entity_id or "")
+        for card in self.cards:
+            if str(card.get("entity_id") or "") == entity_id:
+                return card
+            card_view = card.get("card_view")
+            entity = getattr(card_view, "entity", None) if card_view is not None else None
+            if isinstance(entity, dict) and str(entity.get("id") or "") == entity_id:
+                return card
+        return None
+
+    def _begin_canvas_relation_link(self, card):
+        if card is None or card.get("card_kind") == "schema" or not card.get("entity_id"):
+            return False
+
+        if not card.get("is_edit_mode", False):
+            return False
+
+        self.canvas_relation_link_source_id = card.get("entity_id")
+        entity = self._entity_for_card(card)
+        label = (
+            self._entity_display_label(entity, fallback=card.get("entity_id", "entry"))
+            if isinstance(entity, dict)
+            else str(card.get("entity_id") or "entry")
+        )
+        self.canvas_relation_status = f"Linking from {label}: click a second card"
+        self._close_wiki_link_picker(card)
+        self._close_relation_picker(card)
+        self._relayout_cards()
+        return True
+
+    def _clear_canvas_relation_link(self):
+        self.canvas_relation_link_source_id = None
+        self.canvas_relation_status = ""
+
+    def _link_canvas_relation_cards(self, target_card):
+        source_card = self._find_card_by_entity_id(self.canvas_relation_link_source_id)
+        target_id = target_card.get("entity_id") if isinstance(target_card, dict) else None
+        if source_card is None or not target_id:
+            self._clear_canvas_relation_link()
+            return False
+
+        if target_id == source_card.get("entity_id") or target_card.get("card_kind") == "schema":
+            self._clear_canvas_relation_link()
+            self._relayout_cards()
+            return False
+
+        linked_related = self._insert_relation_reference_into_card(source_card, "related", target_id)
+        linked_parent = self._insert_relation_reference_into_card(source_card, "parents", target_id)
+        linked = linked_related or linked_parent
+        if linked:
+            self._clear_canvas_relation_link()
+            self.browser_items = self._build_browser_items(self.world_model)
+            self._rebuild_browser_hitboxes()
+            self._relayout_cards()
+            return True
+
+        self.canvas_relation_status = "Could not link those entries"
+        self._relayout_cards()
+        return False
+
+    def _handle_canvas_relation_target_click(self, mouse_pos):
+        if self.canvas_relation_link_source_id is None:
+            return None
+
+        for index, card in self._cards_top_to_bottom():
+            visual_rect = self._card_visual_rect(card)
+            if visual_rect is None or not visual_rect.collidepoint(mouse_pos):
+                continue
+
+            card_obj = self._bring_card_to_front(index)
+            self._link_canvas_relation_cards(card_obj)
+            return "__ui_consumed__"
+
+        self._clear_canvas_relation_link()
+        self._relayout_cards()
+        return "__ui_consumed__"
+
+    def _clear_relation_browser_link(self):
+        target = self.relation_link_target or {}
+        source_card = target.get("source_card")
+        if isinstance(source_card, dict):
+            source_card.pop("active_relation_link_field", None)
+            source_card.pop("relation_link_status", None)
+
+        self.relation_link_target = None
+        self.relation_link_status = ""
+        self.browser_search_active = False
+
+    def _finish_relation_browser_link(self):
+        if self.relation_link_target is None:
+            return False
+
+        self._clear_relation_browser_link()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _handle_relation_link_mode_click(self, mouse_pos, left_rect):
+        if self.relation_link_target is None:
+            return None
+
+        if not left_rect.collidepoint(mouse_pos):
+            self._finish_relation_browser_link()
+            return "__ui_consumed__"
+
+        item = self._browser_item_at_pos(mouse_pos, left_rect)
+        if item is None:
+            self._finish_relation_browser_link()
+            return "__ui_consumed__"
+
+        entity_id = item.get("entity_id")
+        if item.get("kind") == "schema" or self._schema_name_from_card_id(entity_id) is not None:
+            self._finish_relation_browser_link()
+            return "__ui_consumed__"
+
+        if item.get("kind") not in {"entity", "tree_entity"}:
+            self._finish_relation_browser_link()
+            return "__ui_consumed__"
+
+        if not self._browser_item_matches_relation_target(item):
+            self._finish_relation_browser_link()
+            return "__ui_consumed__"
+
+        linked = self._link_relation_from_browser_entity(entity_id)
+        if not linked:
+            self._rebuild_browser_hitboxes()
+            self._relayout_cards()
+        return "__ui_consumed__"
+
+    def _begin_relation_browser_link(self, card, relation_info):
+        if card is None or not isinstance(relation_info, dict):
+            return False
+
+        field_key = relation_info.get("field_key")
+        if not field_key:
+            return False
+
+        self.relation_link_target = {
+            "source_card": card,
+            "source_entity_id": card.get("entity_id"),
+            "field_key": field_key,
+            "target": relation_info.get("target", ""),
+        }
+        target_label = self._relation_target_label(relation_info.get("target"))
+        status = f"Choose an existing {target_label} in the repository or click an open card"
+        card["active_relation_link_field"] = field_key
+        card["relation_link_status"] = status
+        self.relation_link_status = status
+        self.browser_filter_dataset = self._relation_target_dataset_filter(relation_info.get("target", ""))
+        self.browser_filter_incomplete_only = False
+        self.browser_collapsed = False
+        self.browser_search_active = True
+        self.browser_search_query = ""
+        self.browser_scroll = 0
+        self.browser_items = self._build_browser_items(self.world_model)
+        self.show_template_picker = False
+        self._build_template_picker_hitboxes()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _begin_location_focus_browser_pick(self):
+        self.relation_link_target = {
+            "mode": "timeline_location_focus",
+            "field_key": "Location",
+            "target": "locations",
+        }
+        self.relation_link_status = "Choose a location in the repository browser"
+        self.browser_filter_dataset = "locations"
+        self.browser_filter_incomplete_only = False
+        self.browser_collapsed = False
+        self.browser_search_active = True
+        self.browser_search_query = ""
+        self.browser_scroll = 0
+        if getattr(self, "timeline_ui", None) is not None:
+            self.timeline_ui.location_focus_active = False
+            self.timeline_ui.location_focus_matches = []
+            self.timeline_ui.location_focus_suggestion_hitboxes = []
+        self.browser_items = self._build_browser_items(self.world_model)
+        self.show_template_picker = False
+        self._build_template_picker_hitboxes()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _begin_actor_focus_browser_pick(self):
+        self.relation_link_target = {
+            "mode": "timeline_actor_focus",
+            "field_key": "Actor",
+            "target": "factions,institutions,producers",
+        }
+        self.relation_link_status = "Choose a faction, institution, or producer in the repository browser"
+        self.browser_filter_dataset = "all"
+        self.browser_filter_incomplete_only = False
+        self.browser_collapsed = False
+        self.browser_search_active = True
+        self.browser_search_query = ""
+        self.browser_scroll = 0
+        if getattr(self, "timeline_ui", None) is not None:
+            self.timeline_ui.actor_focus_active = False
+            self.timeline_ui.actor_focus_matches = []
+            self.timeline_ui.actor_focus_suggestion_hitboxes = []
+        self.browser_items = self._build_browser_items(self.world_model)
+        self.show_template_picker = False
+        self._build_template_picker_hitboxes()
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _handle_relation_card_link_target_click(self, mouse_pos):
+        if self.relation_link_target is None:
+            return None
+
+        source_card = self.relation_link_target.get("source_card")
+        source_entity_id = self.relation_link_target.get("source_entity_id")
+
+        for index, card in self._cards_top_to_bottom():
+            visual_rect = self._card_visual_rect(card)
+            if visual_rect is None or not visual_rect.collidepoint(mouse_pos):
+                continue
+
+            target_entity_id = card.get("entity_id")
+            if not target_entity_id or target_entity_id == source_entity_id:
+                self._finish_relation_browser_link()
+                return "__ui_consumed__"
+
+            entity = self.world_model.get_entity(target_entity_id) if self.world_model is not None else None
+            if entity is None or not self._entity_matches_relation_target(
+                entity,
+                self.relation_link_target.get("target"),
+            ):
+                self._finish_relation_browser_link()
+                return "__ui_consumed__"
+
+            self._bring_card_to_front(index)
+            linked = self._link_relation_from_browser_entity(target_entity_id)
+            if not linked:
+                self._relayout_cards()
+            return "__ui_consumed__"
+
+        self._finish_relation_browser_link()
+        return "__ui_consumed__"
+
+    def _link_relation_from_browser_entity(self, entity_id):
+        if self.relation_link_target is None or self.world_model is None:
+            return False
+
+        entity = self.world_model.get_entity(entity_id)
+        if entity is None:
+            self.relation_link_status = "That repository row is not an entry"
+            return False
+
+        if self.relation_link_target.get("mode") == "timeline_location_focus":
+            if not self._entity_matches_relation_target(entity, "locations"):
+                self.relation_link_status = "Pick a location entry"
+                return False
+            if getattr(self, "timeline_ui", None) is None:
+                self.relation_link_status = "The timeline is not available"
+                return False
+            changed = self.timeline_ui.set_location_focus(entity_id)
+            label = self._entity_display_label(entity, fallback=entity_id)
+            self.relation_link_status = f"Location focus: {label}"
+            self._finish_relation_browser_link()
+            if changed:
+                self._refresh_timeline_items()
+            return True
+
+        if self.relation_link_target.get("mode") == "timeline_actor_focus":
+            if getattr(self, "timeline_ui", None) is None:
+                self.relation_link_status = "The timeline is not available"
+                return False
+            if not self.timeline_ui._is_actor_entity(entity):
+                self.relation_link_status = "Pick a faction, institution, or producer"
+                return False
+            changed = self.timeline_ui.set_actor_focus(entity_id)
+            label = self._entity_display_label(entity, fallback=entity_id)
+            self.relation_link_status = f"Actor focus: {label}"
+            self._finish_relation_browser_link()
+            if changed:
+                self._refresh_timeline_items()
+            return True
+
+        source_card = self.relation_link_target.get("source_card")
+        if not isinstance(source_card, dict):
+            source_card = self._find_card_by_entity_id(self.relation_link_target.get("source_entity_id"))
+        if source_card is None:
+            self.relation_link_status = "The source card is no longer open"
+            return False
+
+        if self.relation_link_target.get("mode") == "stellar_neighbourhood":
+            if not self._is_star_system_entity(entity):
+                self.relation_link_status = "Pick a matching star system"
+                source_card["relation_link_status"] = self.relation_link_status
+                return False
+            if entity_id == source_card.get("entity_id"):
+                self.relation_link_status = "Pick a different star system"
+                source_card["relation_link_status"] = self.relation_link_status
+                return False
+            return self._open_stellar_neighbour_distance_prompt(source_card, entity_id)
+
+        linked = self._insert_relation_reference_into_card(
+            source_card,
+            self.relation_link_target.get("field_key"),
+            entity_id,
+        )
+        if not linked:
+            self.relation_link_status = "Could not link that entry"
+            return False
+
+        label = self._entity_display_label(entity, fallback=entity_id)
+        self.relation_link_status = f"Added {label}; Enter or click away to finish"
+        source_card["relation_link_status"] = self.relation_link_status
+        self.browser_items = self._build_browser_items(self.world_model)
+        self._rebuild_browser_hitboxes()
+        self._relayout_cards()
+        return True
+
+    def _create_relation_target_entity(self, relation_info):
+        target = relation_info.get("target")
+        template = self._template_for_relation_target(target)
+        if template is None:
+            template = self._template_by_dataset("ideas")
+        if template is None:
+            return None
+
+        requested_id = relation_info.get("entity_id") if relation_info.get("kind") == "missing" else None
+        return self._create_and_open_template_entity(template, requested_id=requested_id)
+
+    def _open_relation_target_template_picker(self, card, relation_info):
+        if card is None or not isinstance(relation_info, dict):
+            return False
+
+        missing_ref = str(relation_info.get("entity_id") or relation_info.get("label") or "").strip()
+        if not missing_ref:
+            return False
+
+        self.schema_entry_templates = self._load_schema_entry_templates()
+        self.pending_new_entry_name = missing_ref
+        self.template_picker_mode = "relation_create"
+        self.template_picker_context = {
+            "source_entity_id": card.get("entity_id"),
+            "card": card,
+            "field_key": relation_info.get("field_key"),
+            "missing_ref": missing_ref,
+            "target": relation_info.get("target"),
+        }
+        self.template_picker_search_query = ""
+        self.template_picker_search_active = True
+        self.template_picker_scroll = 0
+        self.template_picker_status = f"Choose type for {missing_ref}"
+        self.show_template_picker = True
+        self._build_template_picker_hitboxes()
+        return True
+
+    def _replace_relation_reference_on_card(self, card, field_key, old_ref, new_ref):
+        entity = self._entity_for_card(card)
+        if not isinstance(entity, dict) or not field_key or not new_ref:
+            return False
+
+        old_ref = str(old_ref or "").strip()
+        new_ref = str(new_ref or "").strip()
+        current_value = entity.get(field_key)
+        values = []
+        if isinstance(current_value, list):
+            values = [
+                str(item.get("id") if isinstance(item, dict) else item).strip()
+                for item in current_value
+            ]
+        elif isinstance(current_value, str) and current_value.strip():
+            values = [current_value.strip()]
+        elif current_value not in (None, "", []):
+            values = [str(current_value).strip()]
+
+        if not values:
+            values = [new_ref]
+
+        replaced = False
+        updated_values = []
+        for value in values:
+            if value == old_ref:
+                value = new_ref
+                replaced = True
+            if value and value not in updated_values:
+                updated_values.append(value)
+
+        if not replaced and new_ref not in updated_values:
+            updated_values.append(new_ref)
+
+        entity[field_key] = updated_values
+        card["subtitle"] = self._card_subtitle_for_entity(entity)
+        if card.get("is_draft_entity", False):
+            self._save_card_draft(card)
+        else:
+            self._persist_card_entity(card)
+        return True
+
+    def _create_relation_target_from_template_picker(self, template):
+        entry_name = str(self.pending_new_entry_name or "").strip()
+        if not entry_name:
+            self.template_picker_status = "Name entry first"
+            return False
+
+        context = dict(self.template_picker_context or {})
+        context["relation_create"] = True
+
+        self.pending_new_entry_name = None
+        self.show_template_picker = False
+        self.template_picker_search_query = ""
+        self.template_picker_search_active = False
+        self.template_picker_mode = "create"
+        self.template_picker_context = {}
+        self.template_picker_status = ""
+        self._build_template_picker_hitboxes()
+        return self._open_entry_description_prompt(template, entry_name, context=context)
+
+
+    def _handle_card_canvas_click(self, mouse_pos, right_rect):
+        if not right_rect.collidepoint(mouse_pos):
+            return None
+
+        for index, card in self._cards_top_to_bottom():
+            card_view = card.get("card_view")
+
+            close_rect = card.get("close_rect")
+            if close_rect is not None and close_rect.collidepoint(mouse_pos):
+                self._close_card_at_index(index)
+                return "__ui_consumed__"
+
+            if card.get("is_compact_canvas_card", False):
+                rect = card.get("rect")
+                if rect is not None and rect.collidepoint(mouse_pos):
+                    card_obj = self._bring_card_to_front(index)
+                    self._begin_card_drag(card_obj, mouse_pos)
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
+                continue
+
+            if card.get("card_kind") == "schema":
+                schema_result = self._handle_schema_card_click(card, index, mouse_pos)
+                if schema_result is not None:
+                    return schema_result
+
+            random_year_rect = card.get("random_year_rect")
+            if random_year_rect is not None and random_year_rect.collidepoint(mouse_pos):
+                selected_year = self._set_random_working_year_from_card(card)
+                if selected_year is not None:
+                    self._bring_card_to_front(index)
+                    self._layout_all_cards()
+                return "__ui_consumed__"
+
+            relation_add_rect = card.get("canvas_relation_add_rect")
+            if relation_add_rect is not None and relation_add_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                if self._begin_canvas_relation_link(card_obj):
+                    return "__ui_consumed__"
+
+            idea_button_rect = card.get("idea_button_rect")
+            if idea_button_rect is not None and idea_button_rect.collidepoint(mouse_pos) and card_view is not None:
+                card_obj = self._bring_card_to_front(index)
+                self._open_idea_name_prompt(card_obj)
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            template_button_rect = card.get("template_button_rect")
+            if (
+                template_button_rect is not None
+                and template_button_rect.collidepoint(mouse_pos)
+                and card_view is not None
+                and card.get("is_edit_mode", False)
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if self._open_card_class_template_picker(card_obj):
+                    self._relayout_cards()
+                return "__ui_consumed__"
+
+            relation_tree_rect = card.get("relation_tree_rect")
+            if (
+                relation_tree_rect is not None
+                and relation_tree_rect.collidepoint(mouse_pos)
+                and card_view is not None
+                and not card.get("is_edit_mode", False)
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if self._open_relation_tree_for_card(card_obj):
+                    return "__ui_consumed__"
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            timeline_focus_rect = card.get("timeline_focus_rect")
+            if (
+                timeline_focus_rect is not None
+                and timeline_focus_rect.collidepoint(mouse_pos)
+                and not card.get("is_edit_mode", False)
+            ):
+                card_obj = self._bring_card_to_front(index)
+                self._toggle_timeline_focus(card_obj)
+                return "__ui_consumed__"
+
+            for template, type_rect in card.get("type_picker_hitboxes", []):
+                if type_rect.collidepoint(mouse_pos) and card.get("is_edit_mode", False):
+                    card_obj = self._bring_card_to_front(index)
+                    self._convert_card_to_template(card_obj, template)
+                    return "__ui_consumed__"
+
+            type_label_rect = card.get("type_label_rect")
+            if (
+                type_label_rect is not None
+                and type_label_rect.collidepoint(mouse_pos)
+                and card_view is not None
+                and card.get("is_edit_mode", False)
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if self._open_card_class_template_picker(card_obj):
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+            time_anchor_rect = card.get("time_anchor_rect")
+            if (
+                time_anchor_rect is not None
+                and time_anchor_rect.collidepoint(mouse_pos)
+                and card.get("is_edit_mode", False)
+                and card_view is not None
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if card_obj.get("active_edit_field"):
+                    card_obj["card_view"].commit_edit_field(card_obj)
+                    if card_obj.get("last_edit_action") == "commit":
+                        self._persist_card_entity(card_obj)
+                    else:
+                        self._save_card_draft(card_obj)
+                    card_obj["last_edit_action"] = None
+
+                self._close_wiki_link_picker(card_obj)
+                self._close_relation_picker(card_obj)
+                self._set_timeline_reanchor_target(card_obj)
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            delete_rect = card.get("delete_rect")
+            if (
+                delete_rect is not None
+                and delete_rect.collidepoint(mouse_pos)
+                and card.get("is_edit_mode", False)
+                and card_view is not None
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if not card_obj.get("delete_confirm_active", False):
+                    card_obj["delete_confirm_active"] = True
+                    card_obj["active_edit_field"] = None
+                    card_obj["edit_buffer"] = ""
+                    card_obj["edit_original_value"] = None
+                    self._clear_timeline_edit_target()
+                    self._close_wiki_link_picker(card_obj)
+                    self._close_relation_picker(card_obj)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+                self._delete_card_entry(card_obj)
+                return "__ui_consumed__"
+
+            lock_toggle_rect = card.get("lock_toggle_rect")
+            if lock_toggle_rect is not None and lock_toggle_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                card_obj["relation_lock_active"] = not card_obj.get("relation_lock_active", False)
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            edit_toggle_rect = card.get("edit_toggle_rect")
+            if edit_toggle_rect is not None and edit_toggle_rect.collidepoint(mouse_pos) and card_view is not None:
+                card_obj = self._bring_card_to_front(index)
+                if card_obj.get("is_temporary", False):
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+                relation_sync_field = card_obj.get("last_committed_field")
+                persisted_on_commit = False
+                had_active_edit = bool(card_obj.get("is_edit_mode", False) and card_obj.get("active_edit_field"))
+                if card_obj.get("is_edit_mode", False) and card_obj.get("active_edit_field"):
+                    relation_sync_field = card_obj.get("active_edit_field")
+                    card_obj["card_view"].commit_edit_field(card_obj)
+                    if card_obj.get("last_edit_action") == "commit":
+                        relation_sync_field = card_obj.get("last_committed_field") or relation_sync_field
+                        persisted_on_commit = bool(self._persist_card_entity(card_obj))
+                    else:
+                        self._save_card_draft(card_obj)
+                    card_obj["last_edit_action"] = None
+                card_obj["card_view"].toggle_edit_mode(card_obj)
+                if card_obj.get("is_edit_mode", False):
+                    if self._card_is_cladistic_entity(card_obj):
+                        self._update_derived_clade_color(card_obj.get("entity_id"), persist=True, force=True)
+                else:
+                    if not persisted_on_commit and (had_active_edit or card_obj.get("pending_color_persist", False)):
+                        self._persist_card_entity(card_obj)
+                    if self._edit_field_requires_relation_sync(card_obj, relation_sync_field):
+                        self._sync_bidirectional_relations(persist=True)
+                    if self.canvas_relation_link_source_id == card_obj.get("entity_id"):
+                        self._clear_canvas_relation_link()
+                    self._clear_timeline_edit_target()
+                    self._close_wiki_link_picker(card_obj)
+                    self._close_relation_picker(card_obj)
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            for resize_edges, hitbox in card.get("resize_hitboxes", []):
+                if hitbox.collidepoint(mouse_pos):
+                    card_obj = self._bring_card_to_front(index)
+                    self._begin_card_resize(card_obj, mouse_pos, resize_edges)
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
+
+            if card.get("resize_handle_rect") is not None and card["resize_handle_rect"].collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                self._begin_card_resize(card_obj, mouse_pos, "bottom_right")
+                self._layout_all_cards()
+                return "__ui_consumed__"
+
+            if card.get("header_drag_rect") is not None and card["header_drag_rect"].collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                self._begin_card_drag(card_obj, mouse_pos)
+                self._layout_all_cards()
+                return "__ui_consumed__"
+
+            for match_index, match_rect in card.get("relation_picker_hitboxes", []):
+                if match_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    if match_index == "note":
+                        self._open_relation_note_prompt(
+                            card_obj,
+                            {"field_key": card_obj.get("active_edit_field")},
+                            initial_text=card_obj.get("relation_picker_query", ""),
+                        )
+                    elif match_index == "create_target":
+                        opened = self._open_entry_name_prompt(
+                            None,
+                            mode="new_entry",
+                            context={
+                                "link_source_entity_id": card_obj.get("entity_id"),
+                                "link_field_key": card_obj.get("active_edit_field"),
+                                "target": card_obj.get("relation_picker_target"),
+                            },
+                        )
+                        if not opened:
+                            self._open_relation_target_template_picker(
+                                card_obj,
+                                {
+                                    "kind": "create",
+                                    "field_key": card_obj.get("active_edit_field"),
+                                    "target": card_obj.get("relation_picker_target") or "locations",
+                                    "entity_id": card_obj.get("relation_picker_query", ""),
+                                    "label": card_obj.get("relation_picker_query", ""),
+                                },
+                            )
+                    else:
+                        if self._insert_relation_from_picker(card_obj, match_index=match_index):
+                            self._finalize_relation_picker_edit(card_obj)
+                            self._sync_card_years_from_entity(card_obj)
+                            self._refresh_timeline_items()
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+            for choice_index, choice_rect in card.get("choice_picker_hitboxes", []):
+                if choice_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    if card_obj["card_view"].select_controlled_choice(card_obj, choice_index):
+                        # A click on a dropdown option is itself the confirmation:
+                        # commit the selected value immediately instead of leaving
+                        # it as an uncommitted draft that the user cannot confirm.
+                        # Controlled-choice fields never feed the timeline, so skip
+                        # the year sync / timeline rebuild that a generic commit does
+                        # - those are the expensive part and pure waste here.
+                        card_obj["card_view"].commit_edit_field(card_obj)
+                        if card_obj.get("last_edit_action") == "commit":
+                            self._persist_card_entity(card_obj)
+                        else:
+                            self._save_card_draft(card_obj)
+                        card_obj["last_edit_action"] = None
+                        self._relayout_cards()
+                    return "__ui_consumed__"
+
+            for relation_info, relation_rect in card.get("relation_hitboxes", []):
+                if relation_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    if self._handle_relation_chip_click(card_obj, relation_info, mouse_pos=mouse_pos):
+                        return "__ui_consumed__"
+
+            for link_info in card.get("wiki_link_hitboxes", []):
+                link_rect = link_info.get("rect")
+                if link_rect is not None and link_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    if self._handle_wiki_link_click(card_obj, link_info):
+                        self._relayout_cards()
+                        return "__ui_consumed__"
+
+            if (
+                card_view is not None
+                and hasattr(card_view, "handle_person_quotes_click")
+                and card_view.handle_person_quotes_click(card, mouse_pos)
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if card_obj.get("last_edit_action") == "commit":
+                    self._persist_card_entity(card_obj)
+                    self._sync_card_years_from_entity(card_obj)
+                    self._refresh_timeline_items()
+                card_obj["last_edit_action"] = None
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            if card_view is not None and card_view.handle_location_click(card, mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                pending_location_action = card_obj.pop("pending_location_action", None)
+                if card_obj.get("relation_picker_open") and card_obj.get("relation_picker_target"):
+                    self._open_relation_picker(card_obj)
+                if card_obj.get("last_edit_action") == "commit":
+                    self._persist_card_entity(card_obj)
+                    related_update_ids = list(card_obj.pop("location_related_entity_update_ids", []) or [])
+                    for related_entity_id in related_update_ids:
+                        related_entity = self.world_model.get_entity(related_entity_id) if self.world_model is not None else None
+                        if isinstance(related_entity, dict):
+                            self._persist_entity_to_repository(related_entity)
+                    self._sync_bidirectional_relations(persist=True)
+                    self._refresh_timeline_items()
+                elif card_obj.get("last_edit_action") == "draft":
+                    self._save_card_draft(card_obj)
+                card_obj["last_edit_action"] = None
+                self._relayout_cards()
+                if isinstance(pending_location_action, dict):
+                    return pending_location_action
+                return "__ui_consumed__"
+
+            if card_view is not None and card_view.handle_production_click(card, mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                pending_production_action_opened = self._open_pending_production_site_prompt(card_obj)
+                if card_obj.get("last_edit_action") == "commit":
+                    removed_ids = list(card_obj.pop("production_removed_entity_ids", []) or [])
+                    for production_id in removed_ids:
+                        self._remove_entity_from_repository("production", production_id)
+                    related_update_ids = list(card_obj.pop("production_related_entity_update_ids", []) or [])
+                    for related_entity_id in related_update_ids:
+                        related_entity = self.world_model.get_entity(related_entity_id) if self.world_model is not None else None
+                        if isinstance(related_entity, dict):
+                            self._persist_entity_to_repository(related_entity)
+                    if not related_update_ids and not removed_ids:
+                        self._persist_card_entity(card_obj)
+                    self._sync_card_years_from_entity(card_obj)
+                    self._refresh_timeline_items()
+                elif card_obj.get("last_edit_action") == "draft":
+                    self._save_card_draft(card_obj)
+                card_obj["last_edit_action"] = None
+                self._relayout_cards()
+                if pending_production_action_opened:
+                    return "__ui_consumed__"
+                return "__ui_consumed__"
+
+            phylogeny_click_active = (
+                card_view is not None
+                and getattr(card_view, "_is_phylogeny_mode", lambda: False)()
+            )
+            phylogeny_input_rect = card.get("phylogeny_parent_input_rect")
+            if phylogeny_click_active and phylogeny_input_rect is not None and phylogeny_input_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                for open_card in self.cards:
+                    open_card["phylogeny_parent_input_active"] = open_card is card_obj
+                    open_card["phylogeny_child_input_active"] = False
+                card_obj.setdefault("phylogeny_parent_query", "")
+                card_obj["phylogeny_parent_matches"] = find_clade_matches(
+                    self.world_model,
+                    card_obj.get("phylogeny_parent_query", ""),
+                )
+                card_obj["phylogeny_parent_selected_index"] = 0
+                self.browser_search_active = False
+                self._relayout_single_card(card_obj)
+                return "__ui_consumed__"
+
+            if phylogeny_click_active:
+                for match_row in card.get("phylogeny_parent_match_rows", []):
+                    match_rect = match_row.get("rect")
+                    if match_rect is not None and match_rect.collidepoint(mouse_pos):
+                        card_obj = self._bring_card_to_front(index)
+                        match_index = match_row.get("index")
+                        if match_index == "create":
+                            match_index = None
+                            card_obj["phylogeny_parent_matches"] = []
+                        self._confirm_phylogeny_parent_input(card_obj, match_index=match_index)
+                        return "__ui_consumed__"
+
+            phylogeny_child_input_rect = card.get("phylogeny_child_input_rect")
+            if phylogeny_click_active and phylogeny_child_input_rect is not None and phylogeny_child_input_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                for open_card in self.cards:
+                    open_card["phylogeny_parent_input_active"] = False
+                    open_card["phylogeny_child_input_active"] = open_card is card_obj
+                card_obj.setdefault("phylogeny_child_query", "")
+                card_obj["phylogeny_child_matches"] = self._phylogeny_child_matches_for_card(
+                    card_obj,
+                    card_obj.get("phylogeny_child_query", ""),
+                )
+                card_obj["phylogeny_child_selected_index"] = 0
+                self.browser_search_active = False
+                self._relayout_single_card(card_obj)
+                return "__ui_consumed__"
+
+            if phylogeny_click_active:
+                for match_row in card.get("phylogeny_child_match_rows", []):
+                    match_rect = match_row.get("rect")
+                    if match_rect is not None and match_rect.collidepoint(mouse_pos):
+                        card_obj = self._bring_card_to_front(index)
+                        match_index = match_row.get("index")
+                        if match_index == "create":
+                            match_index = None
+                            card_obj["phylogeny_child_matches"] = []
+                        self._confirm_phylogeny_child_input(card_obj, match_index=match_index)
+                        return "__ui_consumed__"
+
+                for clade_id, node_rect in card.get("phylogeny_node_hitboxes", []):
+                    if node_rect is not None and node_rect.collidepoint(mouse_pos):
+                        self._bring_card_to_front(index)
+                        clade = self.world_model.get_entity(clade_id) if self.world_model is not None else None
+                        if clade is not None:
+                            self._ensure_card(clade)
+                            self._relayout_cards()
+                        return "__ui_consumed__"
+
+                for phylogeny_row in (
+                    list(card.get("phylogeny_parent_tree_rows", []))
+                    + list(card.get("phylogeny_local_tree_rows", []))
+                ):
+                    row_rect = phylogeny_row.get("rect")
+                    target_id = phylogeny_row.get("id")
+                    if row_rect is not None and target_id and row_rect.collidepoint(mouse_pos):
+                        self._bring_card_to_front(index)
+                        target = self.world_model.get_entity(target_id) if self.world_model is not None else None
+                        if target is not None:
+                            self._ensure_card(target)
+                            self._relayout_cards()
+                        return "__ui_consumed__"
+
+            if card_view is not None:
+                remove_hitboxes = list(card.get("tag_remove_hitboxes", []))
+                computed_remove_hit = self._computed_tag_remove_hit_at(card, mouse_pos)
+                if computed_remove_hit is not None and not any(
+                    info.get("rect") is not None and info.get("rect").collidepoint(mouse_pos)
+                    for info in remove_hitboxes
+                ):
+                    remove_hitboxes.append(computed_remove_hit)
+                for remove_info in remove_hitboxes:
+                    remove_rect = remove_info.get("rect")
+                    if (
+                        remove_rect is not None
+                        and remove_rect.collidepoint(mouse_pos)
+                        and card.get("is_edit_mode", False)
+                        and card.get("active_edit_field") == "tags"
+                    ):
+                        card_obj = self._bring_card_to_front(index)
+                        if hasattr(card_obj.get("card_view"), "remove_tag_value"):
+                            card_obj["card_view"].remove_tag_value(card_obj, remove_info.get("tag"))
+                            if card_obj.get("last_edit_action") == "commit":
+                                self._persist_card_entity(card_obj)
+                                card_obj["last_edit_action"] = None
+                        self._relayout_cards()
+                        return "__ui_consumed__"
+
+                for suggestion_info in card.get("tag_suggestion_hitboxes", []):
+                    suggestion_rect = suggestion_info.get("rect")
+                    if (
+                        suggestion_rect is not None
+                        and suggestion_rect.collidepoint(mouse_pos)
+                        and card.get("is_edit_mode", False)
+                        and card.get("active_edit_field") == "tags"
+                    ):
+                        card_obj = self._bring_card_to_front(index)
+                        if self._insert_tag_suggestion_into_card(card_obj, suggestion_info.get("tag")):
+                            if card_obj.get("last_edit_action") == "commit":
+                                self._persist_card_entity(card_obj)
+                                card_obj["last_edit_action"] = None
+                            self._relayout_cards()
+                        return "__ui_consumed__"
+
+                tag_hitboxes = list(card.get("tag_chip_hitboxes", []))
+                computed_tag_hit = self._computed_tag_chip_hit_at(card, mouse_pos)
+                if computed_tag_hit is not None and not any(
+                    info.get("rect") is not None and info.get("rect").collidepoint(mouse_pos)
+                    for info in tag_hitboxes
+                ):
+                    tag_hitboxes.append(computed_tag_hit)
+                for tag_info in tag_hitboxes:
+                    tag_rect = tag_info.get("rect")
+                    if tag_rect is None or not tag_rect.collidepoint(mouse_pos):
+                        continue
+                    card_obj = self._bring_card_to_front(index)
+                    if card_obj.get("is_edit_mode", False):
+                        card_obj["card_view"].begin_edit_field(card_obj, "tags")
+                        self._close_relation_picker(card_obj)
+                        self._relayout_cards()
+                        return "__ui_consumed__"
+                    tag_entity = self._find_tag_entity_for_value(tag_info.get("tag"))
+                    if tag_entity is not None:
+                        self._ensure_card(tag_entity)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+                for snapshot_info in card.get("timeline_snapshot_chip_hitboxes", []):
+                    snapshot_rect = snapshot_info.get("rect")
+                    if snapshot_rect is None or not snapshot_rect.collidepoint(mouse_pos):
+                        continue
+                    card_obj = self._bring_card_to_front(index)
+                    selected_range = (
+                        int(snapshot_info.get("start_year")),
+                        int(snapshot_info.get("end_year")),
+                    )
+                    if (
+                        card_obj.get("active_timeline_snapshot_range") == selected_range
+                        and card_obj.get("working_year_range") is None
+                    ):
+                        card_obj.pop("active_timeline_snapshot_range", None)
+                    else:
+                        card_obj["active_timeline_snapshot_range"] = selected_range
+                    card_obj["scroll_y"] = 0
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+            editable_result = self._handle_editable_field_click(card, index, mouse_pos)
+            if editable_result is not None:
+                return editable_result
+
+            for section_info in card.get("wiki_section_hitboxes", []):
+                section_rect = section_info.get("rect")
+                if (
+                    section_rect is not None
+                    and section_rect.collidepoint(mouse_pos)
+                    and card_view is not None
+                    and card.get("is_edit_mode", False)
+                ):
+                    card_obj = self._bring_card_to_front(index)
+                    card_obj["active_color_role"] = "wiki"
+                    card_obj["active_wiki_section_id"] = section_info.get("section_id")
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
+
+            if self._handle_task_checklist_click(card, mouse_pos):
+                self._bring_card_to_front(index)
+                return "__ui_consumed__"
+
+            for tool_info, tool_rect in card.get("toolbelt_hitboxes", []):
+                if tool_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    if tool_info.get("kind") == "color_picker":
+                        if tool_info.get("control") == "role":
+                            card_obj["active_color_role"] = tool_info.get("role", "body")
+                            if card_obj["active_color_role"] == "wiki" and not card_obj.get("active_wiki_section_id"):
+                                first_section = next(iter(card_obj.get("wiki_section_hitboxes", [])), None)
+                                if isinstance(first_section, dict):
+                                    card_obj["active_wiki_section_id"] = first_section.get("section_id")
+                            self._layout_all_cards()
+                            return "__ui_consumed__"
+
+                        channel = tool_info.get("channel")
+                        slider_rect = tool_info.get("slider_rect")
+                        color_field = tool_info.get("color_field")
+                        role = None if color_field else card_obj.get("active_color_role", "body")
+                        section_id = None if color_field else card_obj.get("active_wiki_section_id")
+                        self._set_card_color_from_slider(
+                            card_obj,
+                            channel,
+                            slider_rect,
+                            mouse_pos[0],
+                            persist=False,
+                            role=role,
+                            section_id=section_id,
+                            color_field=color_field,
+                        )
+                        visual_rect = self._card_visual_rect(card_obj)
+                        visual_area = visual_rect.width * visual_rect.height if visual_rect is not None else 0
+                        if visual_area >= 1_500_000:
+                            preview_interval_ms = 80
+                        elif visual_area >= 600_000:
+                            preview_interval_ms = 50
+                        else:
+                            preview_interval_ms = 33
+                        self.active_card_color_slider = {
+                            "entity_id": card_obj.get("entity_id"),
+                            "channel": channel,
+                            "slider_rect": slider_rect,
+                            "role": role,
+                            "section_id": section_id,
+                            "color_field": color_field,
+                            "last_update_ms": pygame.time.get_ticks(),
+                            "pending_mouse_x": mouse_pos[0],
+                            "preview_interval_ms": preview_interval_ms,
+                        }
+                        self._card_color_drag_surface_cache = {}
+                        return "__ui_consumed__"
+                    if tool_info.get("kind") == "plant_asset_creator":
+                        self._create_or_open_plant_asset(card_obj, tool_info.get("asset_role"))
+                        self._relayout_cards()
+                        return "__ui_consumed__"
+                    if tool_info.get("kind") == "jump_to_character_tab":
+                        card_view.set_active_subtab("simulation", "data")
+                        self._relayout_cards()
+                        return "__ui_consumed__"
+                    action_id = tool_info.get("action_id")
+                    if action_id:
+                        if action_id == "knowledge_define_stellar_neighbourhood":
+                            self._begin_stellar_neighbourhood_link(card_obj)
+                            return "__ui_consumed__"
+                        self._layout_all_cards()
+                        return {
+                            "id": action_id,
+                            "entity_id": card_obj.get("entity_id"),
+                            "launch_mode": tool_info.get("launch_mode"),
+                        }
+                    self._open_toolbelt_name_prompt(card_obj, tool_info)
+                    return "__ui_consumed__"
+
+            for tab_name, tab_rect in card.get("tab_hitboxes", []):
+                if tab_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    card_obj["card_view"].set_active_tab(tab_name)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+            for tab_name, subtab_name, subtab_rect in card.get("subtab_hitboxes", []):
+                if subtab_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    card_obj["card_view"].set_active_subtab(tab_name, subtab_name)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+            add_illustration_rect = card.get("media_add_illustration_rect")
+            for asset_role, button_rect in card.get("media_asset_quick_hitboxes", []):
+                if button_rect.collidepoint(mouse_pos):
+                    card_obj = self._bring_card_to_front(index)
+                    self._create_or_open_plant_asset(card_obj, asset_role)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+            if add_illustration_rect is not None and add_illustration_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                self._open_illustration_prompt(card_obj)
+                self._relayout_cards()
+                return "__ui_consumed__"
+
+            for illustration_id, title_rect in card.get("media_illustration_link_hitboxes", []):
+                if title_rect.collidepoint(mouse_pos):
+                    self._bring_card_to_front(index)
+                    illustration = self.world_model.get_entity(illustration_id) if self.world_model is not None else None
+                    if illustration is not None:
+                        self._ensure_card(illustration)
+                        self._relayout_cards()
+                    return "__ui_consumed__"
+
+            for illustration_id, button_rect in card.get("media_pixel_art_hitboxes", []):
+                if button_rect.collidepoint(mouse_pos):
+                    self._bring_card_to_front(index)
+                    self._open_pixel_art_editor(illustration_id)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+            for illustration_id, button_rect in card.get("media_import_hitboxes", []):
+                if button_rect.collidepoint(mouse_pos):
+                    card_obj = self._bring_card_to_front(index)
+                    self.choose_and_assign_illustration_image(illustration_id)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+            for section_name, section_rect in card.get("section_hitboxes", []):
+                if section_rect.collidepoint(mouse_pos) and card_view is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    card_obj["card_view"].toggle_section(section_name)
+                    self._relayout_cards()
+                    return "__ui_consumed__"
+
+            for year, hitbox in card.get("year_hitboxes", []):
+                if hitbox.collidepoint(mouse_pos):
+                    card_obj = self._bring_card_to_front(index)
+                    card_obj["selected_year"] = year
+                    card_obj["active_timeline_snapshot_range"] = (year, year)
+                    self._focus_timeline_year(year)
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
+
+            for snapshot_info in card.get("timeline_snapshot_timeline_hitboxes", []):
+                snapshot_rect = snapshot_info.get("rect")
+                if snapshot_rect is None or not snapshot_rect.collidepoint(mouse_pos):
+                    continue
+                start_year = int(snapshot_info.get("start_year"))
+                end_year = int(snapshot_info.get("end_year", start_year))
+                self._set_working_year_from_card_snapshot(start_year, end_year)
+                self._bring_card_to_front(index)
+                self._layout_all_cards()
+                return "__ui_consumed__"
+
+            if card_view is not None:
+                period_action = card_view.handle_temporal_period_timeline_click(card, mouse_pos)
+                if period_action is not None:
+                    card_obj = self._bring_card_to_front(index)
+                    if period_action == "commit":
+                        if card_obj.get("is_draft_entity", False):
+                            self._save_card_draft(card_obj)
+                        else:
+                            self._persist_card_entity(card_obj)
+                        self._sync_card_years_from_entity(card_obj)
+                        self._refresh_timeline_items()
+                    self._layout_all_cards()
+                    return "__ui_consumed__"
+
+            period_add_button_rect = card.get("period_add_button_rect")
+            if (
+                card_view is not None
+                and period_add_button_rect is not None
+                and card.get("is_edit_mode", False)
+                and period_add_button_rect.collidepoint(mouse_pos)
+            ):
+                card_obj = self._bring_card_to_front(index)
+                if card_obj["card_view"].add_period_from_draft(card_obj):
+                    if card_obj.get("is_draft_entity", False):
+                        self._save_card_draft(card_obj)
+                    else:
+                        self._persist_card_entity(card_obj)
+                    self._sync_card_years_from_entity(card_obj)
+                    self._refresh_timeline_items()
+                self._layout_all_cards()
+                return "__ui_consumed__"
+
+            launch_rect = card.get("launch_rect")
+            if launch_rect is not None and launch_rect.collidepoint(mouse_pos):
+                card_obj = self._bring_card_to_front(index)
+                self._layout_all_cards()
+                for option, mode_rect in card_obj.get("launch_mode_hitboxes", []):
+                    if mode_rect.collidepoint(mouse_pos):
+                        return {
+                            "id": "knowledge_launch_mode",
+                            "entity_id": card_obj.get("entity_id"),
+                            "launch_mode": option.get("mode"),
+                            "year": card_obj.get("selected_year"),
+                        }
+                return {
+                    "id": "knowledge_launch_entry",
+                    "entity_id": card_obj.get("entity_id"),
+                    "year": card_obj.get("selected_year"),
+                }
+
+            toolbelt_rect = card.get("toolbelt_rect")
+            if toolbelt_rect is not None and toolbelt_rect.collidepoint(mouse_pos):
+                for open_card in self.cards:
+                    if open_card is not card:
+                        self._close_type_picker(open_card)
+                self._bring_card_to_front(index)
+                self._layout_all_cards()
+                return "__ui_consumed__"
+
+            if card["rect"].collidepoint(mouse_pos):
+                for open_card in self.cards:
+                    if open_card is not card:
+                        self._close_type_picker(open_card)
+                self._bring_card_to_front(index)
+                self._layout_all_cards()
+                return "__ui_consumed__"
+
+        for card in self.cards:
+            self._close_type_picker(card)
+        self.active_canvas_pan = True
+        self.canvas_pan_start_mouse = mouse_pos
+        self.canvas_pan_start_offset = (self.canvas_offset_x, self.canvas_offset_y)
+        return "__ui_consumed__"

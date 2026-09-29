@@ -13,6 +13,9 @@ This module will later support:
 """
 
 
+from world.year_utils import parse_year
+
+
 class Yearer:
 
     def __init__(self, entity_loader):
@@ -29,25 +32,16 @@ class Yearer:
         """
         Converts year values to integers when possible.
 
-        Handles YAML values like:
+        Handles repository values like:
         None
         "null"
         "2400"
         """
 
-        if value in (None, "null"):
-            return None
+        return parse_year(value)
 
-        if isinstance(value, int):
-            return value
-
-        if isinstance(value, str):
-            try:
-                return int(value)
-            except ValueError:
-                return None
-
-        return None
+    def has_start_year(self, entity):
+        return self.normalize_year(entity.get("start_year")) is not None
 
     # --------------------------------------------------
     # Resolve entity state for a year
@@ -65,6 +59,9 @@ class Yearer:
 
         start = self.normalize_year(entity.get("start_year"))
         end = self.normalize_year(entity.get("end_year"))
+
+        if start is None:
+            return None
 
         if start is not None and year < start:
             return None
@@ -89,6 +86,9 @@ class Yearer:
 
             start = self.normalize_year(entity.get("start_year"))
             end = self.normalize_year(entity.get("end_year"))
+
+            if start is None:
+                continue
 
             if start is not None and year < start:
                 continue

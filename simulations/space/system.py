@@ -1,6 +1,8 @@
 from pathlib import Path
+import hashlib
 import math
-import yaml
+
+from world.year_utils import parse_year
 
 
 class CelestialSystem:
@@ -11,7 +13,7 @@ class CelestialSystem:
     * store instantiated space objects
     * expose renderer-safe entries
     * update all objects
-    * populate itself from the 'systems' dataset in WorldModel
+    * populate itself from system-role location entries in WorldModel
     """
 
     def __init__(self):
@@ -24,11 +26,24 @@ class CelestialSystem:
     def _project_root(self):
         return Path(__file__).resolve().parents[2]
 
-    def _locations_file_path(self):
-        return self._project_root() / "entries" / "locations.yaml"
+    def _resolve_entity_id(self, world_model, entity_id):
+        if not entity_id:
+            return entity_id
+        loader = getattr(world_model, "loader", None)
+        aliases = getattr(loader, "entity_aliases", {}) if loader is not None else {}
+        return aliases.get(entity_id, entity_id)
 
-    def _systems_file_path(self):
-        return self._project_root() / "entries" / "systems.yaml"
+    def _entity_matches_id(self, world_model, entity, entity_id):
+        if not entity_id or not entity:
+            return False
+        resolved_entity_id = self._resolve_entity_id(world_model, entity_id)
+        candidates = {
+            entity.get("id"),
+            entity.get("legacy_system_entity_id"),
+            entity.get("derived_from_system_body"),
+            entity.get("location_entity"),
+        }
+        return resolved_entity_id in candidates or entity_id in candidates
 
     def _generated_location_id_for_body(self, body_entity):
         body_id = body_entity.get("id", "")
@@ -92,77 +107,8 @@ class CelestialSystem:
             "population": {
                 "y0": 0,
             },
-            "start_year": 0,
+            "start_year": None,
         }
-
-    def _load_yaml_list(self, path):
-        if not path.exists():
-            return []
-        with path.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or []
-        if not isinstance(data, list):
-            raise ValueError(f"Expected list YAML in {path}")
-        return data
-
-    def _write_yaml_list(self, path, data):
-        with path.open("w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
-
-    def _append_generated_location_entry(self, path, entry):
-        """
-        Append one generated location entry to locations.yaml with readable spacing
-        and a visual header, instead of rewriting the whole file.
-
-        Format:
-        * two leading newlines before the block
-        * one header comment with id and pretty name
-        * YAML block for a single list item
-        """
-        entry_id = entry.get("id", "unknown_location")
-        entry_name = entry.get("pretty_name") or entry.get("name") or entry_id
-        header = f"#----------{entry_id}----{entry_name}-----------"
-
-        yaml_block = yaml.safe_dump(
-            [entry],
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        ).rstrip()
-
-        with path.open("a", encoding="utf-8") as f:
-            f.write("\n\n")
-            f.write(header)
-            f.write("\n")
-            f.write(yaml_block)
-            f.write("\n")
-
-    def _append_generated_location_entry(self, path, entry):
-        """
-        Append one generated location entry to locations.yaml while preserving
-        existing file layout better than rewriting the full YAML list.
-
-        Format:
-        * one blank line before the generated block
-        * one header comment containing id and name
-        * the generated YAML entry block
-        """
-        entry_id = entry.get("id", "unknown_location")
-        entry_name = entry.get("name") or entry.get("pretty_name") or entry_id
-        header = f"#----------{entry_id}----{entry_name}-----------"
-
-        yaml_block = yaml.safe_dump(
-            [entry],
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        ).rstrip()
-
-        with path.open("a", encoding="utf-8") as f:
-            f.write("\n\n")
-            f.write(header)
-            f.write("\n")
-            f.write(yaml_block)
-            f.write("\n")
 
     def ensure_location_anchor_for_body_entity(self, body_entity, world_model=None):
         """
@@ -174,6 +120,16 @@ class CelestialSystem:
         if not body_entity:
             return None, False
 
+        if (
+            body_entity.get("_dataset") == "locations"
+            and body_entity.get("type") == "location"
+            and (
+                body_entity.get("location_class") in {"planet", "moon"}
+                or body_entity.get("body_class") in {"planet", "moon", "dwarf_planet", "asteroid"}
+            )
+        ):
+            return body_entity.get("location_entity") or body_entity.get("id"), False
+
         existing_location_id = body_entity.get("location_entity")
         if existing_location_id:
             if world_model is None or world_model.get_entity(existing_location_id) is not None:
@@ -182,33 +138,17 @@ class CelestialSystem:
         generated_entry = self.build_generated_location_entry(body_entity)
         generated_location_id = generated_entry["id"]
 
-        locations_path = self._locations_file_path()
-        systems_path = self._systems_file_path()
+        loader = getattr(world_model, "loader", None) if world_model is not None else None
+        if loader is None or not hasattr(loader, "persist_entity"):
+            return None, False
 
-        locations_data = self._load_yaml_list(locations_path)
-        systems_data = self._load_yaml_list(systems_path)
-
-        location_exists = any(entry.get("id") == generated_location_id for entry in locations_data)
-
+        location_exists = generated_location_id in getattr(loader, "entities", {})
         if not location_exists:
-            locations_data.append(generated_entry)
-            self._append_generated_location_entry(locations_path, generated_entry)
-
-        body_id = body_entity.get("id")
-        systems_changed = False
-
-        for entry in systems_data:
-            if entry.get("id") != body_id:
-                continue
-
-            if entry.get("location_entity") != generated_location_id:
-                entry["location_entity"] = generated_location_id
-                systems_changed = True
-            break
-
-        if systems_changed:
-            self._write_yaml_list(systems_path, systems_data)
-
+            generated_entry["_dataset"] = "locations"
+            loader.persist_entity(generated_entry)
+        if body_entity.get("location_entity") != generated_location_id:
+            body_entity["location_entity"] = generated_location_id
+            loader.persist_entity(body_entity)
         return generated_location_id, (not location_exists)
 
     def get_source_entity_for_space_object(self, space_object):
@@ -232,9 +172,14 @@ class CelestialSystem:
         self._entries.append(entry)
 
         if source_entity is not None:
-            source_entity_id = source_entity.get("id")
-            if source_entity_id:
-                self.objects_by_id[source_entity_id] = obj
+            for source_entity_id in (
+                source_entity.get("id"),
+                source_entity.get("legacy_system_entity_id"),
+                source_entity.get("derived_from_system_body"),
+                source_entity.get("location_entity"),
+            ):
+                if source_entity_id:
+                    self.objects_by_id[source_entity_id] = obj
 
     def get_entries(self):
         """
@@ -274,18 +219,78 @@ class CelestialSystem:
 
         raise AttributeError("WorldModel has no supported active-entity API.")
 
-    def _get_active_system_entities(self, world_model, year, root_system_id):
+    def _normalize_year(self, value):
+        return parse_year(value)
+
+    def _space_entity_is_active(self, entity, year):
         """
-        Return active orbital-body entries for the selected star system.
+        Space anchors without explicit dates are still active.
+
+        The wider repository timeline treats missing start_year as inactive,
+        but stars and legacy orbital parents often omit it. Space sim needs
+        those anchors so dated planets/moons can resolve their hierarchy.
         """
-        active_entities = list(self._iter_active_entities(world_model, year))
+        start = self._normalize_year(entity.get("start_year"))
+        end = self._normalize_year(entity.get("end_year"))
+        if start is not None and year < start:
+            return False
+        if end is not None and year > end:
+            return False
+        return True
+
+    def _get_active_system_entities(self, world_model, year, root_system_id, root_body_id=None):
+        """
+        Return active orbital-body location entries for the selected star system.
+        """
+        if hasattr(world_model, "get_entities_by_dataset"):
+            active_entities = [
+                entity
+                for entity in world_model.get_entities_by_dataset("locations")
+                if self._space_entity_is_active(entity, year)
+            ]
+        else:
+            active_entities = list(self._iter_active_entities(world_model, year))
+
+        orbital_location_classes = {
+            "star",
+            "planet",
+            "moon",
+            "dwarf_planet",
+            "asteroid",
+            "comet",
+            "space_station",
+            "station",
+            "orbital_body",
+            "spacecraft",
+            "orbital_spacecraft",
+            "planetary_spacecraft",
+            "system_spacecraft",
+            "interstellar_spacecraft",
+        }
+
+        def is_orbital_body(entity):
+            if entity.get("system_role") == "orbital_body":
+                return True
+            class_key = str(entity.get("location_class") or "").strip().lower()
+            return class_key in orbital_location_classes and bool(entity.get("star_system"))
+
+        bodies = [
+            entity for entity in active_entities
+            if entity.get("_dataset") == "locations"
+            and entity.get("type") == "location"
+            and is_orbital_body(entity)
+            and self._resolve_entity_id(world_model, entity.get("star_system"))
+            == self._resolve_entity_id(world_model, root_system_id)
+        ]
+
+        if root_body_id is None:
+            return bodies
 
         return [
-            entity for entity in active_entities
-            if entity.get("_dataset") == "systems"
-            and entity.get("type") == "system"
-            and entity.get("system_role") == "orbital_body"
-            and entity.get("star_system") == root_system_id
+            entity for entity in bodies
+            if self._entity_matches_id(world_model, entity, root_body_id)
+            or self._resolve_entity_id(world_model, entity.get("parent_body"))
+            == self._resolve_entity_id(world_model, root_body_id)
         ]
 
     def _coerce_color(self, value, fallback=(180, 180, 180)):
@@ -304,6 +309,62 @@ class CelestialSystem:
         except (TypeError, ValueError):
             return fallback
 
+    def _coerce_hex_color(self, value, fallback=(180, 180, 180)):
+        text = str(value or "").strip()
+        if text.startswith("#"):
+            text = text[1:]
+        if len(text) != 6:
+            return fallback
+        try:
+            return (
+                int(text[0:2], 16),
+                int(text[2:4], 16),
+                int(text[4:6], 16),
+            )
+        except ValueError:
+            return fallback
+
+    def _entity_display_color(self, entity, fallback=(180, 180, 180)):
+        color = self._coerce_color(entity.get("display_color"), fallback=None)
+        if color is not None:
+            return color
+
+        class_key = entity.get("spectral_class") or entity.get("star_class")
+        if entity.get("location_class") == "star" or entity.get("body_class") == "star":
+            try:
+                from simulations.space.stellar import stellar_profile_for_class
+
+                profile = stellar_profile_for_class(class_key)
+                return self._coerce_color(profile.get("display_color"), fallback=fallback)
+            except (ImportError, TypeError, ValueError):
+                pass
+
+        return self._coerce_hex_color(entity.get("card_color"), fallback=fallback)
+
+    def _entity_is_gas_giant(self, entity):
+        atmosphere = entity.get("atmosphere_model") if isinstance(entity, dict) else None
+        tags = set(entity.get("tags") or []) if isinstance(entity, dict) else set()
+        return bool(
+            entity.get("surface_render_mode") == "gas_giant_bands"
+            or entity.get("map_render_mode") == "gas_giant_bands"
+            or "gas_giant" in tags
+            or (isinstance(atmosphere, dict) and atmosphere.get("has_solid_surface") is False)
+        )
+
+    def _gas_giant_bands_for_entity(self, entity):
+        bands = entity.get("atmosphere_bands")
+        if isinstance(bands, list) and bands:
+            return bands
+        atmosphere = entity.get("atmosphere_model")
+        if isinstance(atmosphere, dict):
+            try:
+                from simulations.world_gen.natural_materials import atmospheric_band_palette
+
+                return atmospheric_band_palette(atmosphere).get("bands") or []
+            except ImportError:
+                pass
+        return []
+
     def _create_layers_for_entity(self, entity):
         """
         Create a minimal MapLayerStack from physical body size and display color.
@@ -312,9 +373,21 @@ class CelestialSystem:
 
         radius_m = float(entity.get("radius_m", 1.0) or 1.0)
         diameter_m = max(radius_m * 2.0, 1.0)
-        color = self._coerce_color(entity.get("display_color"))
+        color = self._entity_display_color(entity)
 
         stack = MapLayerStack(radius_m * 2.2)
+        if self._entity_is_gas_giant(entity):
+            stack.add_layer({
+                "name": "atmospheric bands",
+                "color": color,
+                "x": 0.0,
+                "y": 0.0,
+                "size": diameter_m,
+                "render_style": "gas_giant_bands",
+                "bands": self._gas_giant_bands_for_entity(entity),
+            })
+            return stack
+
         stack.add_layer({
             "name": "surface",
             "color": color,
@@ -331,7 +404,7 @@ class CelestialSystem:
         """
         from simulations.space.object import SpaceObject
 
-        entity_id = entity.get("location_entity")
+        entity_id = entity.get("location_entity") or entity.get("id")
 
         obj = SpaceObject(
             name=entity.get("name", entity.get("id")),
@@ -339,8 +412,67 @@ class CelestialSystem:
             position=(0.0, 0.0),
             entity_id=entity_id
         )
-        obj.source_system_entity_id = entity.get("id")
+        obj.source_system_entity_id = entity.get("legacy_system_entity_id") or entity.get("id")
         return obj
+
+    def _system_center_anchor(self, world_model, root_system_id):
+        system_entity = world_model.get_entity(root_system_id) if hasattr(world_model, "get_entity") else None
+        name = system_entity.get("name", root_system_id) if isinstance(system_entity, dict) else root_system_id
+        return {
+            "id": root_system_id,
+            "name": f"{name} Primary",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "star",
+            "star_system": root_system_id,
+            "mass_kg": 1.98847e30,
+            "radius_m": 696_340_000.0,
+            "spectral_class": "G",
+            "display_color": [255, 238, 188],
+        }
+
+    def _has_explicit_root_body(self, bodies):
+        for entity in bodies:
+            class_key = str(entity.get("location_class") or entity.get("body_class") or "").strip().lower()
+            if class_key == "star" or entity.get("system_role") == "star":
+                return True
+        return False
+
+    def _entity_has_orbit_size(self, entity):
+        try:
+            return float(entity.get("semi_major_axis_m", 0.0) or 0.0) > 0.0
+        except (TypeError, ValueError):
+            return False
+
+    def _resolved_parent_body_id(self, world_model, entity, root_system_id, primary_anchor_id):
+        class_key = str(entity.get("location_class") or entity.get("body_class") or "").strip().lower()
+        parent_location = self._resolve_entity_id(world_model, entity.get("parent_location"))
+        if class_key == "star" and parent_location == self._resolve_entity_id(world_model, root_system_id):
+            return None
+
+        for key in ("parent_body", "parent_location"):
+            parent_id = self._resolve_entity_id(world_model, entity.get(key))
+            if parent_id:
+                return parent_id
+
+        if class_key != "star" and self._entity_has_orbit_size(entity):
+            return primary_anchor_id or self._resolve_entity_id(world_model, root_system_id)
+        return None
+
+    def _mean_anomaly_radians_for_entity(self, entity):
+        stored_degrees = entity.get("mean_anomaly_deg_at_epoch")
+        if stored_degrees not in (None, ""):
+            try:
+                return math.radians(float(stored_degrees))
+            except (TypeError, ValueError):
+                pass
+        seed = "|".join(
+            str(entity.get(key) or "")
+            for key in ("id", "parent_body", "parent_location", "semi_major_axis_m", "eccentricity")
+        )
+        digest = hashlib.sha256(seed.encode("utf-8")).digest()
+        unit = int.from_bytes(digest[:8], "big") / float(2**64 - 1)
+        return unit * math.tau
 
     def _create_orbiting_object(self, entity, parent_obj):
         """
@@ -349,13 +481,13 @@ class CelestialSystem:
         from simulations.space.object import SpaceObject
         from simulations.space.orbit import KeplerOrbit
 
-        entity_id = entity.get("location_entity")
+        entity_id = entity.get("location_entity") or entity.get("id")
 
         orbit = KeplerOrbit(
             parent=parent_obj,
             a=float(entity.get("semi_major_axis_m", 0.0) or 0.0),
             e=float(entity.get("eccentricity", 0.0) or 0.0),
-            M0=float(entity.get("mean_anomaly_deg_at_epoch", 0.0) or 0.0),
+            M0=self._mean_anomaly_radians_for_entity(entity),
         )
 
         obj = SpaceObject(
@@ -364,27 +496,45 @@ class CelestialSystem:
             orbit=orbit,
             entity_id=entity_id
         )
-        obj.source_system_entity_id = entity.get("id")
+        obj.source_system_entity_id = entity.get("legacy_system_entity_id") or entity.get("id")
         return obj
 
-    def populate_from_world_model(self, world_model, year, root_system_id):
+    def populate_from_world_model(self, world_model, year, root_system_id, root_body_id=None):
         """
-        Populate the celestial system from active entries in the 'systems' dataset.
+        Populate the celestial system from active system-role locations.
 
         Expected entry shape:
         * type: system
-        * system_role: orbital_body
+        * location_class: star/planet/moon/spacecraft/etc.
         * star_system: <root system id>
+        * optional root_body_id: include only that body and direct children
         """
         self._entries = []
         self.objects_by_id = {}
 
-        bodies = self._get_active_system_entities(world_model, year, root_system_id)
+        bodies = self._get_active_system_entities(
+            world_model,
+            year,
+            root_system_id,
+            root_body_id=root_body_id,
+        )
 
         if not bodies:
             return
 
         pending = {entity["id"]: entity for entity in bodies}
+        primary_anchor_id = None
+        if root_body_id is None and not self._has_explicit_root_body(bodies):
+            anchor = self._system_center_anchor(world_model, root_system_id)
+            primary_anchor_id = anchor["id"]
+            obj = self._create_root_object(anchor)
+            layers = self._create_layers_for_entity(anchor)
+            self.add(
+                obj,
+                name=anchor.get("name"),
+                layers=layers,
+                source_entity=anchor,
+            )
         stalled_last_round = False
 
         while pending:
@@ -392,9 +542,12 @@ class CelestialSystem:
 
             for entity_id in list(pending.keys()):
                 entity = pending[entity_id]
-                parent_body_id = entity.get("parent_body")
+                parent_body_id = self._resolve_entity_id(
+                    world_model,
+                    self._resolved_parent_body_id(world_model, entity, root_system_id, primary_anchor_id),
+                )
 
-                if not parent_body_id:
+                if not parent_body_id or self._entity_matches_id(world_model, entity, root_body_id):
                     obj = self._create_root_object(entity)
                     layers = self._create_layers_for_entity(entity)
                     self.add(
@@ -428,9 +581,8 @@ class CelestialSystem:
 
             if stalled_last_round:
                 unresolved_ids = ", ".join(sorted(pending.keys()))
-                raise ValueError(
-                    f"Could not resolve orbital parents in systems dataset: {unresolved_ids}"
-                )
+                print(f"Skipping unresolved orbital bodies: {unresolved_ids}")
+                break
 
             stalled_last_round = True
 

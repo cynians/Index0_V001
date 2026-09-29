@@ -6,7 +6,7 @@ class SpaceSimulation:
     hardcoding Sun / Earth / Moon directly in the simulation.
     """
 
-    def __init__(self, world_model=None, root_system_id="system_sol", year=2400):
+    def __init__(self, world_model=None, root_system_id="system_sol", year=2400, root_body_id=None):
         from engine.clock import Clock
         from simulations.space.system import CelestialSystem
         from engine.simulation_manager import SimulationManager
@@ -16,6 +16,7 @@ class SpaceSimulation:
 
         self.year = year
         self.root_system_id = root_system_id
+        self.root_body_id = root_body_id
 
         self.world_model = world_model if world_model is not None else WorldModel()
 
@@ -23,26 +24,59 @@ class SpaceSimulation:
         self.system = CelestialSystem()
         self.sim_manager = SimulationManager(self.sim_clock, self.system)
 
-        self.min_zoom = 1e-13
+        self.min_zoom = 1e-17
         self.max_zoom = 1e-6
         self.preferred_zoom = 1.0e-10
+        if self.root_body_id is not None:
+            self.min_zoom = 1e-10
+            self.max_zoom = 2e-5
+            self.preferred_zoom = 2.0e-9
 
         self.selected_space_object = None
         self.selected_system_entity_id = None
         self.hover_space_object = None
         self.hover_system_entity_id = None
         self.hover_screen_pos = None
+        self.body_label_hitboxes = []
 
         self.system.populate_from_world_model(
             world_model=self.world_model,
             year=self.year,
-            root_system_id=self.root_system_id
+            root_system_id=self.root_system_id,
+            root_body_id=self.root_body_id,
         )
+        self._loaded_repository_revision = getattr(self.world_model, "repository_revision", 0)
 
     def get_center(self):
         return 0.0, 0.0
 
+    def get_scope_label(self):
+        if self.root_body_id is None:
+            root = self.world_model.get_entity(self.root_system_id)
+            return root.get("name", self.root_system_id) if root else self.root_system_id
+
+        body = self.world_model.get_entity(self.root_body_id)
+        return body.get("name", self.root_body_id) if body else self.root_body_id
+
+    def get_scope_breadcrumb(self):
+        if self.root_body_id is None:
+            return "Full star system"
+        return "Local planetary space"
+
     def update(self, dt):
+        repository_revision = getattr(self.world_model, "repository_revision", 0)
+        if repository_revision != self._loaded_repository_revision:
+            self.system.populate_from_world_model(
+                world_model=self.world_model,
+                year=self.year,
+                root_system_id=self.root_system_id,
+                root_body_id=self.root_body_id,
+            )
+            self._loaded_repository_revision = repository_revision
+            self.selected_space_object = None
+            self.selected_system_entity_id = None
+            self.hover_space_object = None
+            self.hover_system_entity_id = None
         self.sim_manager.update(dt)
 
     def get_entity(self, space_object, world_model=None):
@@ -61,16 +95,78 @@ class SpaceSimulation:
 
     def get_selected_body_entity(self):
         """
-        Return the source systems.yaml entity for the currently selected body.
+        Return the source orbital entity for the currently selected body.
         """
         if self.selected_space_object is None:
             return None
         return self.system.get_source_entity_for_space_object(self.selected_space_object)
 
+    def get_selection_inspector_payload(self):
+        entity = self.get_selected_body_entity()
+        if not entity:
+            return None
+
+        entity_id = entity.get("id")
+        body_class = (
+            entity.get("body_class")
+            or entity.get("location_class")
+            or entity.get("type", "body")
+        )
+        details = [
+            f"Class: {body_class}",
+            f"Repository ID: {entity_id}",
+        ]
+        start_year = entity.get("start_year")
+        end_year = entity.get("end_year")
+        if start_year not in (None, "") or end_year not in (None, ""):
+            active_start = start_year if start_year not in (None, "") else "?"
+            active_end = end_year if end_year not in (None, "") else "present"
+            details.append(f"Active: {active_start} to {active_end}")
+
+        return {
+            "entity_id": entity_id,
+            "title": entity.get("pretty_name") or entity.get("name") or entity_id,
+            "kind": "Space body",
+            "details": details,
+            "actions": [
+                {"id": "open_selection_wiki", "label": "Open Wiki Entry"},
+            ] if entity_id else [],
+        }
+
+    def clear_body_label_hitboxes(self):
+        self.body_label_hitboxes = []
+
+    def register_body_label_hitbox(self, source_entity_id, rect):
+        if not source_entity_id or rect is None:
+            return
+        for entry in self.system.get_entries():
+            obj = entry["object"]
+            source = self.system.get_source_entity_for_space_object(obj)
+            if isinstance(source, dict) and source.get("id") == source_entity_id:
+                self.body_label_hitboxes.append(
+                    {
+                        "entity_id": source_entity_id,
+                        "object": obj,
+                        "rect": rect.copy(),
+                    }
+                )
+                return
+
+    def _pick_labelled_space_object(self, screen_pos):
+        for hitbox in reversed(self.body_label_hitboxes):
+            rect = hitbox.get("rect")
+            if rect is not None and rect.collidepoint(screen_pos):
+                return hitbox.get("object")
+        return None
+
     def _pick_space_object(self, camera, screen_pos):
         """
         Pick the nearest visible body under the cursor using a screen-space radius.
         """
+        labelled_obj = self._pick_labelled_space_object(screen_pos)
+        if labelled_obj is not None:
+            return labelled_obj
+
         sx, sy = screen_pos
         best_obj = None
         best_dist_sq = None

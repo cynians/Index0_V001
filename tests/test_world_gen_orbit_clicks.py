@@ -1,0 +1,2129 @@
+import unittest
+import copy
+import random
+import tempfile
+import threading
+import time
+from pathlib import Path
+from types import SimpleNamespace
+
+import pygame
+
+from app.input_router import InputRouter
+from engine.camera import Camera
+from engine.input_controller import InputController
+from simulations.space.system import CelestialSystem
+from simulations.world_gen.crust import MAJOR_CRUST_TARGET_PERCENT, estimate_crust_density_kg_m3, set_major_element_abundance
+from simulations.world_gen.heightmap import (
+    CANONICAL_LOD0_SAMPLE_HEIGHT,
+    CANONICAL_LOD0_SAMPLE_WIDTH,
+    contour_levels_for_heightmap,
+    derive_heightmap_model,
+    display_contour_interval_m,
+    height_marker_interval_m,
+)
+from simulations.world_gen.interior_regime import derive_interior_regime_model
+from simulations.world_gen.material_heatmaps import (
+    generate_material_heatmap_model,
+    import_png_to_raster_bundle,
+    load_raster_bundle_surface,
+)
+from simulations.world_gen.natural_materials import NATURAL_MATERIAL_CATALOG_VERSION, configure_material_catalog, natural_material_entries
+from simulations.world_gen.terrain_seed import (
+    PLANETARY_CANVAS_HEIGHT_PX,
+    PLANETARY_CANVAS_WIDTH_PX,
+    derive_terrain_seed_model,
+)
+from simulations.world_gen.tectonics import derive_crater_model
+from simulations.world_gen.water_cycle import derive_water_cycle_model
+from simulations.world_gen.world_gen_renderer import WorldGenRenderer
+from simulations.world_gen.world_gen_sim import WorldGenSimulation
+from world.persistent_ontology_store import PersistentOntologyStore
+
+
+def setUpModule():
+    rows = PersistentOntologyStore(
+        Path(__file__).resolve().parents[1] / "ontology" / "index0.owl"
+    ).load_datasets().get("materials") or []
+    configure_material_catalog(rows)
+
+
+class FakeLoader:
+    def __init__(self, entries_directory):
+        self.entries_directory = Path(entries_directory)
+        self.entity_aliases = {}
+        self.datasets = {}
+        self.entities = {}
+        self.reference_graph_rebuilt = False
+
+    def build_reference_graph(self):
+        self.reference_graph_rebuilt = True
+
+    def persist_entity(self, entity, previous_entity_id=None):
+        entity_id = entity.get("id")
+        if not entity_id:
+            return False
+        previous_entity_id = previous_entity_id or None
+        if previous_entity_id and previous_entity_id != entity_id:
+            self.entities.pop(previous_entity_id, None)
+        entity["_dataset"] = entity.get("_dataset") or "locations"
+        dataset = self.datasets.setdefault(entity["_dataset"], [])
+        dataset[:] = [
+            item for item in dataset
+            if not (isinstance(item, dict) and item.get("id") in {entity_id, previous_entity_id})
+        ]
+        dataset.append(entity)
+        self.entities[entity_id] = entity
+        return True
+
+
+class FakeTouchDegrees:
+    def __init__(self):
+        self.refreshed = False
+
+    def refresh(self):
+        self.refreshed = True
+
+
+class FakeWorldModel:
+    def __init__(self, entries_directory=None):
+        self.loader = FakeLoader(entries_directory or tempfile.mkdtemp())
+        self.repository_revision = 0
+        self.dataset_reads = 0
+        self.entities = {
+            "system_alpha": {
+                "id": "system_alpha",
+                "type": "location",
+                "_dataset": "locations",
+                "name": "Alpha",
+                "location_class": "star_system",
+            },
+            "star_alpha": {
+                "id": "star_alpha",
+                "type": "location",
+                "_dataset": "locations",
+                "name": "Alpha Primary",
+                "location_class": "star",
+                "star_system": "system_alpha",
+                "luminosity_solar": 1.0,
+            },
+        }
+        self.loader.entities.update(self.entities)
+        self.loader.datasets["locations"] = list(self.entities.values())
+        self.touch_degrees = FakeTouchDegrees()
+
+    def get_entity(self, entity_id):
+        return self.loader.entities.get(entity_id)
+
+    def get_entities_by_dataset(self, dataset_name):
+        self.dataset_reads += 1
+        return [
+            entity for entity in self.loader.entities.values()
+            if entity.get("_dataset") == dataset_name
+        ]
+
+
+class FakeCamera:
+    def __init__(self, points):
+        self.points = dict(points)
+
+    def screen_to_world(self, pos):
+        return self.points[pos]
+
+
+class WorldGenOrbitClickTests(unittest.TestCase):
+    def _sim(self):
+        return WorldGenSimulation(
+            world_model=FakeWorldModel(),
+            parent_system_id="system_alpha",
+            year=2400,
+        )
+
+    def _click(self, pos):
+        return SimpleNamespace(type=pygame.MOUSEBUTTONDOWN, button=1, pos=pos)
+
+    def test_natural_material_catalog_has_expanded_surface_coverage(self):
+        catalog = [
+            material
+            for material in natural_material_entries()
+            if material.get("material_subclass") not in {"atmospheric_gas", "element"}
+        ]
+        material_ids = {material["id"] for material in catalog}
+
+        self.assertEqual("natural-materials-v8", NATURAL_MATERIAL_CATALOG_VERSION)
+        self.assertEqual(210, len(catalog))
+        self.assertIn("mat_limestone", material_ids)
+        self.assertIn("mat_chalcopyrite", material_ids)
+        self.assertIn("mat_water_ice", material_ids)
+        self.assertIn("mat_alluvium", material_ids)
+        self.assertIn("mat_nickel_laterite", material_ids)
+        self.assertIn("mat_eclogite", material_ids)
+        self.assertIn("mat_granodiorite", material_ids)
+        self.assertIn("mat_molybdenite", material_ids)
+        self.assertIn("mat_spodumene", material_ids)
+
+    def test_templates_contain_only_first_screen_preset_data(self):
+        allowed = {
+            "label", "category", "description", "planet_class",
+            "major_elements", "numeric_ranges", "water_range",
+            "volatile_options", "tectonics_options",
+        }
+        hidden_generation_controls = {
+            "atmosphere_regime", "bond_albedo", "greenhouse_efficiency",
+            "geologic_style", "climate_mode", "synchronous_rotation",
+            "surface_fluid", "target_ice_fraction", "tidal_heating_w_m2_range",
+        }
+
+        for template_id, template in WorldGenSimulation.PLANET_TEMPLATES.items():
+            self.assertLessEqual(set(template), allowed, template_id)
+            self.assertFalse(set(template) & hidden_generation_controls, template_id)
+
+    def test_template_identity_is_noncausal_after_first_screen_is_populated(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_template_contract",
+            "name": "Template Contract",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": sim.AU_M,
+            "eccentricity": 0.0,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities[planet["id"]] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = planet["id"]
+        sim.seed_input_buffers.update({
+            "radius_earth": "1.0",
+            "core_radius_fraction": "0.55",
+            "crust_thickness_km": "35",
+            "angular_velocity_deg_per_hour": "15",
+            "water_fraction": "0.5",
+            "volatile_inventory": "earthlike",
+            "tectonics_mode": "mobile_lid",
+            "map_seed": "template-noncausal",
+        })
+
+        sim.active_planet_template = "silicate_terrestrial"
+        silicate_seed = sim._coerce_seed_payload()
+        sim.active_planet_template = "runaway_greenhouse_terrestrial"
+        runaway_seed = sim._coerce_seed_payload()
+
+        for seed in (silicate_seed, runaway_seed):
+            self.assertNotIn("atmosphere_regime", seed)
+            self.assertNotIn("bond_albedo", seed)
+            self.assertNotIn("greenhouse_efficiency", seed)
+            self.assertNotIn("geologic_style", seed)
+            self.assertNotIn("water_loss_fraction", seed)
+
+        noncausal = {"planet_template", "planet_template_label"}
+        self.assertEqual(
+            {key: value for key, value in silicate_seed.items() if key not in noncausal},
+            {key: value for key, value in runaway_seed.items() if key not in noncausal},
+        )
+        self.assertEqual(
+            sim._derive_atmosphere_model(
+                silicate_seed,
+                silicate_seed["derived_planet_physics"],
+            ),
+            sim._derive_atmosphere_model(
+                runaway_seed,
+                runaway_seed["derived_planet_physics"],
+            ),
+        )
+
+    def test_orbit_draft_preview_skips_planet_surface_derivations(self):
+        sim = self._sim()
+        sim.selected_world_gen_planet_id = None
+
+        def fail_derivation(*_args, **_kwargs):
+            raise AssertionError("orbit draft should not derive planet surface products")
+
+        sim._derive_terrain_seed_model = fail_derivation
+        sim._derive_heightmap_model = fail_derivation
+        sim._derive_tectonic_model = fail_derivation
+
+        payload = sim.get_preview_payload()
+
+        self.assertIsNone(payload["selected_planet"])
+        self.assertIsNone(payload["terrain_seed_model"])
+        self.assertIsNone(payload["heightmap_model"])
+        self.assertIsNone(payload["water_cycle_model"])
+        self.assertIsNone(payload["tectonic_model"])
+
+    def test_world_gen_preview_reuses_system_body_scan(self):
+        world_model = FakeWorldModel()
+        sim = WorldGenSimulation(
+            world_model=world_model,
+            parent_system_id="system_alpha",
+            year=2400,
+        )
+        reads_after_init = world_model.dataset_reads
+
+        sim.get_preview_payload()
+        sim.get_preview_payload()
+
+        self.assertEqual(reads_after_init, world_model.dataset_reads)
+
+    def test_world_gen_renderer_uses_adaptive_cached_orbit_points(self):
+        renderer = WorldGenRenderer(SimpleNamespace())
+        camera = Camera(800, 600)
+        camera.zoom = 2.2e-9
+
+        small_count = renderer._orbit_sample_count(30)
+        large_count = renderer._orbit_sample_count(1200)
+        self.assertLess(small_count, large_count)
+
+        first_points = renderer._screen_points_for_orbit(camera, 1.0, 0.02, count=small_count)
+        cache_size = len(renderer._orbit_path_cache)
+        second_points = renderer._screen_points_for_orbit(camera, 1.0, 0.02, count=small_count)
+
+        self.assertEqual(first_points, second_points)
+        self.assertEqual(cache_size, len(renderer._orbit_path_cache))
+
+    def test_worldgen_job_state_tracks_background_loading(self):
+        sim = self._sim()
+        release_job = threading.Event()
+
+        def action():
+            release_job.wait(timeout=2.0)
+            return True
+
+        self.assertTrue(sim._start_worldgen_job(
+            "Generating test geology",
+            "Testing loading overlay",
+            action,
+            estimated_seconds=1.0,
+        ))
+
+        loading = sim.get_worldgen_loading_state()
+        self.assertTrue(loading["active"])
+        self.assertEqual("Generating test geology", loading["label"])
+        self.assertAlmostEqual(0.01, loading["progress"])
+
+        sim._report_worldgen_progress(0.42, "Publishing test relief")
+        sim._publish_worldgen_preview(heightmap_model={"sample_grid": {"rows": [[0, 1], [1, 0]]}})
+        loading = sim.get_worldgen_loading_state()
+        self.assertAlmostEqual(0.42, loading["progress"])
+        self.assertEqual("Publishing test relief", loading["detail"])
+        self.assertIn("relief", loading["preview_modes"])
+        self.assertEqual(0.42, loading["phases"][-1]["progress"])
+        self.assertLess(loading["preview_reveal_fraction"], 1.0)
+
+        # Once assembled, a single unchanged map stays complete instead of
+        # resetting its tile reveal every six seconds.
+        with sim._worldgen_progress_lock:
+            sim._worldgen_preview_published_at["heightmap_model"] = time.monotonic() - 12.0
+        sim._worldgen_job_started_at = time.monotonic() - 30.0
+        loading = sim.get_worldgen_loading_state()
+        self.assertEqual("relief", loading["preview_mode"])
+        self.assertEqual(1.0, loading["preview_reveal_fraction"])
+
+        release_job.set()
+        for _index in range(30):
+            sim.update(0.016)
+            if not sim.get_worldgen_loading_state()["active"]:
+                break
+            time.sleep(0.01)
+
+        self.assertFalse(sim.get_worldgen_loading_state()["active"])
+
+    def test_worldgen_loading_screen_renders_chunked_map_without_progress_bar(self):
+        pygame.init()
+        renderer = WorldGenRenderer(SimpleNamespace())
+        screen = pygame.Surface((1280, 720))
+        rows = [
+            [float((x - 8) * 180 + (y - 4) * 70) for x in range(17)]
+            for y in range(9)
+        ]
+        heightmap = {
+            "sample_grid": {"width": 17, "height": 9, "rows": rows},
+            "min_elevation_m": -1720.0,
+            "max_elevation_m": 1720.0,
+            "sea_level_m": 0.0,
+            "surface_masks": {"ice_rows": [[y in {0, 8} for _x in range(17)] for y in range(9)]},
+        }
+        renderer._draw_worldgen_loading_screen(screen, {
+            "progress": 0.58,
+            "elapsed_seconds": 48.0,
+            "label": "Generating terrain and heightmap",
+            "detail": "Publishing global relief chunks",
+            "phases": [{"progress": 0.58, "detail": "Publishing global relief chunks"}],
+            "preview_planet": {"heightmap_model": heightmap},
+            "preview_modes": ["relief"],
+            "preview_mode": "relief",
+            "preview_reveal_fraction": 0.55,
+        })
+
+        pixels = pygame.surfarray.array3d(screen).reshape(-1, 3)
+        sampled_colors = {tuple(color) for color in pixels[::500]}
+        self.assertGreater(len(sampled_colors), 12)
+
+    def test_heightmap_reports_internal_progress_and_partial_relief(self):
+        events = []
+        terrain = {
+            "map_seed": "progress-test",
+            "map_canvas": {"width_px": 512, "height_px": 256, "circumference_m": 40_000_000.0},
+            "heightfield": {
+                "min_elevation_m": -3000.0,
+                "max_elevation_m": 4000.0,
+                "scientific_sample_dimensions": {"width": 9, "height": 5},
+            },
+            "hydrology": {"target_ocean_fraction": 0.3},
+            "tectonics": {"enabled": False},
+            "cratering": {"density": 0.0},
+        }
+
+        model = derive_heightmap_model(
+            terrain,
+            seed={"map_seed": "progress-test"},
+            progress_callback=lambda fraction, detail, preview: events.append((fraction, detail, preview)),
+        )
+
+        self.assertEqual("heightmap_seeded", model["status"])
+        self.assertGreater(len(events), 8)
+        self.assertEqual(1.0, events[-1][0])
+        self.assertTrue(any(isinstance(preview, dict) for _fraction, _detail, preview in events))
+        self.assertTrue(any("row" in detail.lower() for _fraction, detail, _preview in events))
+
+    def test_loading_screen_can_render_impact_snapshot(self):
+        pygame.init()
+        renderer = WorldGenRenderer(SimpleNamespace())
+        surface = pygame.Surface((640, 320))
+        crater_model = {
+            "radius_m": 6_371_000.0,
+            "craters": [
+                {"x": 0.25, "y": 0.45, "diameter_km": 900.0, "morphology": "complex_or_basin"},
+                {"x": 0.72, "y": 0.62, "diameter_km": 180.0, "morphology": "simple"},
+            ],
+        }
+
+        self.assertTrue(renderer._draw_loading_impacts(surface, crater_model))
+        colors = {tuple(color) for color in pygame.surfarray.array3d(surface).reshape(-1, 3)}
+        self.assertGreater(len(colors), 3)
+
+    def test_first_orbit_click_sets_circular_candidate(self):
+        sim = self._sim()
+        camera = FakeCamera({(10, 10): (sim.AU_M, 0.0)})
+
+        sim.handle_pointer_event(self._click((10, 10)), camera, (10, 10))
+
+        self.assertEqual("1", sim.input_buffers["periapsis_au"])
+        self.assertEqual("1", sim.input_buffers["apoapsis_au"])
+        self.assertEqual("second", sim.orbit_pick_stage)
+        self.assertTrue(sim.planetary_model["orbit_valid"])
+        self.assertEqual(0.0, sim.planetary_model["eccentricity"])
+
+    def test_second_orbit_click_sets_elliptical_candidate(self):
+        sim = self._sim()
+        camera = FakeCamera({
+            (10, 10): (sim.AU_M, 0.0),
+            (20, 20): (2.5 * sim.AU_M, 0.0),
+        })
+
+        sim.handle_pointer_event(self._click((10, 10)), camera, (10, 10))
+        sim.handle_pointer_event(self._click((20, 20)), camera, (20, 20))
+
+        self.assertEqual("1", sim.input_buffers["periapsis_au"])
+        self.assertEqual("2.5", sim.input_buffers["apoapsis_au"])
+        self.assertEqual("first", sim.orbit_pick_stage)
+        self.assertAlmostEqual(1.75, sim.planetary_model["semi_major_axis_au"])
+        self.assertAlmostEqual(1.5 / 3.5, sim.planetary_model["eccentricity"])
+
+    def test_control_panel_click_does_not_set_orbit(self):
+        sim = self._sim()
+        sim.set_control_panel_rect(pygame.Rect(0, 0, 100, 100))
+        camera = FakeCamera({(10, 10): (sim.AU_M, 0.0)})
+
+        sim.handle_pointer_event(self._click((10, 10)), camera, (10, 10))
+
+        self.assertEqual("", sim.input_buffers["periapsis_au"])
+        self.assertEqual("", sim.input_buffers["apoapsis_au"])
+        self.assertFalse(sim.planetary_model["orbit_valid"])
+
+    def test_space_jump_button_requests_parent_space_navigation(self):
+        sim = self._sim()
+        sim.set_control_panel_rect(pygame.Rect(0, 0, 240, 80))
+        sim.set_world_gen_space_button_rect(pygame.Rect(10, 10, 120, 30))
+
+        sim.handle_pointer_event(self._click((20, 20)), None, (20, 20))
+
+        action = sim.consume_pending_navigation_action()
+        self.assertEqual("open_space_from_world_gen", action["id"])
+        self.assertEqual("system_alpha", action["system_id"])
+        self.assertIsNone(sim.consume_pending_navigation_action())
+
+    def test_enter_names_and_persists_planet_from_locked_orbit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            world_model = FakeWorldModel(entries_directory=temp_dir)
+            sim = WorldGenSimulation(
+                world_model=world_model,
+                parent_system_id="system_alpha",
+                year=2400,
+            )
+            sim._set_orbit_distances(1.0, 2.0)
+
+            sim.handle_event(SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_RETURN, unicode="", mod=0))
+            self.assertTrue(sim.planet_name_prompt_active)
+
+            for char in "Blue":
+                sim.handle_event(SimpleNamespace(type=pygame.KEYDOWN, key=0, unicode=char, mod=0))
+            sim.handle_event(SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_RETURN, unicode="", mod=0))
+
+            planet = world_model.get_entity("planet_blue")
+            self.assertIsNotNone(planet)
+            self.assertEqual("Blue", planet["name"])
+            self.assertEqual("system_alpha", planet["star_system"])
+            self.assertEqual("star_alpha", planet["parent_location"])
+            self.assertEqual("star_alpha", planet["parent_body"])
+            self.assertIn("system_alpha", planet["parents"])
+            self.assertIn("star_alpha", planet["parents"])
+            self.assertGreaterEqual(planet["mean_anomaly_deg_at_epoch"], 0.0)
+            self.assertLess(planet["mean_anomaly_deg_at_epoch"], 360.0)
+            self.assertEqual(1.5 * sim.AU_M, planet["semi_major_axis_m"])
+            self.assertAlmostEqual(1.0 / 3.0, planet["eccentricity"])
+            self.assertIn("orbit_locked", planet["tags"])
+            self.assertIn("world_gen_unfinished", planet["tags"])
+            self.assertIn("world_gen_stage_crust", planet["tags"])
+            self.assertEqual("orbit_locked", planet["environment_summary"]["status"])
+            self.assertEqual("orbit_locked", planet["map_status"])
+            self.assertEqual("equirectangular", planet["map_projection"])
+            self.assertEqual(PLANETARY_CANVAS_WIDTH_PX, planet["map_canvas_width_px"])
+            self.assertEqual(PLANETARY_CANVAS_HEIGHT_PX, planet["map_canvas_height_px"])
+            self.assertEqual({"type": "bbox", "min_x": -180.0, "max_x": 180.0, "min_y": -90.0, "max_y": 90.0}, planet["bounds"])
+            self.assertIn(planet, sim._active_system_bodies())
+            self.assertTrue(world_model.loader.reference_graph_rebuilt)
+            self.assertTrue(world_model.touch_degrees.refreshed)
+
+            self.assertIn(
+                "planet_blue",
+                [entry.get("id") for entry in world_model.loader.datasets["locations"]],
+            )
+
+    def test_formation_theory_stages_named_candidate_before_creation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            world_model = FakeWorldModel(entries_directory=temp_dir)
+            sim = WorldGenSimulation(
+                world_model=world_model,
+                parent_system_id="system_alpha",
+                year=2400,
+            )
+
+            self.assertTrue(sim._add_formation_theory_planets())
+
+            self.assertTrue(sim.planet_name_prompt_active)
+            self.assertTrue(sim.planet_name_buffer)
+            self.assertIsInstance(sim.pending_formation_model, dict)
+            self.assertIsNone(world_model.get_entity(f"planet_{sim._slug_from_text(sim.planet_name_buffer)}"))
+            self.assertIn("Avg temp:", sim.get_preview_payload()["orbit_preview"]["lines"][1])
+
+            sim.planet_name_buffer = "Theory One"
+            self.assertTrue(sim._commit_named_planet())
+
+            planet = world_model.get_entity("planet_theory_one")
+            self.assertIsNotNone(planet)
+            self.assertEqual("Theory One", planet["name"])
+            self.assertIn("formation_theory_candidate", planet["tags"])
+            self.assertIsInstance(planet.get("formation_theory_seed"), dict)
+
+    def test_selected_planet_can_start_and_commit_moon_draft(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            world_model = FakeWorldModel(entries_directory=temp_dir)
+            parent = {
+                "id": "planet_blue",
+                "name": "Blue",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "star_system": "system_alpha",
+                "parent_body": "star_alpha",
+            }
+            world_model.loader.entities[parent["id"]] = parent
+            world_model.loader.datasets["locations"].append(parent)
+            sim = WorldGenSimulation(
+                world_model=world_model,
+                parent_system_id="system_alpha",
+                year=2400,
+            )
+            sim.selected_world_gen_planet_id = "planet_blue"
+
+            self.assertTrue(sim._begin_moon_orbit_draft(parent))
+            self.assertEqual("moon", sim.pending_body_class)
+            self.assertEqual("planet_blue", sim.orbit_parent_body_id)
+            sim._set_orbit_distances(0.0025, 0.003)
+            sim.planet_name_buffer = "Blue Moon"
+
+            self.assertTrue(sim._commit_named_planet())
+
+            moon = world_model.get_entity("moon_blue_moon")
+            self.assertIsNotNone(moon)
+            self.assertEqual("moon", moon["location_class"])
+            self.assertEqual("planet_blue", moon["parent_body"])
+            self.assertEqual("planet_blue", moon["parent_location"])
+            self.assertEqual("parent_body", moon["orbit_reference_frame"])
+
+    def test_icy_moon_remains_a_moon_through_complete_worldgen(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            world_model = FakeWorldModel(entries_directory=temp_dir)
+            parent = {
+                "id": "planet_ringed",
+                "name": "Ringed",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "star_system": "system_alpha",
+                "parent_body": "star_alpha",
+                "semi_major_axis_m": 9.58 * WorldGenSimulation.AU_M,
+                "mass_kg": 5.6834e26,
+            }
+            world_model.loader.entities[parent["id"]] = parent
+            world_model.loader.datasets["locations"].append(parent)
+            sim = WorldGenSimulation(world_model=world_model, parent_system_id="system_alpha", year=2400)
+
+            self.assertTrue(sim._begin_moon_orbit_draft(parent))
+            sim._set_orbit_distances(0.0025, 0.0025)
+            sim.planet_name_buffer = "Icy Test Moon"
+            self.assertTrue(sim._commit_named_planet())
+            moon = world_model.get_entity("moon_icy_test_moon")
+            self.assertEqual("moon", moon["body_subclass"])
+
+            self.assertTrue(sim._save_selected_planet_seed())
+            self.assertEqual("icy_satellite", moon["body_subclass"])
+            self.assertTrue(sim._save_atmosphere_model())
+            self.assertLess(moon["atmosphere_model"]["equilibrium_temperature_k"], 150.0)
+            self.assertTrue(sim._save_interior_regime_model())
+            self.assertTrue(sim._save_terrain_seed_model())
+            self.assertTrue(sim._save_water_cycle_model())
+
+            self.assertEqual("moon", moon["location_class"])
+            self.assertEqual("planet_ringed", moon["parent_body"])
+            self.assertEqual("icy_satellite", moon["world_gen_seed"]["planet_class"])
+            self.assertEqual("cratered_ice_shell", moon["terrain_seed_model"]["surface_regime"])
+            self.assertGreater(len(moon["crater_model"]["craters"]), 100)
+            self.assertAlmostEqual(1.0, moon["heightmap_model"]["surface_masks"]["target_ice_fraction"], delta=0.08)
+
+    def test_airless_terrain_keeps_dense_crater_population(self):
+        seed = {
+            "radius_earth": 0.27,
+            "water_fraction": 0.0,
+            "volatile_inventory": "none",
+            "tectonics_mode": "inactive",
+            "map_seed": "airless-test",
+        }
+        physics = {"radius_earth": 0.27, "radius_m": 1_720_000.0, "surface_gravity_g": 0.16}
+        atmosphere = {"surface_pressure_bar": 0.000001, "estimated_surface_temperature_k": 245.0}
+        regime = {
+            "interior": {"tectonic_regime": "inactive", "internal_heat_w_m2": 0.004},
+            "surface_processes": {
+                "hydrologic_cycle": "none",
+                "liquid_water_possible": False,
+                "crater_retention": "low",
+                "erosion_processes": [],
+            },
+            "map_recipe": [],
+        }
+
+        terrain = derive_terrain_seed_model(seed, physics, atmosphere, regime, planet_id="moon_test")
+        craters = derive_crater_model(terrain, seed=seed, physics=physics, planet_id="moon_test")
+
+        self.assertEqual("high", terrain["cratering"]["retention"])
+        self.assertGreaterEqual(terrain["cratering"]["density"], 0.9)
+        self.assertIn("simulate_impact_gardening", terrain["map_recipe"])
+        self.assertGreaterEqual(len(craters["craters"]), 80)
+
+    def test_crater_population_grows_with_exposure_age_and_impact_flux(self):
+        physics = {"radius_m": 561_400.0, "surface_gravity_g": 0.023}
+        base = {
+            "map_seed": "crater-driver-test",
+            "map_canvas": {"radius_m": 561_400.0},
+            "cratering": {
+                "density": 0.92,
+                "retention": "high",
+                "max_crater_diameter_km": 350.0,
+                "resurfacing_fraction": 0.2,
+            },
+        }
+        young = copy.deepcopy(base)
+        young["cratering"].update({"surface_age_myr": 350.0, "impact_flux_factor": 0.7})
+        ancient = copy.deepcopy(base)
+        ancient["cratering"].update({"surface_age_myr": 4200.0, "impact_flux_factor": 1.2})
+
+        young_model = derive_crater_model(young, physics=physics, planet_id="moon_young")
+        ancient_model = derive_crater_model(ancient, physics=physics, planet_id="moon_ancient")
+
+        self.assertGreater(len(ancient_model["craters"]), len(young_model["craters"]) * 1.5)
+
+    def test_resurfacing_preferentially_removes_small_craters(self):
+        physics = {"radius_m": 561_400.0, "surface_gravity_g": 0.023}
+        base = {
+            "map_seed": "crater-resurfacing-test",
+            "map_canvas": {"radius_m": 561_400.0},
+            "cratering": {
+                "density": 0.92,
+                "retention": "high",
+                "max_crater_diameter_km": 350.0,
+                "surface_age_myr": 3800.0,
+                "impact_flux_factor": 1.0,
+            },
+        }
+        quiet = copy.deepcopy(base)
+        quiet["cratering"]["resurfacing_fraction"] = 0.05
+        resurfaced = copy.deepcopy(base)
+        resurfaced["cratering"]["resurfacing_fraction"] = 0.7
+
+        quiet_model = derive_crater_model(quiet, physics=physics, planet_id="moon_quiet")
+        resurfaced_model = derive_crater_model(resurfaced, physics=physics, planet_id="moon_resurfaced")
+        quiet_small = sum(crater["diameter_km"] < 20.0 for crater in quiet_model["craters"])
+        resurfaced_small = sum(crater["diameter_km"] < 20.0 for crater in resurfaced_model["craters"])
+
+        self.assertGreater(quiet_small, resurfaced_small)
+
+    def test_named_planet_reuses_existing_planet_entry(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            world_model = FakeWorldModel(entries_directory=temp_dir)
+            existing = {
+                "id": "planet_blue",
+                "name": "Blue",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "star_system": "system_alpha",
+                "tags": ["canon"],
+                "wiki_entry": "Existing encyclopedic notes.",
+            }
+            world_model.loader.entities["planet_blue"] = existing
+            world_model.loader.datasets["locations"].append(existing)
+            sim = WorldGenSimulation(
+                world_model=world_model,
+                parent_system_id="system_alpha",
+                year=2400,
+            )
+            sim._set_orbit_distances(1.0, 2.0)
+            sim.planet_name_buffer = "Blue"
+
+            self.assertTrue(sim._commit_named_planet())
+
+            planet = world_model.get_entity("planet_blue")
+            self.assertIs(planet, existing)
+            self.assertEqual("planet_blue", sim.selected_world_gen_planet_id)
+            self.assertEqual("Existing encyclopedic notes.", planet["wiki_entry"])
+            self.assertEqual("system_alpha", planet["star_system"])
+            self.assertEqual("star_alpha", planet["parent_location"])
+            self.assertIn("canon", planet["tags"])
+            self.assertIn("orbit_locked", planet["tags"])
+            self.assertIn("world_gen_candidate", planet["tags"])
+            self.assertEqual(1, sum(
+                1 for item in world_model.loader.datasets["locations"]
+                if isinstance(item, dict) and item.get("id") == "planet_blue"
+            ))
+            self.assertIn("Linked planet: Blue", sim.commit_status)
+
+    def test_clicking_committed_planet_selects_it_without_replacing_orbit(self):
+        sim = self._sim()
+        sim.set_planet_hitboxes([("planet_blue", pygame.Rect(0, 0, 30, 30))])
+        sim.world_model.loader.entities["planet_blue"] = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+        }
+        sim._set_orbit_distances(1.0, 2.0)
+        camera = FakeCamera({(10, 10): (9.0 * sim.AU_M, 0.0)})
+
+        sim.handle_pointer_event(self._click((10, 10)), camera, (10, 10))
+
+        self.assertEqual("planet_blue", sim.selected_world_gen_planet_id)
+        self.assertEqual("1", sim.input_buffers["periapsis_au"])
+        self.assertEqual("2", sim.input_buffers["apoapsis_au"])
+        self.assertIn("Selected Blue", sim.commit_status)
+
+    def test_name_prompt_consumes_global_shortcuts(self):
+        sim = self._sim()
+        sim.planet_name_prompt_active = True
+
+        class FakeNavigation:
+            def __init__(self):
+                self.keydowns = 0
+
+            def handle_keydown(self, event):
+                self.keydowns += 1
+
+        class FakeApp:
+            knowledge_layer_active = False
+            repository_return_confirm_active = False
+            system_menu_active = False
+            system_settings_active = False
+
+            def __init__(self, active_sim):
+                self.active_sim = active_sim
+                self.navigation = FakeNavigation()
+
+            def get_active_simulation(self):
+                return self.active_sim
+
+        app = FakeApp(sim)
+        router = InputRouter(app)
+
+        handled = router._handle_keydown_navigation(
+            SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_f, unicode="f", mod=0)
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual("f", sim.planet_name_buffer)
+        self.assertEqual(0, app.navigation.keydowns)
+
+    def test_name_prompt_blocks_window_shortcuts_before_app_router(self):
+        sim = self._sim()
+        sim.planet_name_prompt_active = True
+
+        class FakeApp:
+            def __init__(self, active_sim):
+                self.active_sim = active_sim
+
+            def consumes_global_keydown(self):
+                return self.active_sim.consumes_global_keydown()
+
+            def handle_event(self, event):
+                self.active_sim.handle_event(event)
+
+        controller = InputController(Camera(800, 600), FakeApp(sim))
+        controller.process([SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_f, unicode="f", mod=0)])
+
+        self.assertTrue(controller.show_fps)
+        self.assertEqual("f", sim.planet_name_buffer)
+
+    def test_cancel_name_prompt_resets_draft_state(self):
+        sim = self._sim()
+        sim._set_orbit_distances(1.0, 2.0)
+        sim.editor_stage = "atmosphere"
+        sim.planet_name_prompt_active = True
+        sim.planet_name_buffer = "Old"
+
+        sim._cancel_planet_name_prompt()
+
+        self.assertFalse(sim.planet_name_prompt_active)
+        self.assertEqual("", sim.input_buffers["periapsis_au"])
+        self.assertEqual("", sim.input_buffers["apoapsis_au"])
+        self.assertEqual("crust", sim.editor_stage)
+
+    def test_selected_planet_seed_is_saved_to_planet(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_blue"
+        sim.seed_input_buffers.update({
+            "radius_earth": "1.2",
+            "core_radius_fraction": "0.5",
+            "crust_thickness_km": "40",
+            "angular_velocity_deg_per_hour": "12",
+            "water_fraction": "0.65",
+            "volatile_inventory": "wet",
+            "tectonics_mode": "mobile_lid",
+        })
+
+        self.assertTrue(sim._save_selected_planet_seed())
+
+        self.assertEqual(1.2, planet["world_gen_seed"]["radius_earth"])
+        self.assertEqual("mobile_lid", planet["world_gen_seed"]["tectonics_mode"])
+        self.assertIn("crust_composition", planet["world_gen_seed"])
+        self.assertIn("derived_planet_physics", planet["world_gen_seed"])
+        self.assertAlmostEqual(30.0, planet["world_gen_seed"]["rotation_hours"])
+        self.assertGreater(planet["world_gen_seed"]["mass_earth"], 0.0)
+        self.assertIn("crust_composition", planet)
+        self.assertIn("derived_planet_physics", planet)
+        self.assertEqual(planet["derived_planet_physics"]["mass_kg"], planet["mass_kg"])
+        self.assertIn("world_gen_seeded", planet["tags"])
+        self.assertIn("world_gen_unfinished", planet["tags"])
+        self.assertIn("world_gen_stage_atmosphere", planet["tags"])
+        self.assertEqual("seed_defined", planet["environment_summary"]["status"])
+        self.assertEqual("atmosphere", sim.editor_stage)
+
+    def test_crust_screen_materials_follow_the_edited_element_distribution(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_blue"
+        sim.editor_stage = "crust"
+        planet["natural_material_model"] = sim._derive_natural_material_model(sim._current_seed_values())
+
+        # Unchanged composition: the generated roster is shown as stored.
+        self.assertIs(planet["natural_material_model"], sim.get_preview_payload()["natural_material_model"])
+
+        # Remove potassium: potassic rocks leave the roster shown on the crust screen.
+        sim.crust_composition = set_major_element_abundance(sim.crust_composition, "K", 0.0)
+        edited = sim.get_preview_payload()["natural_material_model"]
+        stored_ids = {item["material_id"] for item in planet["natural_material_model"]["likely_materials"]}
+        edited_ids = {item["material_id"] for item in edited["likely_materials"]}
+        self.assertIn("mat_granite", stored_ids)
+        self.assertNotIn("mat_granite", edited_ids)
+        # The live roster is memoised while the composition is unchanged.
+        self.assertIs(edited, sim.get_preview_payload()["natural_material_model"])
+
+    def test_atmosphere_model_is_saved_after_crust_step(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": sim.AU_M,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_blue"
+        sim._save_selected_planet_seed()
+
+        self.assertTrue(sim._save_atmosphere_model())
+
+        self.assertIn("atmosphere_model", planet)
+        self.assertIn("atmosphere_summary", planet)
+        self.assertIn("composition", planet["atmosphere_model"])
+        self.assertGreater(planet["atmosphere_model"]["escape_velocity_m_s"], 0.0)
+        self.assertIn("atmosphere_modeled", planet["tags"])
+        self.assertEqual("regime", sim.editor_stage)
+
+    def test_gas_giant_atmosphere_completes_without_surface_route(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_jove",
+            "name": "Jove",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": 5.2 * sim.AU_M,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_jove"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_jove"
+        sim.seed_input_buffers.update({
+            "radius_earth": "9.5",
+            "core_radius_fraction": "0.12",
+            "crust_thickness_km": "5",
+            "angular_velocity_deg_per_hour": "36",
+            "water_fraction": "0.05",
+            "volatile_inventory": "dense",
+            "tectonics_mode": "unknown",
+        })
+        sim._save_selected_planet_seed()
+
+        self.assertTrue(sim._save_atmosphere_model())
+
+        self.assertEqual("gas_giant_envelope_modeled", planet["map_status"])
+        self.assertFalse(planet["world_gen_complete"])
+        self.assertIn("world_gen_unfinished", planet["tags"])
+        self.assertIn("world_gen_stage_atmosphere", planet["tags"])
+        self.assertEqual("gas_giant_bands", planet["surface_render_mode"])
+        self.assertIn("gas_giant", planet["tags"])
+        self.assertIn("mat_molecular_hydrogen_gas", planet["atmospheric_materials"])
+        self.assertGreaterEqual(len(planet["atmosphere_bands"]), 3)
+        self.assertEqual("atmosphere", sim.editor_stage)
+
+        self.assertTrue(sim._world_gen_can_finish())
+        self.assertTrue(sim._finish_world_gen())
+        self.assertTrue(planet["world_gen_complete"])
+        self.assertIn("world_gen_complete", planet["tags"])
+        self.assertIn("world_gen_stage_complete", planet["tags"])
+
+        layers = CelestialSystem()._create_layers_for_entity(planet).get_layers()
+        self.assertEqual("atmospheric bands", layers[0]["name"])
+        self.assertEqual("gas_giant_bands", layers[0]["render_style"])
+
+    def test_complete_worldgen_button_finalizes_ready_gas_giant(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_jove",
+            "name": "Jove",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": 5.2 * sim.AU_M,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_jove"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_jove"
+        sim.seed_input_buffers.update({
+            "radius_earth": "9.5",
+            "core_radius_fraction": "0.12",
+            "crust_thickness_km": "5",
+            "angular_velocity_deg_per_hour": "36",
+            "water_fraction": "0.05",
+            "volatile_inventory": "dense",
+            "tectonics_mode": "unknown",
+        })
+        sim._save_selected_planet_seed()
+        sim._save_atmosphere_model()
+        sim.set_control_panel_rect(pygame.Rect(0, 0, 500, 120))
+        sim.set_crust_ui_rects(
+            save_rect=pygame.Rect(10, 10, 100, 30),
+            complete_rect=pygame.Rect(130, 10, 190, 30),
+        )
+
+        sim.handle_pointer_event(self._click((150, 20)), None, (150, 20))
+
+        self.assertTrue(planet["world_gen_complete"])
+        self.assertIn("world_gen_stage_complete", planet["tags"])
+
+    def test_resuming_misrouted_gas_giant_repairs_heightmap_route(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_jove",
+            "name": "Jove",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "world_gen_seed": {
+                **sim.DEFAULT_SEED,
+                "radius_earth": 9.5,
+                "core_radius_fraction": 0.12,
+                "crust_thickness_km": 5.0,
+                "angular_velocity_deg_per_hour": 36.0,
+                "water_fraction": 0.05,
+                "volatile_inventory": "dense",
+                "crust_composition": sim._serializable_crust_composition(),
+            },
+            "atmosphere_model": {"has_solid_surface": True, "surface_pressure_bar": 1.0},
+            "terrain_seed_model": {"status": "wrong_route"},
+            "heightmap_model": {"status": "heightmap_seeded"},
+            "map_status": "heightmap_seeded",
+            "tags": ["world_gen_unfinished", "world_gen_stage_heightmap"],
+        }
+        sim.world_model.loader.entities["planet_jove"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+
+        self.assertTrue(sim._select_planet_for_worldgen("planet_jove"))
+
+        self.assertEqual("atmosphere", sim.editor_stage)
+        self.assertEqual("gas_giant_envelope_modeled", planet["map_status"])
+        self.assertNotIn("heightmap_model", planet)
+        self.assertNotIn("terrain_seed_model", planet)
+        self.assertEqual("gas_giant_bands", planet["surface_render_mode"])
+        self.assertIn("mat_molecular_hydrogen_gas", planet["atmospheric_materials"])
+        self.assertIn("Repaired gas giant envelope", sim.commit_status)
+
+    def test_interior_regime_is_saved_after_atmosphere_step(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": sim.AU_M,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_blue"
+        sim._save_selected_planet_seed()
+        sim._save_atmosphere_model()
+
+        self.assertTrue(sim._save_interior_regime_model())
+
+        self.assertIn("interior_regime_model", planet)
+        self.assertIn("surface_process_model", planet)
+        self.assertIn("map_generation_recipe", planet)
+        self.assertIn("interior_regime_modeled", planet["tags"])
+        self.assertIn("surface_processes_modeled", planet["tags"])
+        self.assertIn("tectonic_regime", planet["geology_summary"])
+        self.assertIn("hydrologic_cycle", planet["environment_summary"])
+        self.assertEqual("terrain", sim.editor_stage)
+
+    def test_terrain_seed_for_tectonic_planet_defines_plates(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": sim.AU_M,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_blue"
+        sim._save_selected_planet_seed()
+        sim._save_atmosphere_model()
+        sim._save_interior_regime_model()
+
+        self.assertTrue(sim._save_terrain_seed_model())
+
+        self.assertEqual("tectonics_matured_heightmap_seeded", planet["map_status"])
+        self.assertEqual("equirectangular", planet["map_projection"])
+        self.assertEqual(PLANETARY_CANVAS_WIDTH_PX, planet["map_canvas_width_px"])
+        self.assertEqual(PLANETARY_CANVAS_HEIGHT_PX, planet["map_canvas_height_px"])
+        self.assertIn("terrain_seed_model", planet)
+        self.assertIn("tectonic_model", planet)
+        self.assertIn("heightmap_model", planet)
+        self.assertIn("map_layers", planet)
+        self.assertIn("terrain_seeded", planet["tags"])
+        self.assertIn("heightmap_seeded", planet["tags"])
+        self.assertIn("relief_driver", planet["geology_summary"])
+        self.assertIn("target_ocean_fraction", planet["hydrology_summary"])
+        self.assertEqual("heightmap", sim.editor_stage)
+        self.assertGreaterEqual(planet["tectonic_model"]["plate_count"], 3)
+        self.assertIn("mantle_currents", planet["tectonic_model"])
+
+    def test_advancing_tectonics_creates_heightmap(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": sim.AU_M,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_blue"
+        sim._save_selected_planet_seed()
+        sim._save_atmosphere_model()
+        sim._save_interior_regime_model()
+        sim._save_terrain_seed_model()
+
+        self.assertTrue(sim._advance_tectonics_model())
+
+        self.assertEqual("tectonics_advanced", planet["map_status"])
+        self.assertEqual("heightmap", sim.editor_stage)
+        self.assertIn("heightmap_model", planet)
+        self.assertIn("tectonics_advanced", planet["tags"])
+        self.assertEqual("tectonics_advanced", planet["heightmap_model"]["source_models"]["tectonics"])
+        self.assertGreaterEqual(planet["tectonic_model"]["age_myr"], 125.0)
+        self.assertIn("orogenic_uplift", planet["geology_summary"])
+        sample_values = [
+            value
+            for row in planet["heightmap_model"]["sample_grid"]["rows"]
+            for value in row
+        ]
+        self.assertGreater(max(sample_values) - min(sample_values), 5000.0)
+        self.assertGreater(planet["heightmap_model"]["hypsometry_summary"]["land_fraction"], 0.05)
+        self.assertGreater(planet["heightmap_model"]["hypsometry_summary"]["ocean_fraction"], 0.05)
+
+        self.assertFalse(sim._world_gen_can_finish())
+        self.assertTrue(sim._save_water_cycle_model())
+        self.assertEqual("water_cycle", sim.editor_stage)
+        self.assertIn("water_cycle_model", planet)
+        self.assertIn("climate_zone_model", planet)
+        self.assertIn("river_model", planet)
+        self.assertTrue(sim._world_gen_can_finish())
+        self.assertTrue(sim._finish_world_gen())
+        self.assertTrue(planet["world_gen_complete"])
+        self.assertIn("world_gen_complete", planet["tags"])
+
+    def test_generated_heightmap_primary_action_builds_climate_without_redundant_tectonic_step(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": sim.AU_M,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_blue"
+        sim._save_selected_planet_seed()
+        sim._save_atmosphere_model()
+        sim._save_interior_regime_model()
+        sim._save_terrain_seed_model()
+        sim.editor_stage = "heightmap"
+
+        self.assertFalse(sim._heightmap_can_advance_tectonics())
+        self.assertTrue(sim._handle_heightmap_primary_action())
+
+        self.assertEqual("water_cycle", sim.editor_stage)
+        self.assertIn("water_cycle_model", planet)
+        self.assertIn("climate_zone_model", planet)
+
+    def test_selecting_existing_planet_resumes_next_unfinished_stage(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "world_gen_seed": {
+                **sim.DEFAULT_SEED,
+                "crust_composition": sim._serializable_crust_composition(),
+            },
+            "atmosphere_model": {"surface_pressure_bar": 1.0, "estimated_surface_temperature_k": 288.0},
+            "tags": ["world_gen_unfinished", "world_gen_stage_regime"],
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+
+        self.assertTrue(sim._select_planet_for_worldgen("planet_blue"))
+
+        self.assertEqual("regime", sim.editor_stage)
+
+    def test_existing_heightmap_with_plate_regime_can_advance_tectonics(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_legacy",
+            "name": "Legacy",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": sim.AU_M,
+            "map_status": "heightmap_seeded",
+            "interior_regime_model": {
+                "interior": {
+                    "tectonic_regime": "plate_tectonics",
+                },
+                "surface_processes": {
+                    "surface_pressure_bar": 1.0,
+                    "surface_temperature_k": 288.0,
+                    "hydrologic_cycle": "active",
+                    "liquid_water_possible": True,
+                    "crater_retention": "low",
+                    "primary_topography": "plate_boundaries_mountain_belts_and_trenches",
+                    "erosion_processes": ["fluvial"],
+                },
+                "map_recipe": ["initialize_spherical_height_field"],
+            },
+            "heightmap_model": {"status": "heightmap_seeded"},
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_legacy"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_legacy"
+        sim.editor_stage = "heightmap"
+
+        self.assertTrue(sim._heightmap_can_advance_tectonics())
+        self.assertTrue(sim._handle_heightmap_primary_action())
+
+        self.assertEqual("tectonics_advanced", planet["map_status"])
+        self.assertIn("tectonic_model", planet)
+        self.assertIn("heightmap_model", planet)
+
+    def test_airless_inactive_planet_generates_crater_heightmap(self):
+        sim = self._sim()
+        sim.seed_input_buffers.update({
+            "radius_earth": "0.25",
+            "core_radius_fraction": "0",
+            "crust_thickness_km": "120",
+            "angular_velocity_deg_per_hour": "8",
+            "water_fraction": "0",
+            "volatile_inventory": "none",
+            "tectonics_mode": "unknown",
+        })
+        planet = {
+            "id": "planet_rock",
+            "name": "Rock",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": 2.0 * sim.AU_M,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities["planet_rock"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_rock"
+        sim._save_selected_planet_seed()
+        sim._save_atmosphere_model()
+        sim._save_interior_regime_model()
+
+        self.assertTrue(sim._save_terrain_seed_model())
+
+        self.assertEqual("crater_heightmap_seeded", planet["map_status"])
+        self.assertEqual("heightmap", sim.editor_stage)
+        self.assertIn("crater_model", planet)
+        self.assertIn("heightmap_model", planet)
+        self.assertNotIn("tectonic_model", planet)
+        self.assertEqual("craters_seeded", planet["heightmap_model"]["source_models"]["craters"])
+        self.assertGreater(len(planet["crater_model"]["craters"]), 10)
+
+    def test_airless_template_large_body_stays_on_solid_surface_route(self):
+        sim = self._sim()
+        sim.active_planet_template = "cratered_airless"
+        # Airless because its elements carry no volatiles (listed at zero).
+        volatiles = [("H", 0.0), ("C", 0.0), ("N", 0.0), ("Ar", 0.0), ("Ne", 0.0), ("He", 0.0)]
+        sim.crust_composition = {"major_elements": [
+            {"symbol": symbol, "abundance_percent": value}
+            for symbol, value in sim.PLANET_TEMPLATES["cratered_airless"]["major_elements"] + volatiles
+        ]}
+        sim.seed_input_buffers.update({
+            "radius_earth": "3.2",
+            "core_radius_fraction": "0.2",
+            "crust_thickness_km": "85",
+            "angular_velocity_deg_per_hour": "2",
+            "water_fraction": "0",
+            "volatile_inventory": "none",
+            "tectonics_mode": "inactive",
+        })
+        planet = {
+            "id": "planet_airless_big",
+            "name": "Airless Big",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": 2.0 * sim.AU_M,
+            "tags": ["world_gen_candidate"],
+        }
+        sim.world_model.loader.entities[planet["id"]] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = planet["id"]
+
+        self.assertTrue(sim._save_selected_planet_seed())
+        self.assertTrue(sim._save_atmosphere_model())
+
+        self.assertTrue(planet["atmosphere_model"]["has_solid_surface"])
+        self.assertLess(planet["atmosphere_model"]["surface_pressure_bar"], 0.01)
+        self.assertNotEqual("gas_giant_envelope_modeled", planet.get("map_status"))
+        self.assertNotEqual("gas_giant_bands", planet.get("surface_render_mode"))
+        self.assertNotIn("gas_giant", set(planet.get("tags") or []))
+
+    def test_misrouted_airless_world_repairs_from_gas_bands_to_crater_route(self):
+        sim = self._sim()
+        seed = {
+            **sim.DEFAULT_SEED,
+            "radius_earth": 0.35,
+            "core_radius_fraction": 0.1,
+            "crust_thickness_km": 90.0,
+            "angular_velocity_deg_per_hour": 4.0,
+            "water_fraction": 0.0,
+            "volatile_inventory": "none",
+            "tectonics_mode": "inactive",
+            "planet_template": "cratered_airless",
+            "planet_class": "airless_rocky",
+            "crust_composition": sim._serializable_crust_composition(),
+        }
+        seed["derived_planet_physics"] = sim._derive_planet_physics(seed)
+        planet = {
+            "id": "planet_airless_broken",
+            "name": "Broken Airless",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": 2.0 * sim.AU_M,
+            "world_gen_seed": seed,
+            "world_gen_template": "cratered_airless",
+            "planetary_class": "gas_giant",
+            "surface_render_mode": "gas_giant_bands",
+            "map_render_mode": "gas_giant_bands",
+            "map_status": "gas_giant_envelope_modeled",
+            "atmosphere_model": {"has_solid_surface": False, "surface_pressure_bar": 100.0},
+            "tags": ["world_gen_candidate", "gas_giant", "no_solid_surface", "gas_giant_bands"],
+        }
+        sim.world_model.loader.entities[planet["id"]] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = planet["id"]
+        sim._load_seed_buffers_from_planet(planet)
+
+        self.assertTrue(sim._repair_solid_surface_route_if_needed(planet))
+
+        self.assertTrue(planet["atmosphere_model"]["has_solid_surface"])
+        self.assertEqual("airless_surface_route_ready", planet["map_status"])
+        self.assertNotEqual("gas_giant_bands", planet.get("surface_render_mode"))
+        self.assertNotEqual("gas_giant_bands", planet.get("map_render_mode"))
+        self.assertNotIn("gas_giant", set(planet.get("tags") or []))
+        self.assertIn("airless_regolith", set(planet.get("tags") or []))
+        self.assertEqual("regime", sim._resume_stage_for_planet(planet))
+
+    def test_escape_closes_worldgen_fullscreen_editor_before_repository_prompt(self):
+        sim = self._sim()
+        sim.world_model.loader.entities["planet_blue"] = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+        }
+        sim.selected_world_gen_planet_id = "planet_blue"
+
+        class FakeApp:
+            knowledge_layer_active = False
+            repository_return_confirm_active = False
+            system_menu_active = False
+            system_settings_active = False
+
+            def __init__(self, active_sim):
+                self.active_sim = active_sim
+
+            def get_active_simulation(self):
+                return self.active_sim
+
+        app = FakeApp(sim)
+        router = InputRouter(app)
+
+        handled = router._handle_keydown_navigation(
+            SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_ESCAPE, unicode="", mod=0)
+        )
+
+        self.assertTrue(handled)
+        self.assertFalse(app.repository_return_confirm_active)
+        self.assertIsNone(sim.selected_world_gen_planet_id)
+
+    def test_crust_slider_redistributes_major_elements_to_target_total(self):
+        sim = self._sim()
+
+        self.assertAlmostEqual(MAJOR_CRUST_TARGET_PERCENT, sim._crust_major_total(), places=3)
+
+        sim.crust_composition = sim._serializable_crust_composition()
+        sim.crust_slider_rects = {"O": pygame.Rect(0, 0, 990, 20)}
+        sim._set_crust_abundance_from_screen_x("O", 500)
+
+        oxygen = next(
+            element for element in sim.crust_composition["major_elements"]
+            if element["symbol"] == "O"
+        )
+        self.assertAlmostEqual(50.0, oxygen["abundance_percent"], places=3)
+        self.assertAlmostEqual(MAJOR_CRUST_TARGET_PERCENT, sim._crust_major_total(), places=3)
+
+    def test_add_abundant_trace_element_promotes_it_to_major_slider(self):
+        sim = self._sim()
+
+        self.assertTrue(sim._add_abundant_trace_element("Au"))
+
+        symbols = [element["symbol"] for element in sim.crust_composition["major_elements"]]
+        self.assertIn("Au", symbols)
+        self.assertAlmostEqual(MAJOR_CRUST_TARGET_PERCENT, sim._crust_major_total(), places=3)
+        gold = next(element for element in sim.crust_composition["major_elements"] if element["symbol"] == "Au")
+        self.assertGreater(gold["abundance_percent"], 0.0)
+
+    def test_generic_seed_randomizer_varies_inputs_and_low_trace_elements(self):
+        sim = self._sim()
+        before = dict(sim.seed_input_buffers)
+
+        self.assertTrue(sim.randomize_seed("generic", rng=random.Random(42)))
+
+        self.assertNotEqual(before, sim.seed_input_buffers)
+        seed = sim._coerce_seed_payload()
+        self.assertIsNotNone(seed)
+        self.assertGreaterEqual(seed["radius_earth"], 0.75)
+        self.assertLessEqual(seed["radius_earth"], 1.35)
+        self.assertGreaterEqual(seed["core_radius_fraction"], 0.42)
+        self.assertLessEqual(seed["core_radius_fraction"], 0.68)
+        self.assertGreaterEqual(seed["crust_thickness_km"], 18.0)
+        self.assertLessEqual(seed["crust_thickness_km"], 55.0)
+        self.assertGreaterEqual(seed["water_fraction"], 0.15)
+        self.assertLessEqual(seed["water_fraction"], 0.78)
+        self.assertIn(seed["volatile_inventory"], {"dry", "wet", "earthlike"})
+        self.assertIn(seed["tectonics_mode"], {"stagnant_lid", "mobile_lid", "unknown"})
+        self.assertAlmostEqual(MAJOR_CRUST_TARGET_PERCENT, sim._crust_major_total(), places=3)
+        trace_elements = sim.crust_composition["trace_elements"]
+        self.assertGreaterEqual(len(trace_elements), 2)
+        self.assertLessEqual(sum(element["abundance_percent"] for element in trace_elements), 1.0)
+        self.assertEqual("Generated generic seed", sim.commit_status)
+
+    def test_eccentric_seed_randomizer_uses_wider_ranges_and_exotic_trace_elements(self):
+        sim = self._sim()
+
+        self.assertTrue(sim.randomize_seed("eccentric", rng=random.Random(7)))
+
+        seed = sim._coerce_seed_payload()
+        self.assertIsNotNone(seed)
+        self.assertGreaterEqual(seed["radius_earth"], 0.22)
+        self.assertLessEqual(seed["radius_earth"], 2.6)
+        self.assertGreaterEqual(seed["core_radius_fraction"], 0.08)
+        self.assertLessEqual(seed["core_radius_fraction"], 0.82)
+        self.assertGreaterEqual(seed["crust_thickness_km"], 4.0)
+        self.assertLessEqual(seed["crust_thickness_km"], 145.0)
+        self.assertIn(seed["volatile_inventory"], {"none", "thin", "dry", "wet", "earthlike", "dense"})
+        self.assertIn(seed["tectonics_mode"], {"inactive", "stagnant_lid", "mobile_lid", "episodic_lid", "heat_pipe", "unknown"})
+        symbols = {element["symbol"] for element in sim.crust_composition["trace_elements"]}
+        self.assertTrue(symbols & {"Au", "Pt", "Os", "U", "Th", "Ir", "W", "Re"})
+        self.assertLessEqual(sum(element["abundance_percent"] for element in sim.crust_composition["trace_elements"]), 1.0)
+        self.assertAlmostEqual(MAJOR_CRUST_TARGET_PERCENT, sim._crust_major_total(), places=3)
+        self.assertEqual("Generated eccentric ocean world seed", sim.commit_status)
+
+    def test_eccentric_desiccated_seed_stays_a_rocky_desert(self):
+        sim = self._sim()
+
+        for random_seed in range(8):
+            self.assertTrue(sim.randomize_seed(
+                "eccentric",
+                rng=random.Random(random_seed),
+                template_id="desiccated_former_ocean",
+            ))
+            seed = sim._coerce_seed_payload()
+            self.assertEqual("desert_terrestrial", seed["planet_class"])
+            self.assertLessEqual(seed["radius_earth"], 2.15)
+
+        self.assertEqual(
+            "Generated eccentric desiccated former ocean seed",
+            sim.commit_status,
+        )
+
+    def test_eccentric_randomizer_does_not_duplicate_template_elements(self):
+        sim = self._sim()
+
+        self.assertTrue(sim.randomize_seed(
+            "eccentric",
+            rng=random.Random(12500181283558051139),
+        ))
+
+        self.assertEqual("carbon_rich", sim.active_planet_template)
+        symbols = [
+            element["symbol"]
+            for element in sim.crust_composition["major_elements"]
+        ]
+        self.assertEqual(len(symbols), len(set(symbols)))
+
+    def test_seed_randomizer_buttons_apply_mode(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_blue"
+        sim.set_control_panel_rect(pygame.Rect(0, 0, 500, 200))
+        sim.set_crust_ui_rects(
+            random_generic_rect=pygame.Rect(10, 10, 100, 30),
+            random_eccentric_rect=pygame.Rect(120, 10, 120, 30),
+        )
+
+        sim.handle_pointer_event(self._click((15, 15)), None, (15, 15))
+
+        self.assertEqual("Generated generic seed", sim.commit_status)
+
+        sim.handle_pointer_event(self._click((125, 15)), None, (125, 15))
+
+        self.assertEqual("Generated eccentric seed", sim.commit_status)
+
+    def test_crust_density_changes_with_composition(self):
+        sim = self._sim()
+        baseline_density = estimate_crust_density_kg_m3(sim.crust_composition)
+
+        sim.crust_composition = sim._serializable_crust_composition()
+        sim.crust_composition["major_elements"] = [
+            {"symbol": "Fe", "name": "Iron", "abundance_percent": 99.0},
+        ]
+        iron_density = estimate_crust_density_kg_m3(sim.crust_composition)
+
+        self.assertGreater(iron_density, baseline_density)
+
+    def test_planet_physics_derives_mass_and_day_length_from_inputs(self):
+        sim = self._sim()
+        sim.seed_input_buffers.update({
+            "radius_earth": "1",
+            "core_radius_fraction": "0.55",
+            "crust_thickness_km": "35",
+            "angular_velocity_deg_per_hour": "30",
+            "water_fraction": "0.5",
+        })
+
+        physics = sim._derive_planet_physics()
+
+        self.assertAlmostEqual(12.0, physics["rotation_period_hours"])
+        self.assertGreater(physics["mass_earth"], 0.0)
+        self.assertGreater(physics["mean_density_kg_m3"], physics["crust_density_kg_m3"])
+        self.assertGreater(physics["mantle_radius_fraction"], 0.0)
+
+    def test_atmosphere_model_reflects_retention_and_temperature(self):
+        sim = self._sim()
+        sim.world_model.loader.entities["planet_blue"] = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": sim.AU_M,
+        }
+        sim.selected_world_gen_planet_id = "planet_blue"
+
+        atmosphere = sim._derive_atmosphere_model()
+        retention = {row["molecule"]: row for row in atmosphere["retention"]}
+
+        self.assertGreater(atmosphere["estimated_surface_temperature_k"], atmosphere["equilibrium_temperature_k"])
+        self.assertIn(retention["H2"]["status"], {"lost", "leaky"})
+        self.assertEqual("stable", retention["N2"]["status"])
+        self.assertNotEqual(1.0, round(atmosphere["surface_pressure_bar"], 6))
+        self.assertLessEqual(atmosphere["surface_pressure_bar"], atmosphere["volatile_supply_bar"] * 2.0)
+        self.assertGreaterEqual(atmosphere["retained_column_fraction"], 0.0)
+        self.assertIn("composition", atmosphere)
+
+    def test_dry_rocky_atmosphere_is_not_earthlike_by_default(self):
+        sim = self._sim()
+        # Dry because its elements hold no oceans' worth of hydrogen.
+        sim.crust_composition = {"major_elements": [
+            {"symbol": symbol, "abundance_percent": value}
+            for symbol, value in sim.PLANET_TEMPLATES["desiccated_former_ocean"]["major_elements"]
+        ]}
+        sim.seed_input_buffers.update({
+            "radius_earth": "0.7",
+            "core_radius_fraction": "0.42",
+            "crust_thickness_km": "45",
+            "angular_velocity_deg_per_hour": "11",
+            "water_fraction": "0",
+            "volatile_inventory": "dry",
+            "tectonics_mode": "stagnant_lid",
+        })
+
+        atmosphere = sim._derive_atmosphere_model()
+        composition = {row["molecule"]: row["fraction"] for row in atmosphere["composition"]}
+
+        self.assertEqual("dry_co2", atmosphere["atmosphere_class"])
+        self.assertTrue(atmosphere["has_solid_surface"])
+        self.assertGreater(composition.get("CO2", 0.0), composition.get("N2", 0.0))
+        self.assertLess(composition.get("O2", 0.0), 0.01)
+
+    def test_gas_giant_atmosphere_keeps_hydrogen_helium_envelope(self):
+        sim = self._sim()
+        sim.world_model.loader.entities["planet_jove"] = {
+            "id": "planet_jove",
+            "name": "Jove",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+            "semi_major_axis_m": 5.2 * sim.AU_M,
+        }
+        sim.selected_world_gen_planet_id = "planet_jove"
+        sim.seed_input_buffers.update({
+            "radius_earth": "9.5",
+            "core_radius_fraction": "0.12",
+            "crust_thickness_km": "5",
+            "angular_velocity_deg_per_hour": "36",
+            "water_fraction": "0.05",
+            "volatile_inventory": "dense",
+            "tectonics_mode": "unknown",
+        })
+
+        self.assertTrue(sim._save_atmosphere_model())
+        atmosphere = sim.world_model.loader.entities["planet_jove"]["atmosphere_model"]
+        summary = sim.world_model.loader.entities["planet_jove"]["atmosphere_summary"]
+        composition = {row["molecule"]: row["fraction"] for row in atmosphere["composition"]}
+
+        self.assertEqual("gas_giant", atmosphere["atmosphere_class"])
+        self.assertFalse(atmosphere["has_solid_surface"])
+        self.assertGreater(composition.get("H2", 0.0), 0.7)
+        self.assertGreater(composition.get("He", 0.0), 0.1)
+        self.assertEqual("gas_giant", summary["atmosphere_class"])
+        self.assertFalse(summary["has_solid_surface"])
+
+    def test_regime_model_allows_earthlike_erosion_and_reduces_craters(self):
+        seed = {
+            "radius_earth": 1.0,
+            "core_radius_fraction": 0.55,
+            "crust_thickness_km": 35.0,
+            "water_fraction": 0.7,
+            "volatile_inventory": "earthlike",
+            "tectonics_mode": "unknown",
+        }
+        physics = {
+            "radius_earth": 1.0,
+            "core_radius_fraction": 0.55,
+            "mantle_radius_fraction": 0.4445,
+            "crust_radius_fraction": 0.0055,
+            "crust_thickness_km": 35.0,
+            "surface_gravity_g": 1.0,
+        }
+        atmosphere = {
+            "surface_pressure_bar": 1.0,
+            "estimated_surface_temperature_k": 288.0,
+            "volatile_budget": {"derived_seed": {
+                "water_fraction": 0.7, "surface_fluid": "water",
+                "surface_liquid_depth_m": 2600.0, "frozen_ocean_depth_m": 0.0,
+            }},
+        }
+
+        regime = derive_interior_regime_model(seed, physics, atmosphere, crust_type="silicate")
+
+        self.assertEqual("plate_tectonics", regime["interior"]["tectonic_regime"])
+        self.assertEqual("active", regime["surface_processes"]["hydrologic_cycle"])
+        self.assertEqual("low", regime["surface_processes"]["crater_retention"])
+        self.assertIn("fluvial", regime["surface_processes"]["erosion_processes"])
+
+    def test_regime_model_preserves_cratered_airless_surfaces(self):
+        seed = {
+            "radius_earth": 0.25,
+            "core_radius_fraction": 0.0,
+            "crust_thickness_km": 120.0,
+            "water_fraction": 0.0,
+            "volatile_inventory": "none",
+            "tectonics_mode": "unknown",
+        }
+        physics = {
+            "radius_earth": 0.25,
+            "core_radius_fraction": 0.0,
+            "mantle_radius_fraction": 0.0,
+            "crust_radius_fraction": 0.45,
+            "crust_thickness_km": 120.0,
+            "surface_gravity_g": 0.15,
+        }
+        atmosphere = {
+            "surface_pressure_bar": 0.0,
+            "estimated_surface_temperature_k": 220.0,
+        }
+
+        regime = derive_interior_regime_model(seed, physics, atmosphere, crust_type="basaltic")
+
+        self.assertEqual("inactive", regime["interior"]["tectonic_regime"])
+        self.assertFalse(regime["interior"]["mantle_present"])
+        self.assertEqual("none", regime["surface_processes"]["hydrologic_cycle"])
+        self.assertEqual("high", regime["surface_processes"]["crater_retention"])
+        self.assertIn("impact_gardening", regime["surface_processes"]["erosion_processes"])
+
+    def test_terrain_seed_reflects_plate_tectonics_and_hydrology(self):
+        seed = {
+            "radius_earth": 1.0,
+            "core_radius_fraction": 0.55,
+            "crust_thickness_km": 35.0,
+            "water_fraction": 0.7,
+            "volatile_inventory": "earthlike",
+            "tectonics_mode": "unknown",
+        }
+        physics = {
+            "radius_m": 6_371_000.0,
+            "radius_earth": 1.0,
+            "core_radius_fraction": 0.55,
+            "mantle_radius_fraction": 0.4445,
+            "crust_radius_fraction": 0.0055,
+            "crust_thickness_km": 35.0,
+            "surface_gravity_g": 1.0,
+        }
+        atmosphere = {
+            "surface_pressure_bar": 1.0,
+            "estimated_surface_temperature_k": 288.0,
+            "volatile_budget": {"derived_seed": {
+                "water_fraction": 0.7, "surface_fluid": "water",
+                "surface_liquid_depth_m": 2600.0, "frozen_ocean_depth_m": 0.0,
+            }},
+        }
+        regime = derive_interior_regime_model(seed, physics, atmosphere, crust_type="silicate")
+
+        terrain = derive_terrain_seed_model(seed, physics, atmosphere, regime)
+
+        self.assertTrue(terrain["tectonics"]["enabled"])
+        self.assertGreaterEqual(terrain["tectonics"]["plate_count"], 3)
+        self.assertEqual("active", terrain["hydrology"]["cycle"])
+        self.assertTrue(terrain["hydrology"]["drainage_enabled"])
+        self.assertEqual(0.0, terrain["hydrology"]["target_ocean_fraction"])
+        self.assertGreater(
+            terrain["hydrology"]["equivalent_global_water_depth_m"],
+            0.0,
+        )
+        self.assertIn("tectonic_boundaries", [layer["id"] for layer in terrain["map_layers"]])
+        self.assertIn("water_mask", [layer["id"] for layer in terrain["map_layers"]])
+
+    def test_terrain_seed_reflects_airless_cratered_surface(self):
+        seed = {
+            "radius_earth": 0.25,
+            "core_radius_fraction": 0.0,
+            "crust_thickness_km": 120.0,
+            "water_fraction": 0.0,
+            "volatile_inventory": "none",
+            "tectonics_mode": "unknown",
+        }
+        physics = {
+            "radius_m": 1_592_750.0,
+            "radius_earth": 0.25,
+            "core_radius_fraction": 0.0,
+            "mantle_radius_fraction": 0.0,
+            "crust_radius_fraction": 0.45,
+            "crust_thickness_km": 120.0,
+            "surface_gravity_g": 0.15,
+        }
+        atmosphere = {
+            "surface_pressure_bar": 0.0,
+            "estimated_surface_temperature_k": 220.0,
+        }
+        regime = derive_interior_regime_model(seed, physics, atmosphere, crust_type="basaltic")
+
+        terrain = derive_terrain_seed_model(seed, physics, atmosphere, regime)
+
+        self.assertFalse(terrain["tectonics"]["enabled"])
+        self.assertEqual(0, terrain["tectonics"]["plate_count"])
+        self.assertEqual("none", terrain["hydrology"]["cycle"])
+        self.assertFalse(terrain["hydrology"]["drainage_enabled"])
+        self.assertGreater(terrain["cratering"]["density"], 0.6)
+        self.assertEqual("impact_basin_relief", terrain["heightfield"]["relief_driver"])
+        self.assertIn("crater_population", [layer["id"] for layer in terrain["map_layers"]])
+
+    def test_heightmap_model_is_chunked_and_samples_elevation(self):
+        seed = {
+            "radius_earth": 1.0,
+            "core_radius_fraction": 0.55,
+            "crust_thickness_km": 35.0,
+            "water_fraction": 0.7,
+            "volatile_inventory": "earthlike",
+            "tectonics_mode": "unknown",
+        }
+        physics = {
+            "radius_m": 6_371_000.0,
+            "radius_earth": 1.0,
+            "core_radius_fraction": 0.55,
+            "mantle_radius_fraction": 0.4445,
+            "crust_radius_fraction": 0.0055,
+            "crust_thickness_km": 35.0,
+            "surface_gravity_g": 1.0,
+        }
+        atmosphere = {
+            "surface_pressure_bar": 1.0,
+            "estimated_surface_temperature_k": 288.0,
+        }
+        regime = derive_interior_regime_model(seed, physics, atmosphere, crust_type="silicate")
+        terrain = derive_terrain_seed_model(seed, physics, atmosphere, regime)
+
+        heightmap = derive_heightmap_model(terrain, seed, physics, planet_id="planet_blue")
+
+        self.assertEqual("heightmap_seeded", heightmap["status"])
+        self.assertEqual("equirectangular", heightmap["projection"])
+        self.assertTrue(heightmap["spherical_body"])
+        self.assertTrue(heightmap["wrap_x"])
+        self.assertFalse(heightmap["wrap_y"])
+        self.assertEqual("longitude_wrap_latitude_clamp", heightmap["edge_policy"])
+        self.assertEqual("chunked_heightfield_seed", heightmap["storage"]["kind"])
+        self.assertEqual("longitude_wrap_latitude_clamp", heightmap["storage"]["edge_policy"])
+        self.assertEqual(32, heightmap["storage"]["chunk_cols"])
+        self.assertEqual(16, heightmap["storage"]["chunk_rows"])
+        self.assertEqual(CANONICAL_LOD0_SAMPLE_WIDTH, heightmap["sample_grid"]["width"])
+        self.assertEqual(CANONICAL_LOD0_SAMPLE_HEIGHT, heightmap["sample_grid"]["height"])
+        self.assertTrue(heightmap["sample_grid"]["wrap_x"])
+        self.assertEqual(CANONICAL_LOD0_SAMPLE_HEIGHT, len(heightmap["sample_grid"]["rows"]))
+        self.assertEqual(CANONICAL_LOD0_SAMPLE_WIDTH, len(heightmap["sample_grid"]["rows"][0]))
+        self.assertEqual("full_planet", heightmap["coverage"])
+        self.assertAlmostEqual(4885.7, heightmap["equator_resolution_m_per_px"], delta=1.0)
+        self.assertEqual("physiographic-heightmap-v9-global-scaffold", heightmap["geology_model"]["model_version"])
+        self.assertIn("continental_shelves", heightmap["geology_model"]["passive_margin_features"])
+        for row in heightmap["sample_grid"]["rows"]:
+            self.assertEqual(row[0], row[-1])
+        sample_values = [
+            value
+            for row in heightmap["sample_grid"]["rows"]
+            for value in row
+        ]
+        self.assertGreater(max(sample_values), min(sample_values))
+        self.assertGreaterEqual(min(sample_values), heightmap["min_elevation_m"])
+        self.assertLessEqual(max(sample_values), heightmap["max_elevation_m"])
+        self.assertGreater(heightmap["hypsometry_summary"]["broad_plain_fraction"], 0.42)
+        self.assertLess(heightmap["hypsometry_summary"]["mountain_fraction_above_2000m"], 0.18)
+
+    def test_material_heatmap_generator_writes_compact_bundle(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            heightmap = {
+                "status": "heightmap_seeded",
+                "planet_id": "planet_blue",
+                "map_seed": "heatmap-test",
+                "projection": "equirectangular",
+                "wrap_x": True,
+                "wrap_y": False,
+                "min_elevation_m": -1000.0,
+                "max_elevation_m": 2000.0,
+                "sea_level_m": 0.0,
+                "sample_grid": {
+                    "width": 3,
+                    "height": 3,
+                    "rows": [
+                        [-500.0, 900.0, -500.0],
+                        [100.0, 1600.0, 100.0],
+                        [-300.0, 700.0, -300.0],
+                    ],
+                },
+            }
+            natural_material_model = {
+                "planet_tags": ["active_hydrology", "weathered_surface", "basaltic_surface"],
+                "likely_materials": [
+                    {
+                        "material_id": "mat_basalt",
+                        "name": "Basalt",
+                        "confidence": 0.82,
+                        "display_color": [72, 76, 70],
+                        "evidence_tags": ["basaltic_surface"],
+                    },
+                    {
+                        "material_id": "mat_clay_rich_regolith",
+                        "name": "Clay-Rich Regolith",
+                        "confidence": 0.66,
+                        "display_color": [132, 118, 92],
+                        "evidence_tags": ["active_hydrology", "weathered_surface"],
+                    },
+                ],
+            }
+
+            model = generate_material_heatmap_model(
+                planet={"id": "planet_blue"},
+                natural_material_model=natural_material_model,
+                terrain={"map_seed": "heatmap-test", "hydrology": {"cycle": "active", "target_ocean_fraction": 0.35}},
+                heightmap=heightmap,
+                output_root=storage_root / "assets" / "maps" / "material_heatmaps",
+                storage_root=storage_root,
+                image_size=(32, 16),
+            )
+            regenerated = generate_material_heatmap_model(
+                planet={"id": "planet_blue"},
+                natural_material_model=natural_material_model,
+                terrain={"map_seed": "heatmap-test", "hydrology": {"cycle": "active", "target_ocean_fraction": 0.35}},
+                heightmap=heightmap,
+                output_root=storage_root / "assets" / "maps" / "material_heatmaps",
+                storage_root=storage_root,
+                image_size=(32, 16),
+            )
+
+            self.assertEqual("generated", model["status"])
+            self.assertEqual(
+                "substrate_composition_under_process_cover",
+                model["distribution_mode"],
+            )
+            self.assertLessEqual(
+                {layer["distribution_role"] for layer in model["layers"]},
+                {"bedrock", "surface_cover"},
+            )
+            self.assertEqual("index0_raster_bundle", model["storage_format"])
+            self.assertEqual("rgba8888_bundle", model["image_format"])
+            self.assertEqual("areal_lithotectonic_composition", model["truth_model"])
+            self.assertEqual("areal_surface_fraction", model["fraction_semantics"])
+            self.assertEqual("inferred", model["default_confidence_state"])
+            self.assertGreaterEqual(len(model["layers"]), 1)
+            self.assertEqual("categorical_geological_map", model["composite_layer"]["render_mode"])
+            self.assertTrue((storage_root / model["bundle_path"]).exists())
+            self.assertEqual(model["bundle_path"], regenerated["bundle_path"])
+            self.assertEqual(1, len(list((storage_root / "assets" / "maps" / "material_heatmaps").glob("*.i0r"))))
+            self.assertEqual([], list((storage_root / "assets" / "maps" / "material_heatmaps").glob("*.tmp-*")))
+            self.assertEqual(model["bundle_path"], model["composite_layer"]["bundle_path"])
+            self.assertIsNotNone(load_raster_bundle_surface(
+                storage_root / model["bundle_path"],
+                model["composite_layer"]["bundle_layer_id"],
+            ))
+            self.assertEqual([], list((storage_root / "assets" / "maps" / "material_heatmaps").glob("*.png")))
+            for layer in model["layers"]:
+                self.assertEqual(model["bundle_path"], layer["bundle_path"])
+                self.assertIsNotNone(load_raster_bundle_surface(
+                    storage_root / layer["bundle_path"],
+                    layer["bundle_layer_id"],
+                ))
+                self.assertIn("coverage_fraction", layer)
+                self.assertLessEqual(layer["coverage_fraction"], 1.0)
+
+    def test_png_material_heatmap_can_import_to_bundle(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            pygame.init()
+            source_path = storage_root / "source.png"
+            surface = pygame.Surface((4, 2), pygame.SRCALPHA)
+            surface.fill((20, 40, 60, 180))
+            pygame.image.save(surface, str(source_path))
+
+            result = import_png_to_raster_bundle(
+                source_path,
+                storage_root / "assets" / "maps" / "material_heatmaps" / "imported.i0r",
+                layer_id="imported_material",
+                metadata={"name": "Imported Material"},
+            )
+
+            self.assertTrue(Path(result["bundle_path"]).exists())
+            loaded = load_raster_bundle_surface(result["bundle_path"], result["bundle_layer_id"])
+            self.assertIsNotNone(loaded)
+            self.assertEqual((4, 2), loaded.get_size())
+
+    def test_water_cycle_model_derives_climate_grid_and_rivers_from_heightmap(self):
+        heightmap = {
+            "status": "heightmap_seeded",
+            "planet_id": "planet_blue",
+            "map_seed": "water-cycle-test",
+            "projection": "equirectangular",
+            "wrap_x": True,
+            "wrap_y": False,
+            "min_elevation_m": -1000.0,
+            "max_elevation_m": 2600.0,
+            "sea_level_m": 0.0,
+            "coverage": "full_planet",
+            "circumference_m": 40_030_173.6,
+            "equator_resolution_m_per_px": 4886.0,
+            "sample_grid": {
+                "width": 5,
+                "height": 5,
+                "rows": [
+                    [-500.0, -400.0, 600.0, 200.0, -500.0],
+                    [-300.0, 500.0, 2200.0, 800.0, -300.0],
+                    [-200.0, 900.0, 2600.0, 1200.0, -200.0],
+                    [-300.0, 500.0, 1700.0, 700.0, -300.0],
+                    [-500.0, -400.0, 300.0, 100.0, -500.0],
+                ],
+            },
+        }
+        model = derive_water_cycle_model(
+            terrain={
+                "map_seed": "water-cycle-test",
+                "hydrology": {
+                    "cycle": "active",
+                    "liquid_water_possible": True,
+                    "drainage_enabled": True,
+                    "target_ocean_fraction": 0.42,
+                },
+            },
+            heightmap=heightmap,
+            atmosphere={"surface_pressure_bar": 1.0, "estimated_surface_temperature_k": 290.0},
+            seed={"map_seed": "water-cycle-test"},
+            planet_id="planet_blue",
+        )
+
+        self.assertEqual("water_cycle_seeded", model["status"])
+        self.assertEqual(5, model["climate_grid"]["width"])
+        self.assertEqual(5, model["climate_grid"]["height"])
+        self.assertGreaterEqual(len(model["climate_zones"]), 2)
+        self.assertGreaterEqual(model["river_count"], 1)
+        self.assertIn("points", model["rivers"][0])
+        self.assertEqual("full_planet", model["scale"]["coverage"])
+        self.assertGreater(model["rivers"][0]["length_km"], 100.0)
+        self.assertGreater(model["rivers"][0]["average_width_m"], 10.0)
+        self.assertGreaterEqual(model["rivers"][0]["mouth_width_m"], model["rivers"][0]["average_width_m"])
+        self.assertEqual("ocean_circulation_seeded", model["ocean_circulation_model"]["status"])
+        self.assertEqual(5, len(model["climate_grid"]["annual_precipitation_rows_mm"]))
+        self.assertEqual(5, len(model["climate_grid"]["annual_runoff_rows_mm"]))
+
+    def test_solid_worldgen_adds_material_heatmap_metadata_after_heightmap(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            world_model = FakeWorldModel(entries_directory=temp_dir)
+            sim = WorldGenSimulation(
+                world_model=world_model,
+                parent_system_id="system_alpha",
+                year=2400,
+            )
+            planet = {
+                "id": "planet_blue",
+                "name": "Blue",
+                "type": "location",
+                "_dataset": "locations",
+                "location_class": "planet",
+                "star_system": "system_alpha",
+                "semi_major_axis_m": sim.AU_M,
+                "tags": ["world_gen_candidate"],
+            }
+            world_model.loader.entities["planet_blue"] = planet
+            world_model.loader.datasets["locations"].append(planet)
+            sim.selected_world_gen_planet_id = "planet_blue"
+            sim.seed_input_buffers.update({
+                "radius_earth": "0.35",
+                "core_radius_fraction": "0.2",
+                "crust_thickness_km": "80",
+                "angular_velocity_deg_per_hour": "9",
+                "water_fraction": "0.0",
+                "volatile_inventory": "none",
+                "tectonics_mode": "inactive",
+            })
+            sim._save_selected_planet_seed()
+            sim._save_atmosphere_model()
+            sim._save_interior_regime_model()
+
+            self.assertTrue(sim._save_terrain_seed_model())
+
+            heatmap_model = planet.get("material_heatmap_model")
+            self.assertIsInstance(heatmap_model, dict)
+            self.assertEqual("generated", heatmap_model["status"])
+            self.assertGreaterEqual(len(heatmap_model["layers"]), 1)
+            self.assertNotIn("material_heatmaps", world_model.loader.datasets)
+            self.assertEqual("generated", planet["materials_summary"]["heatmap_status"])
+            self.assertTrue((Path(temp_dir) / heatmap_model["bundle_path"]).exists())
+
+    def test_height_marker_interval_gets_finer_with_zoom(self):
+        self.assertEqual(100, height_marker_interval_m(0.1))
+        self.assertEqual(50, height_marker_interval_m(0.5))
+        self.assertEqual(10, height_marker_interval_m(2.0))
+        self.assertEqual(1, height_marker_interval_m(12.0))
+
+    def test_heightmap_contour_display_is_capped_for_performance(self):
+        heightmap = {
+            "min_elevation_m": -4775,
+            "max_elevation_m": 6271,
+            "sea_level_m": 0,
+        }
+
+        interval = display_contour_interval_m(heightmap, 20, max_levels=18)
+        levels = contour_levels_for_heightmap(heightmap, 20, max_levels=18)
+
+        self.assertGreaterEqual(interval, 500)
+        self.assertLessEqual(len(levels), 18)
+
+    def test_heightmap_preview_consumes_wheel_inside_preview(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_blue"
+        sim.editor_stage = "heightmap"
+        sim.set_heightmap_preview_rect(pygame.Rect(10, 10, 100, 80))
+
+        handled = sim.handle_pre_camera_event(
+            SimpleNamespace(type=pygame.MOUSEWHEEL, y=1, pos=(30, 30))
+        )
+
+        self.assertTrue(handled)
+        self.assertGreater(sim.heightmap_preview_zoom, 1.0)
+
+    def test_heightmap_preview_does_not_consume_wheel_outside_preview(self):
+        sim = self._sim()
+        planet = {
+            "id": "planet_blue",
+            "name": "Blue",
+            "type": "location",
+            "_dataset": "locations",
+            "location_class": "planet",
+            "star_system": "system_alpha",
+        }
+        sim.world_model.loader.entities["planet_blue"] = planet
+        sim.world_model.loader.datasets["locations"].append(planet)
+        sim.selected_world_gen_planet_id = "planet_blue"
+        sim.editor_stage = "heightmap"
+        sim.set_heightmap_preview_rect(pygame.Rect(10, 10, 100, 80))
+
+        handled = sim.handle_pre_camera_event(
+            SimpleNamespace(type=pygame.MOUSEWHEEL, y=1, pos=(300, 300))
+        )
+
+        self.assertFalse(handled)
+        self.assertEqual(1.0, sim.heightmap_preview_zoom)
+
+
+if __name__ == "__main__":
+    unittest.main()

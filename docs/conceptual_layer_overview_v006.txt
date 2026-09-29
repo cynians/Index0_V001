@@ -1,0 +1,949 @@
+Index0 Conceptual Layer Overview
+Version: v007
+Date: 2026-09-02
+Purpose: Compact conceptual handoff document for discussing and evolving the program model outside the code editor.
+
+INSTRUCTIONS FOR THE NON-EDITING GPT
+Read this whole document before proposing changes.
+Work conceptually: suggest model changes, terminology, missing concepts, relations, workflows, and unresolved design choices.
+Do not write code unless explicitly asked. Prefer concise, structured notes that can later be implemented by Codex.
+When proposing updates, write them under "Changes to next version" using numbered items.
+Preserve the versioning scheme: the next implemented document after this one should become v008, then v009, and so on.
+If something is uncertain, mark it as an open question rather than inventing a final answer.
+
+CHANGES TO NEXT VERSION
+Changes to next version:
+- Coastal implementation note (July 2026): the reduced-physics shoreline graph, multiaxial coastal classification, storage containment, `.i0wg` run bundles, canonical atomic rasters, regional landform refinement, UI layer, and scientific/storage fixtures are now implemented. Full spectral waves, harmonic tides, event-resolved hazards, stratigraphic shoreline migration, 3D sediment transport, and biologically occupied construction remain deferred below.
+1. Adopt a first-screen causality rule for world generation. The first screen is the complete player-authored physical boundary condition for a new world. Atmosphere, volatile state, interior regime, tectonics, terrain, climate, hydrology, materials, ecology readiness, and map visuals should be derived from those inputs plus reproducible, physically bounded stochastic variation. Later screens are explanatory previews and save/continue checkpoints, not independent parameter editors.
+2. Preserve eccentric outcomes without requiring the player to author downstream exceptions. Formation-zone inventory, elemental composition, mass, radius, orbit, spin, volatile delivery/loss, mantle redox, radiogenic budget, and seeded formation history should occasionally produce unusual but plausible candidates such as Venus-like runaway greenhouse worlds. Generic generation should use conservative distributions; eccentric generation may sample distribution tails, but both must use the same causal model.
+3. Treat the first-screen Surface Water control as a volatile-inventory index rather than a requested ocean-coverage percentage. Convert retained surface water to global-equivalent depth or volume and solve sea level against generated hypsometry. Ocean coverage, islands, inland seas, and exposed shelves must emerge from water inventory plus basin geometry. Explicit ocean-coverage targets remain compatibility-only authored overrides.
+4. Generate a latent pre-present geological reconstruction for solid worlds. It may span hundreds of millions to billions of years and may seed rifting, accretion, collisions, orogens, passive margins, sedimentary basins, and continental age provinces. This reconstruction is generation history, not registry time: ordinary registry spans must not move plates or rebuild continents.
+5. Make scientifically plausible complex continents a principal worldgen objective. Continental crust should persist on and move with plates; cratons, accreted terranes, sutures, rifts, arcs, microcontinents, embayments, shelves, and basins should share one causal history rather than being unrelated decorative noise.
+6. Couple climate and hydrology to resolved geography. Atmospheric circulation, ocean heat transport, seasonality, continentality, upwind moisture fetch, orographic uplift, cumulative rain shadows, snow storage, runoff, lakes, watersheds, tributaries, deltas, wetlands, and erosion should be progressively resolved by scale while inheriting parent conditions.
+7. Keep generated truth stable across scale. Regional and site regeneration must inherit parent plate, province, elevation, coastline, climate, watershed, lithology, and hidden resource seeds. Added detail may refine boundaries and expose smaller processes but must not contradict the parent map at patch edges or change deposits merely because the same region was regenerated.
+8. Develop ore and natural-material occurrence toward process-based deposit genesis. Future models should combine host lithology, magmatic differentiation, intrusions, faults, hydrothermal fluids, redox fronts, sedimentary history, metamorphic grade, weathering enrichment, deposit geometry, tonnage distributions, and preservation. Planetary maps show broad provinces; regional/site generation resolves deposits.
+9. Improve worldgen cartography without changing generated truth: higher-resolution coastlines, projection-aware polar treatment, antialiased hydrology, readable relief and shelves, material texture, confidence-aware legends, and seam-safe rendering.
+10. Later optimization should cache stable planetary material-affinity fields and evaluate independent map chunks concurrently. Headless generation currently skips rendering correctly, but exhaustive material evaluation remains the dominant cost; performance work must preserve identical seeded truth.
+11. Add an explicit multiaxial coastal geomorphology layer between final landscape evolution and scale-dependent regional refinement. Coast segments should derive tectonic setting, relative sea-level state, wave/tidal regime, substrate, sediment budget, dominant process, geomorphic assemblages, and confidence from saved upstream truth rather than selecting a decorative coast type.
+12. Treat biological coastal landforms as coupled Biosphere outcomes. Abiotic worldgen may establish carbonate-platform, reef, marsh, mangrove, or shell-reef accommodation potential, but biological occupation and bioconstruction require compatible organisms and ecological history.
+13. Separate worldgen storage into durable world truth, reproducible derived assets, and disposable diagnostics. Repeated generation should replace or reuse canonical bundles rather than append orphan files; headless runs should be temporary by default and persist only as explicit retained or pinned bundles.
+14. Keep Sol as the first pinned worldgen benchmark while allowing ordinary generated worlds, transient validation repositories, screenshots, and superseded material bundles to expire or be garbage-collected under an explicit retention policy.
+15. Reduce worldgen storage per ordinary planet substantially before generation is scaled to large populations. A single two-coast validation repository reached 103.6 MB even without representing a durable player world; that order of magnitude per planet is unacceptable. Durable state should remain compact, while full-resolution rasters, refinement chunks, render products, replay repositories, and intermediate solver fields should be compressed, deduplicated, regenerated lazily, or evicted. Establish measured byte budgets for durable truth, active derived caches, and diagnostics, and make storage-budget regression checks part of worldgen validation.
+16. Separate continuous terrain support from sparse ground objects and organism-scale microhabitats. Plot and Survey heightfields stop at a 10 cm sample spacing and should not encode individual loose rocks, debris, stems, organisms, small burrows, or cosmetic grains. Later Biosphere and object-detail simulation should place those items lazily and deterministically from terrain-cell references, substrate/material probability, hydrology, exposure, ecological history, and a stable placement seed. Insect-scale simulation may consume this object/microhabitat layer without increasing heightmap density.
+17. Make LOD physical extent explicit. Planetary, macroregional, regional, local, site, parcel, plot, and survey levels must define both expected footprint and scientific sample spacing; a large render canvas must not be mistaken for high-resolution geographic truth. The current 100 km diagnostic window belongs to the regional LOD2 contract, not the macroregional LOD1 contract.
+18. Treat LOD0 as the canonical full-planet reference snapshot. It must retain enough spatial support to express broad continents, basins, mountain systems, climate, hydrology, coast, material provinces, and the boundary conditions needed by its descendants. A 385 x 193 scientific grid on an Earth-sized body is too coarse for that role; the replacement should expose a parameterized 1025 x 513 baseline and a denser benchmark mode.
+19. Require strict immediate-parent derivation. LOD N may add bounded, scale-appropriate residual detail, but it must sample inherited elevation, topology, climate, hydrology, materials, and geological structures from LOD N-1 rather than re-querying the root planet. Parent fingerprints must make stale descendants explicit after an upstream change.
+20. Preserve incomplete features as causal influence. A mountain range may be complete at LOD0 or LOD1, resolve into range segments and valleys at LOD2–LOD4, and cease to be recognizable as a mountain at LOD7; its slope, rock, climate, drainage, and provenance still remain inherited inputs.
+21. Record the complete worldgen mechanism/LOD inventory in `docs/worldgen_lod_mechanism_matrix_v001.md`. Relevant orchestration and consumer files must carry a short header stating the current LOD contract, parent-lineage rule, and whether their fields are causal, inherited, derived, or visual-only.
+22. Keep missing mechanisms visible in the design: persistent 2.5D geological structures, formation theory, dynamic plate topology, mass-conserving sediment and landslide processes, glacier flow, groundwater, spatial dynamic uplift, process-based deposits, higher-fidelity climate/ocean/coast processes, and biological/sparse-object layers remain staged future work rather than being implied by current summaries.
+
+
+1. PROGRAM IDENTITY
+Is-State:
+Index0 is a repository-driven ontology workspace for worldbuilding, simulation, and structured knowledge editing.
+Entries are typed ontology entities with schema fields, relations, temporal ranges, visual cards, repository visibility, and simulation affordances.
+The user works mainly through the repository browser, card canvas, timeline, and entity-launched simulations.
+Current card tabs include General, Overview, Temporal, Location, Relations, Production, Site, Phylogeny, Operational, Simulation, and Media as applicable.
+The old broad State tab is obsolete and is not part of the current card tab order.
+
+Should-Be State:
+The program should feel like one coherent ontology workspace rather than a set of disconnected editors.
+The user should be able to move from concept, to entity card, to map/orbit/worldgen simulation, to production/logistics consequences without changing mental models.
+Any tab or simulation panel should expose the same underlying entity facts from the angle where they matter most.
+Index0 should keep entity types to the minimum needed for identity, relations, history, simulation behavior, and durable knowledge. Generated layers, masks, summaries, manifests, and other representational artifacts should normally live as ontology-backed fields on the entity they describe rather than becoming standalone entities.
+All durable knowledge should be stored in the ontology as far as feasible. External files such as PNGs may hold binary pixels or other opaque assets, but the meaning, provenance, relations, confidence state, and asset references should live in ontology-backed entity fields.
+Index0 simulations should be card-launched and mode-situated. A card should not launch only one fixed simulation. Depending on entity type, relations, scale, and available context, the same card may launch different situated simulation modes.
+Simulation modes should be defined by access card, launched subject, scale, and context dependencies. The important design question is not simply which simulation appears inside another, but from which card the user enters, what subject is being simulated, at what scale, and which other systems are drawn on.
+For example, a formation card may launch a soldier/person view, commander view, convoy route, individual tank or truck, smaller subformation, patrol, camp/site operation, or wider operational map. These modes should use the same underlying ontology facts rather than separate scenario data.
+
+2. CURRENT IMPLEMENTATION REALITY
+Is-State:
+The current program is ontology-first.
+The persistent Owlready2 SQLite quadstore is the active working source for entities, relations, schema definitions, and UI field metadata. `ontology/index0.owl` is the RDF/XML interchange checkpoint: export it deliberately for review/versioning, or deliberately re-import it to replace the working store.
+The old `entries/*.yaml`, `schemas/*.yaml`, YAML repository, and YAML export tooling have been removed from the current workspace.
+`EntityLoader` preserves `loader.datasets` and `loader.entities` projections so existing UI and simulations can work against ontology-backed data.
+`PersistentOntologyStore` performs point edits, batched entity updates, renames, and removals without rebuilding the graph. `OntologyRepository` remains the RDF/XML projection/interchange layer, preserves arbitrary object relation fields, and projects `offspring` from `parents`.
+`systems` and `spatial_features` are still projected into `locations` for active repository use.
+There is still compatibility import logic for structured non-ontology data, but it is not the normal source of truth.
+The running application is organized around a repository browser, zoomable card canvas, shared timeline, and modal/full-screen specialist workspaces. `InputRouter`, `UIManager`, and the knowledge-browser controllers keep modal input, card interaction, simulation navigation, and cached layout behavior coordinated.
+Current specialist workspaces include Map/Building, Space, World Generation, Pixel Studio, person/quote editing, phylogeny, production/site, and the card-launched simulation routes exposed by applicable entities.
+The Escape-menu settings expose a two-step Save Ontology checkpoint control. It exports the authoritative SQLite store to the LFS-tracked RDF/XML checkpoint; it does not clear, replace, or re-import the active store.
+
+Should-Be State:
+New durable facts should be modeled in the ontology first, with projections used only to serve UI and simulation ergonomics.
+The app should not regain a parallel YAML source path.
+Compatibility import paths should remain clearly transitional and should never become a second canonical repository.
+
+2A. FORMATION SIM
+Intent:
+Formation Sim is the situated workspace for designing and inspecting formations at multiple scales, from Roman legions and mechanized forces to interstellar fleets. It is a generic formation workspace, not a military-only taxonomy or a prescribed Battalion/Company/Squad hierarchy.
+
+Context:
+`formation` is the only fixed structural term. Every subordinate node is another formation with a player-authored label. Structural parentage and faction ownership are separate relations: a formation may sit under one formation while belonging to a different faction. Faction ownership is required for newly created formations because it determines available equipment, doctrine, strategic context, and later knowledge/authority access.
+
+Formation Blueprints are faction-specific formation designs. They describe intended personnel, organization, equipment, history, and sub-blueprints. A concrete formation is a realization of a blueprint and may deviate from it; a changed design is a new blueprint rather than a mutation of the old design. The current UI supports creating a new formation, creating a realization from a blueprint, or creating a new blueprint.
+
+Is-State:
+The Formation Sim is card-launched and navigates downward through the formation tree. The left panel supports child selection, a `To parent` action, and drag reordering. The workspace has Aggregate, Formation, and Personnel display scales. Aggregate views summarize large formations; smaller formations can expose subordinate formations, personnel rows, assigned vehicles, and eventually individual mannequin/person images. Vehicles are displayed only when explicitly assigned and carry side-image and grouped crew-role data when those fields exist.
+
+The default view year is 2400 and is type-able. Formation and blueprint history uses sparse snapshots: a year is recorded only when the relevant state changes, and a year view resolves to the latest recorded state at or before that year. The current formation editor shows only equipment that is selectable in the active view; unavailable items are omitted without an explanation panel. The underlying availability decision remains a staged concern for the generalized item/component model and its future faction, knowledge, market, logistics, and location context.
+
+New creation requires a valid faction card. The faction may differ from the structural parent formation's faction and, for realizations, may differ from the source blueprint's faction. Faction selection is searchable and scrollable to support catalogs well beyond 1,000 factions. The current blueprint editor exposes personnel adjustment, equipment selection, and an Organization manager with child-blueprint rows, direct child navigation, and a child-blueprint creation action. Existing tree drag behavior can reorder siblings. Detailed deviations, knowledge-gated discovery, and full faction-aware filtering remain staged work.
+
+Open design constraints:
+- Faction affiliation should eventually be a first-class relation with temporal validity and clear inheritance/override semantics.
+- Equipment and strategic-context availability should resolve from faction, year, knowledge, technology, and local logistics rather than from formation labels.
+- Aggregate-to-personnel promotion should be driven by scale and available corporal detail, not by fixed historical naming conventions.
+
+Formation creation and editing UX direction:
+The Formation Sim should be the deep editor and the card should be the convenient entry point. A formation card should offer Formation Sim plus a context-sensitive `Add subordinate` action. That action should open the selected formation's creation menu without requiring the user to first find the same formation in the hierarchy. A blueprint card should similarly open its editor directly, while its subordinate action should create a child blueprint/organization node in the blueprint's context.
+
+Creation should be a short guided sequence with visible context rather than a blank modal: structural parent, faction owner, creation mode, source blueprint when applicable, name, and initial year should remain visible together. The user should be able to create a plain formation, realize a blueprint, or create a blueprint without encountering historical taxonomy assumptions. Searchable faction selection should scale to large catalogs and should later support knowledge and temporal filtering without changing the basic interaction.
+
+Editing should distinguish quick card edits from structural edits. Cards are useful for identity, affiliation, dates, notes, and launching the relevant Formation Sim. The current launch affordance bridge exposes both `Formation Sim` and `Add subordinate` for formation cards; the latter opens the contextual creation menu in the selected formation workspace. Formation Sim is the natural place for hierarchy, organization, equipment, personnel totals, vehicles, role groupings, and blueprint realization. Both surfaces should return to the same entity and preserve the current year and context.
+
+Questions and open ends for the next design pass:
+1. Should the durable relation be named `faction`, `parent_faction`, or `affiliation`, with the UI using a friendlier label such as `Faction owner`?
+2. Is faction ownership a single active faction at a time, or may a formation have multiple co-owning/coalition factions with roles and shares?
+3. When a structural parent changes faction, should children with explicit factions remain unchanged, or should they offer an inheritance warning and batch-update action?
+4. Should faction ownership have its own start/end years and sparse snapshots, independently of the formation's organizational history?
+5. In `Create from blueprint`, should the source blueprint faction be the default, or should the picker always require an explicit faction choice as it does now?
+6. Should a realization show a compact `deviates from blueprint` summary, a field-by-field diff, or both?
+7. Which edits create a new blueprint, and which edits are allowed as realization-only deviations: personnel, equipment, organization, naming, doctrine, or all of them?
+8. Should a card's `Add subordinate` action open the three-way creation menu, or remember the user's last creation mode for that entity class?
+9. Should cards offer direct quick actions for `Create blueprint` and `Create realization`, or is one context-sensitive `Add subordinate` action clearer?
+10. When a card launches Formation Sim, should it preserve the card's selected year, or should the Formation Sim always open at the global/current year?
+11. Should a card opened from a Formation Sim return to the same Formation Sim location and selected node, rather than merely opening as a separate card tab?
+12. How should faction search interact with knowledge: hide unknown factions, show them as undiscovered, or allow search only over factions the current actor knows?
+13. Which filters belong in the first faction picker beyond text: year, parent faction, faction type, geographic scope, strategic alignment, or known/unknown state?
+14. The first formation-editor pass uses strict equipment filtering: only selectable items are shown. When generalized item/component availability is implemented, which contexts should be resolved first—year, knowledge, production, faction, market, logistics, location, doctrine—or should they all arrive through one shared affordance resolver?
+15. At what point should a formation become too large for individual mannequins, and should that threshold depend on screen size, selected display scale, or available identity data?
+16. Should crew roles be modeled as subordinate formations, personnel groups on a vehicle, or a distinct assignment structure that can support both?
+17. Is drag-and-drop intended only to reorder siblings, or should it eventually support moving a formation between structural parents with a confirmation and faction check?
+18. What is the desired undo model for multi-step blueprint edits: per-field undo, per-year snapshot undo, or a draft/commit workflow?
+
+3. CORE ENTITY MODEL
+Is-State:
+Everything important becomes an entity when it needs identity, relations, history, simulation behavior, or durable player-facing knowledge.
+Common fields include `id`, `pretty_name`, `name`, `monikers`, `type`, `dataset`, class/subclass fields, `three_word_description`, card color fields, `start_year`, `end_year`, `temporal_periods`, `tags`, `wiki_entry`, `parents`, `related`, derived `offspring`, and `entry_status`.
+Current major entity families include locations, star systems, orbital bodies, spatial features, collections, producers, production records, technologies, vehicles, items, components, materials, factions, institutions, formations, pops, people, cladistics/species, ideas, media, tasks, logistics, and markets.
+Collections now exist as an entity family for encyclopedic grouping entries.
+Materials include ordinary material entries and newer natural/atmospheric material modeling used by world generation.
+
+Should-Be State:
+The model should distinguish corporal entities from conceptual entities.
+Corporal entities are physically embodied things or places: vehicle, mine, person, planet, room, star, cargo load.
+Conceptual entities are abstractions, designs, classes, tags, theories, technologies, collections, recipes, and ideas.
+Biospheres should become a reusable ecological entity family: conceptually readable ecological assemblages that can also act as simulation recipes when applied to compatible places or modes.
+Corporal entities should be able to accumulate concrete operational episodes through activity-like history structures when needed, without forcing every episode to become a separate full entity immediately.
+This distinction should guide schema design, UI display, generation, persistence, and simulation handoff without forcing the user to do extra classification work.
+Some entities may eventually need multi-classing or multi-role classification. For example, a place may be both a launch site and a religious site, a vehicle may be both a market offering and a prototype, a station may be location, infrastructure, habitat, and spacecraft-like object depending on context. This should be worked out cautiously later so it does not dissolve the usefulness of primary entity families.
+
+4. ONTOLOGY AND STORAGE PRINCIPLE
+Is-State:
+The ontology is the intended source of truth for conceptual relationships.
+`parents` maps to `hasParent`.
+`offspring` is derived from `parents` / `hasOffspring`.
+`related` maps to `relatedTo`.
+Other entity-reference fields become relation properties.
+Scalar and structured fields become data properties, with JSON encoding for dict/list structures where needed.
+`relation_mirror.py` now mirrors location/simulation facts into relation fields where appropriate, including star-system/parent links and material relations.
+
+Should-Be State:
+If a fact needs to be queried, linked, visualized, simulated, preserved as knowledge, or shared across UI surfaces, it belongs in the ontology model.
+Runtime-only state should stay out of durable ontology facts unless it becomes meaningful history, player-facing knowledge, saved simulation state, or a reproducible generation seed.
+Mirrors should remain helpers for keeping views coherent, not hidden alternative ownership of facts.
+Parent and offspring should behave as reciprocal projections across all entity/card types. If a child links a parent, the parent should expose that child as offspring; if offspring is linked from the parent side, the child should show the reciprocal parent.
+Reciprocal relation behavior should be visible in card relation tabs as well as ontology projections, so users do not have to maintain both sides manually.
+Perspective-bound knowledge should be ontology-backed when it affects durable behavior, relations, reputation, names, faction policy, task selection, or player-facing history. The model should distinguish underlying truth from who knows it, who believes it, who has been told it, and who can act on it.
+`monikers` should be stored as structured alternate-name records rather than plain synonyms when the name depends on population, faction, language, time period, reputation, propaganda, local memory, or partial knowledge.
+
+5. REPOSITORY VIEW
+Is-State:
+The repository browser supports dataset filters, schemas, period filtering, incomplete-only filtering, and forgiving multi-term search.
+Schemas can appear as browser entries.
+Location/system entries are shown in a unified `Locations / Systems` hierarchy.
+The hierarchy uses fields such as `parent_cluster`, `parent_location`, `parent_entity`, `parent_body`, `star_system`, and `parents`.
+Orbit and surface children can be grouped separately under orbital entities.
+Star systems sort Sol first and then by known stellar-neighbour distance when available.
+Orbital bodies sort by median orbital distance when available.
+Incomplete field counts are filtered by schema relevance, including class-specific location pruning.
+Repository integrity tests currently assert collection schema presence and a restored stellar-neighbourhood graph with many interconnected systems.
+
+Should-Be State:
+The repository should help users discover valid next actions without prior ontology knowledge.
+It should surface missing but relevant fields, hide irrelevant schema noise, and suggest creation/linking workflows based on entity class.
+Collections should become useful browseable entry points rather than just another dataset.
+
+6. CARDS AND UI CONCEPT
+Is-State:
+Cards are the main editing surface for ontology entries.
+The General tab shows title, short description, tags, wiki information, and timeline snapshot text where relevant.
+The Overview tab summarizes identity, classification, dimensions/scale, and metadata.
+The Temporal tab shows temporal fields, commentary, `temporal_periods`, and timeline-oriented editing.
+The Relations tab focuses on meaningful ontology relations and class relations.
+The Location tab manages location history for non-location cards and topology for location cards.
+The Production tab handles producer and production-line workflows.
+The Site tab appears for sites and site-like locations.
+The Simulation tab uses subtabs for Orbital, Map Sim, World Gen, and Data fields.
+The Media tab holds image and media fields.
+Illustration entries can open the Pixel Studio editor from the Media tab. Pixel Studio supports single-image and orthographic front/side/top documents, editable drawing layers, visibility and ordering controls, undo/redo, zoom/pan, grid and horizontal mirroring, color selection, reference-image sampling, and locked low-opacity reference-trace layers that are excluded from exported PNGs.
+Pixel Studio saves editable layered documents alongside rendered PNG assets and records the active editor mode, pixel dimensions, layer counts, view paths, and depicted dimensions on the illustration entry.
+Its drawing tools currently include brush, eraser, eyedropper, flood fill, and drag-to-draw rectangle, triangle, trapezoid, line, and circle primitives. Primitives preview during the drag, commit as one undoable action, and can be drawn as either filled shapes or contours.
+The obsolete State tab has been removed; surviving state-like fields belong in simulation, temporal, overview, location, or relation views.
+Simulation screens share a top tab strip, time panel, scope/breadcrumb labels, hover tooltips, mode-specific action buttons, and an optional selection inspector.
+Map screens expose layer controls, repository return, map-image upload, selection creation/finish/cancel actions, parent-scope navigation, hover details, and a history timeline when the active simulation supports it.
+Vehicle design mode uses a resizable lower simulation panel with panel tabs, component-catalog cards, selection/layout summaries, requirement lines, and catalog drag initiation.
+General click handling is centralized through `InputRouter` and `UIManager`: shared UI is rebuilt before hit-testing, modal overlays consume input before simulations, the knowledge layer blocks simulation input, tab-strip clicks activate tabs, and remaining pointer events are forwarded to the active simulation.
+Some simulations also consume input before camera handling or global shortcuts, such as world-generation prompts and fullscreen editors.
+Cards also support schema/type conversion, color editing, relation and wiki-link pickers, location topology editing, timeline-period authoring, task checklists, and person quote/conversation capture where the entity class exposes them.
+
+Should-Be State:
+Cards should make entities editable where the user naturally notices the missing fact.
+Tabs should be semantic lenses over the same ontology facts, not separate storage domains.
+Simulation subtabs should expose only durable simulation facts and reproducible generation state, not transient editor internals.
+The Relations tab should consistently reflect reciprocal parent/offspring relationships immediately after edits, regardless of whether the relation was created from the parent card, child card, phylogeny view, location workflow, or another card type.
+Media and pixel-editing workflows should support material-aware illustration authoring where relevant, including a reusable Semantic Greyscale Mask Editor mode for mask-based component and map/resource visuals.
+Cards should eventually expose a knowledge/perception lens when an entity's meaning depends on who is looking. The same person, armor suit, faction, law, cultural practice, or political system may have different labels, trust scores, threat associations, or explanatory narratives for different populations.
+Faction, institution, and country cards should eventually expose a dedicated successor workflow. The user should be able to allocate an existing successor or create a new successor from the card window, with guided UI that preserves relation links, temporal context, authority/legitimacy notes, inherited obligations, and unresolved continuity questions.
+
+7. LOCATIONS, SYSTEMS, AND SPATIAL FEATURES
+Is-State:
+Locations are the unified spatial entity surface.
+They include surface/map entities, sites, buildings, rooms, orbital bodies, stars, and star systems.
+Important classes include `star_system`, `stellar_system`, `star`, `planet`, `moon`, `dwarf_planet`, `asteroid`, `comet`, `orbital_body`, `continent`, `country`, `state`, `region`, `city`, `quarter`, `site`, `macro_site`, `internal_passage`, `building`, `room`, `island_chain`, `atoll`, and `cluster`.
+Orbital fields can exist on location entries: `system_role`, `system_class`, `star_system`, `body_class`, `parent_body`, `location_entity`, `derived_from_system_body`, `legacy_system_entity_id`, mass/radius fields, orbital elements, `mean_anomaly_deg_at_epoch`, `display_color`, `stellar_neighbours`, `spectral_class`, and `luminosity_solar`.
+Map fields can exist on location entries: `coords`, `bounds`, `geometry`, `layer_kind`, `parent_entity`, `owner_entity`, `coverage_mode`, `resolution_m_per_pixel`, `draw_order`, `map_projection`, `map_status`, and map canvas dimensions.
+
+Should-Be State:
+The folded-location model should remain the user-facing spatial model unless a stronger ontology distinction becomes necessary.
+Systems and spatial features may remain distinct ontology classes internally, but they should project cleanly into the same location-facing workflows.
+Parentage, orbital containment, surface containment, and map geometry should be consistent enough that creating a body in worldgen automatically makes it usable in space sim, map sim, relations, and repository hierarchy.
+
+8. TAG SYSTEM
+Is-State:
+Tags are lightweight conceptual labels.
+Entity cards have editable tag strips.
+Tag suggestions are built from existing string tags and tag-like entries.
+The ontology `tags` schema defines `tag_class`, `primary_color`, and `secondary_color`.
+Tag chip colors can resolve through matching tag entities when those exist.
+Worldgen currently uses operational tags such as `world_gen_unfinished`, `world_gen_complete`, `world_gen_stage_*`, `gas_giant`, and `no_solid_surface`.
+Most tags are still string labels embedded on entities rather than populated tag-card entities.
+
+Should-Be State:
+Tags should remain lightweight, but card-capable.
+A tag should be selectable from a front-page strip and able to open its own card when it has been promoted into an entity.
+Some tags may later become traits, capabilities, controlled vocabulary terms, ontology classes, or module assignments.
+Planet and worldgen tags should become richer enough to support material inference, environment classification, generation routing, and search.
+Behaviour and plant-function setup should be able to use tags or tag-like controlled labels as a fast editing surface. Those tags may resolve into behaviour modules, plant functional modules, capabilities, or other simulation-relevant profiles without requiring manual species-by-species editing.
+Tag-driven setup should remain inspectable: when a tag affects simulation, the user should be able to see which module or inferred value it produced and whether it is local, inherited, inferred, or overridden.
+
+9. COLLECTIONS
+Is-State:
+Collection is a current entity kind.
+The ontology contains a collections schema, including `collection_class`, and new collection IDs use the `coll` prefix in the type picker path.
+Collections are intended as encyclopedic entries that gather or explain sets of other entries in an informative sense rather than a mechanical containment sense.
+
+Should-Be State:
+Collections should become reader-facing knowledge hubs.
+They should be able to collect entity references, thematic lists, timelines, maps, and explanatory prose without pretending that the collected entries are physically contained by the collection.
+They should help organize lore, scientific categories, design families, regional surveys, and historical overviews.
+
+10. PRODUCTION CONCEPT
+Is-State:
+Production is partly implemented as first-class repository data.
+There are production technologies, production records/lines, and producers.
+The iron/excavator-style requirement chain remains conceptually useful, but not all earlier test seed entities are currently present as canon entries.
+
+Should-Be State:
+Production should connect resources, sites, technologies, vehicles, operators, markets, logistics, and time.
+A production chain should be explainable both as entity relations and as operational consequences in map/logistics simulation.
+Recipes and capabilities should stay declarative; actual operations should be production records.
+
+11. PRODUCTION TECHNOLOGIES
+Is-State:
+Production technologies are a subclass/use of technology.
+Implemented fields include `technology_class`, `technology_subclass`, `developed_by`, `used_by`, `associated_locations`, inputs, outputs, production rate fields, required technologies, required site tags/conditions, and required vehicle/item/component tags.
+Requirement reports evaluate active technology against site conditions, assigned vehicles, assigned items, assigned components, and active supporting technologies.
+
+Should-Be State:
+Technology requirement fields and production-record requirement fields should either be normalized or deliberately separated.
+Production technologies should define reusable capability logic, while production records should describe concrete use of that capability at a site by an operator.
+
+12. PRODUCTION RECORDS AND PRODUCERS
+Is-State:
+Production is represented by inline operational lines on Producer cards. The producer's Production tab is the durable operational projection: each line links its product, site, rate, dates, doctrinal Jobs, Employment assignments, workflow technologies, assigned components, and optional Recipe. Standalone Production cards are not required for the current model.
+A Recipe is a reusable conceptual and knowledge entity, not an executed production record. It declares input items or materials, output items, required technologies, required components, ordered method steps, preparation duration, yield, and compatible producer classes. A person may know a Recipe, while a kitchen or other Producer executes it through an inline production line. This separation allows the same Recipe to be taught, forgotten, culturally transmitted, or reused by many Producers without duplicating the physical production context.
+The person-simulation kitchen is the first authored example: a Kitchen producer uses Cooking and Electric Oven Cooking, contains a Sink and Electric Oven, and links the Simple Cooked Meal Recipe to a line producing a cooked-meal Item from ingredient Items.
+
+Should-Be State:
+Producer, site, market, logistics, recipe, and person-knowledge views should project the same ontology-backed production-line relations from their own angles. Runtime execution may cache resolved requirements and transient quantities, but no parallel semantic registry should define recipes, technologies, components, items, or producers.
+
+12A. JOBS, EMPLOYMENT, AND PRODUCTION WORKFORCE
+Is-State:
+Jobs and employment are first-class ontology entity families integrated into producer production lines.
+A Job describes a durable family of work and a doctrinal subtype. The subtype defines the general purpose, organization, beneficiaries, ownership, or output-allocation doctrine of the work; it does not encode a technological era. For example, Subsistence Farmer means that production primarily sustains the worker, household, expedition, or local community and only surplus normally enters exchange. The same subtype can therefore describe a medieval peasant using oxen and ploughs or a far-future colony pioneer using autonomous agricultural systems.
+Production lines remain inline operational records on Producer cards rather than returning to standalone Production cards. Each line has a stable line identity and may link doctrinal Jobs, employed workflow technologies, and Employment assignments. Producer entities expose aggregate ontology relations to those Jobs, technologies, and assignments so they remain discoverable through the general relation graph.
+Employment entities connect one Job to employing producers, institutions, or factions; executing people and pops; a production context and stable line identity; work location; temporal fields; employed technologies; assigned equipment; individual headcount; and pop workforce fraction.
+Job availability is contextual. Unlock requirements may refer to technologies, cultural aspects, present production outputs, institutions, and site conditions. The availability evaluator reads the producer, site, active production, and employed line technologies. Technology determines how the work is performed, not which doctrine the Job represents.
+
+Should-Be State:
+Producer Production tabs should present Jobs as the doctrine/workforce layer beside product, site, rate, dates, and product requirements. Job rows should visibly distinguish available and locked doctrines, show missing Technology, Culture, Production, Institution, and Site conditions, and open the reusable Job card rather than duplicating its semantics inside the producer.
+Workflow technologies should describe the concrete task sequence, machinery, items, components, automation, productivity, risks, and skill demands of the local production line. Changing workflow technology must not silently change the Job subtype.
+Employment assignments should support dated individual employment and aggregate pop allocation without embedding thousands of worker records in a production line. People may hold multiple successive or concurrent assignments; pops may allocate a fraction of their workforce. Simulation should resolve work at person or pop scale according to the active fidelity level without counting the same labor twice.
+
+13. SITES
+Is-State:
+Sites are location entities and are not limited to industrial use.
+Current site fields include `site_class`, `operated_by`, `site_conditions`, `active_production_technologies`, `assigned_vehicles`, `assigned_items`, and `assigned_components`.
+The Site tab reports requirement completeness for active production technologies.
+
+Should-Be State:
+Sites should remain generic and reusable: production site, cultural site, launch site, place of worship, mining site, asteroid mining site, research site, and more.
+Site conditions should eventually be derivable from parent regions, map layers, natural materials, infrastructure, and manual declarations.
+The same requirement logic should be reusable by producers, tasks, logistics, UI suggestions, and validation.
+
+13A. OWNERSHIP AND USE RIGHTS
+Is-State:
+Ownership is a first-class ontology entity connecting owner entities to owned assets. Owners may be people, pops, factions, institutions, or producers. Assets currently include vehicles, items, and location entities representing buildings or sites. An ownership record may declare public, private, institutional, or other use policy; permitted users; shares; and temporal bounds.
+The person runtime resolves asset access from ownership records and the person's own identity, affiliations, producer context, and employment context. The test kitchen and its ingredient stores are institution-owned and usable by an affiliated test person. Denial remains an explicit failed-task reason rather than an invisible pathfinding failure.
+
+Should-Be State:
+Ownership and authorization should be checked at the concrete interaction step. Ownership does not replace possession, custody, allocation, access control, rental, borrowing, theft, commons, or reservation; these may later become distinct relations or task constraints where their different meanings matter. For the current food slice, ownership is the implemented gate and reservations are deliberately deferred.
+
+14. LOGISTICS AND MARKETS
+Is-State:
+Logistics and markets exist in the repository, but their implementation is skeletal.
+Current logistics schema has `associated_locations`.
+Current markets schema is nearly empty.
+At least one logistics entry exists, and market entries exist.
+Vehicle schema already has `markets`, `operators`, and `producers` class-relation fields.
+
+Should-Be State:
+Logistics should model transport between sites, regions, markets, and other locations.
+It should connect production demand to movement without simulating every person, vehicle, and cargo load at full resolution all the time.
+It should operate through corporal journeys and aggregate throughput without resolving the same demand twice.
+Markets should expose available designs, resources, vehicles, services, prices, and access rules before individual acquisitions become corporal entities.
+Vehicle-card journey planning should connect individual corporal vehicles to logistics. From an extant vehicle card, the user should be able to choose an origin location and a destination location, then let Index0 propose a staged journey plan from location hierarchy, route domain, vehicle capabilities, propulsion, surface constraints, and current support context.
+If the selected corporal vehicle cannot complete a route alone, logistics should expand the route rather than merely reject it. Support stages may be suggested from ownership, operator, faction, formation, institution, person role, market access, logistics providers, nearby sites, ports, launch sites, hangars, orbital stations, and other contextual affordances.
+Logistics should have explicitly situated simulation modes. At small scale, person-task mode simulates the person or corporal actor executing the task, such as driver, courier, soldier, passenger, or worker. At medium scale, producer-route mode simulates a producer, site, market, or organization using a route through supply lines, material flow, vehicle assignment, transport capacity, delays, and costs. At large scale, regional or planetary influence mode reads map/world systems such as terrain, roads, hydrology, climate, biosphere, conflict, infrastructure, and seasonal blockage as influences on logistics.
+Person-scale logistics should support a road-strip or corridor mode. This is a person-layer mode of logistics simulation, not a separate top-level simulation. It generates a route ribbon and surrounding context from parent parameters such as topography, biosphere/wildlife, ground material, vegetation, road quality, weather, and settlement density.
+The same rolling-strip/corridor mechanism should be reused for rivers. A river strip should generate a navigable or inspectable ribbon of river channel, banks, floodplain edge, current, crossings, vegetation, substrate, wildlife, weather exposure, and nearby route context from parent hydrology, terrain, biosphere, and climate data.
+Terraforming should be modeled primarily as logistics plus production plus long-running environmental intervention: delivered equipment, volatile imports/exports, orbital infrastructure, site creation, energy budgets, scheduled operations, and durable planetary state changes.
+Player-driven terraforming should influence volatile inventories, surface pressure, temperature, hydrology, atmospheric chemistry, and biosphere readiness through material and logistics chains rather than through one-off manual planet edits.
+
+15. SIMULATION LAUNCH AND NAVIGATION MODEL
+Is-State:
+Star systems launch to root Space Simulation.
+Orbital bodies launch to local Space Simulation or map view depending on class and map fields.
+Planet-like locations can launch to map, worldgen, or local space context.
+Buildings launch to Building Simulation.
+Rooms route to their parent building workspace.
+Normal locations launch to Map Simulation.
+Vehicles launch to Vehicle Simulation.
+People launch to Person Simulation.
+Cladistics/species launch to Phylogeny Simulation.
+Worldgen can be launched from star-system and planet workflows, including existing planet reuse.
+
+Should-Be State:
+Launch behavior should be documented as a semantic affordance of entity classes, not only as UI routing code.
+When multiple launch affordances apply, the UI should guide the user to the most relevant one while preserving alternate routes.
+Launching from a generated entity should not lose the context or data that created it.
+Entity launch behavior should support multiple situated modes per card where appropriate. The UI should expose available modes from the card's relations and context, using existing linked entities where possible and generating missing corporal detail when the current simulation needs it.
+Simulation modes should be understood as a combination of access card, launched subject, scale, active relations, and dependent systems. From a formation card, possible launch modes may include person mode for a soldier or commander, vehicle mode for an assigned tank/truck, convoy mode for route execution, subformation mode for a squad/platoon/detachment, patrol mode, camp/site mode, and wider operation mode. These modes should draw on the same underlying formation, person, vehicle, logistics, map, BioSim, species, terrain, and authority facts rather than separate scenario data.
+From a logistics entity or transport task, possible launch modes may include person-task mode, vehicle/convoy mode, producer-route mode, route-corridor mode, and regional/planetary influence mode. These modes should differ by subject and scale, not by disconnected storage.
+Journey planning should use automatic first drafts with manual override. The user may begin with origin, destination, and intent/mode, while Index0 proposes required stages from shared map scope, building/interior scope, parent body, star-system context, atmospheric boundary data, stellar-neighbour links, and the vehicle's propulsion/capability profile.
+Parent-scope validity should depend on journey domain rather than one strict same-parent rule. Ground and map routes require a shared map parent or reachable map ancestor. Building/interior routes require a shared building/interior parent. Orbital routes require a shared parent body or local space context. Interplanetary routes require bodies within the same star system. Interstellar routes require origin and destination systems connected through the stellar-neighbourhood graph.
+Every major simulation type should eventually support a person-level mode. Examples include soldier in a formation, captain or crew member aboard a spacecraft, driver in a convoy, hunter or warden in a biosphere, worker at a production site, resident or guard in a building, and traveler in logistics.
+When the player directly controls a person, the mode should feel like a sandbox C-RPG: concrete local movement, interaction, inventory/equipment, conversation, task choice, risk, and improvisation inside a living simulation context. The target feel is closer to a Fallout-like role-playing layer with the systemic sandbox pressure of RimWorld or Project Zomboid, not a static biography viewer.
+
+16. SPACE SIMULATION
+Is-State:
+The Space Simulation is a top-down 2D interface for orbital visualization and selection.
+It loads active orbital bodies from ontology-backed location/system entries.
+It uses parent body, semi-major axis, eccentricity, mean anomaly, mass, radius, and display color.
+It creates 2D Kepler-style orbits for orbiting objects.
+It renders orbit paths, bodies, selection states, habitable zones, stellar-neighbour layouts, and gas giant atmospheric bands where render data exists.
+It can create a synthetic primary anchor when a system lacks an explicit root star.
+It uses stored `mean_anomaly_deg_at_epoch` or deterministic fallback values so bodies are not always displayed in one row.
+Stellar class helpers infer display profiles and habitable-zone values.
+Stellar-neighbour data is restored in the ontology and tested for Sol, Ross, and a larger connected neighbourhood.
+
+Should-Be State:
+Celestial bodies should use real three-dimensional orbital parameters.
+Their positions and orbital paths should be projected into the 2D simulation view.
+Reference orbit and simulation orbit should be distinguished.
+Spacecraft should eventually have orbital state, propulsion, delta-v, planned trajectories, maneuver nodes, predicted encounters, sphere-of-influence transitions where supported, time acceleration, and interstellar navigation.
+Journey planning should hand off from map trajectory to planetary orbital simulation when a vehicle crosses the atmospheric boundary or otherwise leaves the local map domain. Atmospheric boundary data should be available from worldgen or planetary model fields.
+Interplanetary arrival should load the relevant destination body or local context when the craft's orbital/interception logic reaches the target. Interstellar routing should use connected star systems from the stellar-neighbourhood graph.
+Space and atmospheric stages should take propulsion type, propulsion capability, delta-v/fuel/energy limits, docking ability, ascent/descent ability, interstellar drive type, reliability quirks, and special restrictions into account.
+
+17. MAP, BUILDING, AND WORLD GENERATION
+Is-State:
+Map simulation is a repository-backed spatial editor/viewer.
+It loads root locations and child layers, supports image/rectangle/polygon/marker/heightmap-style layers, selection, hover, inspector payloads, imported map images, map history timeline hooks, region drafting, and parent placement.
+It can persist created/edited location geometry into the ontology-backed repository.
+It can render gas giant band views instead of terrestrial surfaces when `surface_render_mode` or `map_render_mode` is `gas_giant_bands`.
+Building simulation extends map simulation for interiors; drafted polygons become room location entries linked to the building.
+World generation is a substantial planet-authoring workspace.
+It supports orbit drafting, generic/eccentric/gas-giant generation routes, existing planet linking, explicit seeded generation, randomized parameter variation, deterministic map seeds derived from system/body identity, resume of unfinished worlds, incomplete/complete worldgen tags, and relation mirroring.
+Worldgen persists `world_gen_seed`, `world_gen_stage`, `world_gen_complete`, crust composition, derived physics, atmosphere, atmospheric materials, natural materials, interior regime, terrain seed, tectonics, craters, heightmap, first-pass material heatmap manifests on location entries, map recipes, map layers, environment/geology/hydrology/ecology summaries, and render-mode fields.
+Solid worlds can proceed through atmosphere, interior/surface regime, terrain seed, tectonics, heightmap, and complete-worldgen states.
+Gas giants route through atmospheric/envelope generation and completion without creating a solid tectonic surface.
+The normal UI route and the headless test route use the same `WorldGenSimulation`, renderer, world model, stage actions, and persisted planet contracts. The headless route can render all stage screens and final map layers without taking mouse control.
+Mature mobile-lid worlds now use a closed seeded spherical plate partition with irregular plate shapes, Euler-pole plate motion, locally classified convergent/divergent/transform/subduction/collision segments, subduction polarity, plate-neighbour topology, and triple junction records.
+Continental and oceanic crust are represented separately from plate identity. Mixed plates can carry smoothly bounded continental fragments; oceanic crust stores a ridge-derived age field and thermally subsides with age.
+The hidden geological reconstruction records bounded assembly, breakup, rifting, ocean opening, subduction/accretion, collision/suture, and transform/pull-apart events. This reconstruction explains the present surface and is separate from registry time.
+Present-day relief includes differentiated trench, forearc, volcanic arc, backarc, collision belt, foreland basin, flexural bulge, craton/shield, failed-rift, intracratonic-basin, hotspot-track, shelf, and sediment-wedge contributions.
+Drainage and landscape evolution now include branching flow, lake outlets, deltas and distributaries, sediment budgets, and two climate-landscape feedback passes. A quantitative realism audit records topology, boundary diversity, polarity, ocean-age span, relief, coastline, shelves, drainage, deltas, and coupling checks on every completed solid-world run.
+Lake generation distinguishes a depression's maximum topographic storage from its actual water-covered area. Actual lake level is constrained by catchment runoff, direct precipitation, potential open-water evaporation, seepage, and spillway incision; water-limited basins become endorheic rather than being filled automatically to their sill. Global drainage accumulation and lake area use spherical cell-area weighting so polar map cells do not count like equatorial cells.
+Runoff generation separates snowfall storage and seasonal melt, quickflow, infiltration, groundwater recharge, and a baseflow return. River discharge is derived from area-weighted runoff accumulation, while lake records expose physical area, capacity, water-balance state, overflow state, and outlet status.
+Coastal generation now persists deterministic shoreline components and segments with reduced-physics wave-fetch and tidal-range proxies, sediment budget, tectonic/relative-sea-level/substrate context, causal landform gates, and multiaxial classifications. Regional refinement crops and honors the parent coastal system rather than inventing incompatible local coast types. Full spectral waves, harmonic tides, event-resolved hazards, and long-term shoreline migration remain deferred.
+Headless validation writes isolated, cleaned temporary repositories and can retain a single validated compressed `.i0wg` bundle. Canonical raster and bundle replacement uses deterministic owner paths and atomic replacement, while cleanup policy rejects targets outside generated roots. Material rasters use compact `.i0r` bundles and map layers can consume the persisted height, hydrology, material, and coastal outputs.
+
+Should-Be State:
+Generated world models stored on a planet should be durable summaries, seeds, scaffolds, and relation facts rather than raw transient editor state.
+Any generated planet should immediately become coherent across card relations, repository hierarchy, space sim, map sim, and future production/environment systems.
+Every valid end of worldgen should offer a Complete Worldgen action.
+Gas giants should have atmospheric band rendering, color derived from atmosphere/materials/temperature, and no accidental terrestrial surface path.
+Heightmaps should remain reproducible from seed while allowing user-set or identity-derived variation.
+Temperature should be shown in Celsius alongside Kelvin in user-facing worldgen panels, while Kelvin remains the internal physics unit.
+Worldgen should expose atmospheric boundary or atmospheric-line data in a form that can be consumed by journey planning and simulation handoff, especially for atmospheric ascent, entry, orbital transition, and vehicles that cross between map and space contexts.
+Map, resource, and visual editors should be able to reuse the Semantic Greyscale Mask Editor where greyscale bands need semantic interpretation, such as material masks, resource masks, heightmap-adjacent layers, infrastructure overlays, biome masks, or worldgen-derived map coloration.
+Worldgen should integrate spatial material distribution into the established generation process rather than creating a separate geology pipeline.
+Material heatmap layers should be generated from existing worldgen outputs and later consumed by maps, sites, resources, soils, Biospheres, logistics, and terraforming.
+The first worldgen screen should be the sole ordinary player-authored boundary-condition surface. Values shown on atmosphere, regime, terrain, climate, hydrology, and material stages should be derived explanations. Seeded variation must be reproducible and constrained by the first-screen physics and composition rather than acting as an unrelated random override.
+The Surface Water field should denote volatile inventory, not final blue-map coverage. Worldgen should resolve retained water volume, basin capacity, sea level, and resulting ocean fraction in that order.
+Worldgen should refresh sea level, masks, hypsometry, shelves, and other waterline-dependent derivatives after any terrain-changing evolution pass before downstream coastal or regional models consume them.
+Coastal truth should be stored as stable shoreline components and segments with independent tectonic, relative-sea-level, substrate, wave, tide, sediment-budget, dominant-process, and landform-assemblage fields. Planetary maps should retain the scaffold; regional and local maps should materialize only landforms resolvable at their physical scale.
+Fine-scale terrain now has an explicit representation boundary: the heightfield has a 10 cm minimum sample spacing and a 0.5 m minimum procedural terrain wavelength. Plot/Survey regions persist a compact surface-detail contract that reserves loose rocks, boulders, debris, individual vegetation, burrows/nests, and organism-scale microhabitats for a later sparse deterministic object layer. This preserves a basis for insect-scale ecology without storing insect-scale heightmaps.
+Beach, barrier, cliff, delta, estuary, tidal-flat, fjord/fjard/skerry, volcanic, karst/carbonate, permafrost, and emergent-terrace morphology should be causally gated. Generic near-shore noise should not stand in for these processes.
+Durable world state, derived caches, and diagnostic artifacts should have distinct ownership and retention rules. Ordinary headless runs should use temporary isolated repositories and optionally seal their results into one versioned bundle. Canonical raster/regional assets should be atomically replaced at deterministic owner paths, and unreferenced derived assets should be discoverable by maintenance tooling.
+Storage containment is not sufficient if each retained planet remains large. The 103.6 MB temporary footprint measured during the first planetary-to-Survey coastal benchmark demonstrates that serialized refinement repositories and repeated intermediate fields cannot be retained per planet. A follow-up measurement found that one uncompressed planet snapshot occupied 52.0 MB while the same no-image snapshot in the current compressed `.i0wg` bundle occupied 2.89 MB, confirming both that compression is effective and that plain duplicated grid serialization must not become the fleet-scale durable representation. Large generated populations require compact durable causal state, shared or content-addressed immutable data where useful, compressed canonical rasters, lazy regional materialization, bounded cache residency, and explicit per-planet and fleet-wide byte budgets.
+The current tectonic reconstruction is a causal procedural approximation, not a numerical geodynamics solver. Future work should improve spherical stress propagation, rheology and crustal thickness conservation, true plate polygon reconstruction through time, sediment routing by grain size, glacial and aeolian geomorphology, dynamic sea level, and higher-resolution projection-safe rendering while preserving the same derived-input philosophy.
+The hydrology model remains annual and grid-averaged. Future work may add monthly hydrographs, explicit aquifers and permeability from material layers, glacier mass balance and ice-dammed lakes, channel migration and floodplains, variable lake salinity and chemistry, river capture, dams, and transient megafloods. Rare exceptional large lakes should emerge from deep persistent basins and favorable water balance, not from a generic size cap.
+
+18. PLANETARY FORMATION THEORY
+Is-State:
+Worldgen currently supports authored orbit drafting, existing planet linking, generic/eccentric/gas-giant randomization, elemental crust/envelope composition, atmosphere modeling, interior/surface regime modeling, terrain seeding, tectonic maturation, heightmap generation, gas-giant band rendering, and complete/unfinished worldgen states.
+Planet templates currently exist as generation presets, but they are not yet selected from a protoplanetary disk formation model.
+The current system does not yet model condensation fronts, formation orbit versus present orbit, disk metallicity, core accretion thresholds, disk gas lifetime, late volatile delivery, volatile loss history, or thermal evolution as first-class worldgen stages.
+Tectonic mode can still enter as a seed/template input, although later stages derive local kinematics, geological history, terrain, climate, hydrology, and materials from physics, atmosphere, water, crust, regime, and the reproducible hidden-history seed.
+
+Should-Be State:
+Worldgen should start from formation theory when the user chooses that route.
+A formation model should infer plausible template candidates from star properties, current orbit, possible formation orbit, disk temperature, snow line, volatile ice lines, metallicity, local solid inventory, and stochastic exceptions.
+The chosen template should be the base on top of which ordinary worldgen variation runs; the result should be plausible by default but still allow occasional eccentric/gimmick outcomes.
+Formation theory should not overwrite authored worlds.
+When launched from a star system first screen, formation theory may add one or two planets only if the system has not reached a feasible maximum planet count for its current architecture.
+Migration and resonance-chain sculpting are intentionally deferred for now because they would make system generation too unstable for the current workflow.
+Core accretion and gas capture should be represented through core mass, envelope mass fraction, disk gas lifetime, formation timing, and runaway gas accretion likelihood.
+Volatile history should separate primordial volatiles, outgassed volatiles, late-delivered volatiles, and escaped/lost volatiles.
+Thermal evolution should derive as much as possible from mantle/crust composition, radiogenic elements, planet mass/radius, water, crust thickness, pressure, and cooling history; missing parameters may be conservative-random for generic generation and more permissive-random for eccentric generation.
+Tectonic regime should increasingly become an output of thermal evolution rather than a directly chosen mode.
+Planetary formation and geological reconstruction should provide bounded hidden variables when the first-screen fields do not uniquely determine an outcome. These variables are part of the reproducible generation seed and should explain variation between otherwise similar planets.
+Pre-present geological reconstruction is not registry simulation. It exists to produce a causally coherent present-day planet; normal registry time should not imply tectonically meaningful displacement unless a deliberately geological-timescale mode is introduced later.
+
+19. MATERIALS AND PLANETARY COMPOSITION
+Is-State:
+Materials are ontology entities.
+Worldgen now distinguishes elemental crust abundance from natural material formation.
+`natural_materials.py` provides a catalog of common natural materials, including minerals, rocks, regolith-like materials, ices, and atmospheric gases.
+Natural materials are inferred from crust composition, planet tags, surface regime, temperature, water/volatile state, and worldgen context.
+Atmospheric materials are inferred from atmosphere composition and are mirrored into material relation fields.
+Gas materials such as molecular hydrogen, helium, methane, ammonia, water vapor/ice, carbon dioxide, carbon monoxide, nitrogen, oxygen, argon, neon, sulfur dioxide, and hydrogen sulfide can participate in atmosphere and gas giant visuals.
+First-pass material heatmaps are generated as deterministic compact raster bundles when a solid world has both inferred natural materials and a heightmap. The planet or moon location stores a `material_heatmap_model` manifest with material IDs, generated-truth status, inferred confidence state, dimensions, bundle/render paths, and provenance fields. Heatmap layers should not become standalone entities unless they gain independent authored, surveyed, legal, historical, or narrative identity.
+
+Should-Be State:
+The crust should not be treated as only a bag of elements.
+Elements should enable natural materials, and natural materials should then drive map layers, site conditions, production resources, ecology constraints, soil profiles, and visual rendering.
+Natural material should be a clear subclass of Material with fields for scientific classification, formation conditions, required elements, common host planet tags, abundance model, and map/resource implications.
+Planet tags should expand into a controlled vocabulary rich enough to support material inference.
+Elements and atmospheric molecules should be represented as Materials subclasses where they become useful to chemistry, terrain, atmosphere, gas giants, industry, terraforming, or resource extraction.
+Material inference should eventually consume formation-zone inventories, volatile history, thermal evolution, terraforming interventions, hydrology, weathering, and organic activity.
+Natural material distribution should not remain homogeneous at planet scale. Worldgen should generate material heatmap layers as the first spatial expression of natural materials, derived from formation, crust composition, tectonic, terrain, hydrology, climate, crater, weathering, biological, and terraforming stages.
+Material heatmaps should support lazy multiresolution refinement. Planetary-scale heatmaps provide coarse material likelihoods; regional and site-scale layers are generated on demand from the parent layer, local terrain, hydrology, tectonic context, and deterministic seeds.
+Material refinement should distinguish hidden generated truth from knowledge confidence. The underlying material distribution should be reproducible from seed and parent context, while surveys, prospecting, sampling, site work, or author edits determine what the user/system knows with confidence.
+Material heatmap refinement should support confidence states such as inferred, surveyed, sampled, confirmed, and authored. These confidence states should affect site/resource suggestions and UI display without changing the underlying generated truth unless the user is in authoring mode.
+Material province entries and site/resource suggestions should be derived from material heatmaps on demand rather than generated everywhere by default. Map inspection may derive site conditions; mine planning may derive resource deposits; Biosphere generation may derive soil profiles; settlement planning may derive construction constraints; logistics may derive route hazards.
+The Material Affordance Resolver should interpret material heatmaps according to access card, launched mode, scale, and confidence state. The same clay-rich basin may become a soil constraint for BioSim, a clay resource for production, a mud hazard for logistics, a foundation risk for settlement, or a named material province in authoring mode.
+Material entities should eventually expose visual rendering hints such as base color, secondary color, roughness/shine class, transparency, emissive behavior, corrosion/weathering tendency, and possible palette variants.
+Materials should be able to dictate the visual coloration of corporal components. Component illustrations should support a material-tinted rendering workflow where the component stores or references a greyscale base illustration, and the visible color is derived from the assigned material or material mixture.
+Component illustrations should distinguish material-tintable regions from explicit effect/accent regions. The main component body may be greyscale and recolored by material data, while effect parts such as lights, heat glow, screens, markings, active energy surfaces, warning stripes, or exposed emissive elements may retain explicit color even inside an otherwise greyscale component illustration.
+The Semantic Greyscale Mask Editor should support greyscale bands as semantic material zones or tint weights rather than mere artistic color choices. Bands may indicate primary material, secondary material, trim material, darkened recesses, highlights, wear zones, transparent surfaces, or reserved mask classes.
+Soil profiles should derive primarily from worldgen natural materials, then be modified by climate, hydrology, terrain, weathering, organic activity, and terraforming interventions. Soil should not be modeled as a single loose tag such as `fertile_soil`.
+
+20. BIOSPHERES AND BIOSIM
+Is-State:
+BioSim is not yet a mature standalone simulation, but the current map and location workflows support biosphere patches as location polygons, inherited regional/planetary context, localized species collections and roster buckets, worldgen suitability information, and parent-footprint sampling.
+The current foundations remain distributed across locations, map/worldgen, ecology summaries, materials, phylogeny/species, person simulation, logistics, and entity-launched simulations. Worldgen persists environment, hydrology, ecology, material, and surface context on generated planets, and species/cladistics can launch to Phylogeny Simulation.
+
+Should-Be State:
+BioSim should be modeled as a bioregion-first simulation layer with scale-dependent biological resolution. The main simulation object is a bioregion or biosphere context, while species, populations, colonies, nests, individuals, trails, and visitor events are resolved differently depending on the current simulation extent and grain.
+Rivers should be represented as a distinct bioregion type entry rather than only as map decoration or hydrology lines. The bioregion subclass should be `river`, and river bioregions should be able to launch or feed the rolling-strip river corridor mode described under logistics.
+Species representation in BioSim should depend on scale. At a 1 km2 scale, ants may be represented as nests, population patches, and foraging pressure. In a 30 x 30 m simulation, the same ant population may be resolved into trails or individual ants. Conversely, a large animal such as an anteater may not be viable as a resident of a 30 x 30 m patch, but may appear as an external visitor event if its range overlaps through a parent bioregion.
+Biosphere should be the user-facing and ontology-facing term for a reusable viable ecological assemblage. A Biosphere may be created from a stable BioSim patch after an establishment period proves that its ecological structure is viable.
+Biospheres should be loosely hierarchical and overlap-capable. Parent biospheres may summarize child biospheres, child simulations may expand abstract parent populations into finer biological detail, and overlapping biospheres or ranges may introduce visitors, edge effects, competition, predation, disturbance events, or transient ecological pressure.
+A Biosphere card should contain full ecological structure as readable card content: producers, consumers, decomposers, predator/prey relations, symbioses, competition, nest or colony structures, population bands, seasonal pressures, stability notes, and failure modes.
+A Biosphere should also function as a reusable simulation recipe in different modes. Army view may consume it as cover, visibility, passability, wildlife presence, disease/vector risk, forage availability, and event triggers. Logistics view may consume it as roadside wildlife, ground difficulty, vegetation, route hazards, and encounter context. BioSim may consume it as species/population initialization and ecological interaction rules.
+Animal behaviour should be represented through reusable behaviour modules assigned by tag or tag-like controlled labels. Behaviour modules may be assigned to clades or species, and species should inherit modules from parent clades to produce a resolved behaviour profile.
+Behaviour inheritance should use category-based override logic. If a child clade or species defines a behaviour in the same category as an inherited parent behaviour, the child behaviour replaces the inherited one for that category. This allows behaviours to evolve at broad clade levels and later be replaced by more specialized behaviours.
+Behaviour categories should be freely creatable from the beginning, but cladistics may impose required categories for minimal simulation. Animals may require broad categories such as feeding/nutrition, reproduction, movement, activity cycle, and risk response. More specific clades may impose additional required categories such as flight, nesting, colony organization, burrowing, migration, or pack structure.
+Behaviour setup should scale to large numbers of species. The preferred editing surface should be behaviour tags or a template-generation path similar to planet/worldgen templates, rather than manual species-by-species behaviour editing.
+Missing required behaviour categories should not block simulation. BioSim should generate conservative defaults from clade, body size, diet, habitat, and ecological role until the user provides better behaviour data. Missing defaults should remain visible as incomplete or inferred values.
+Behaviour modules should be usable by BioSim, person-layer encounters, logistics hazards, army/formation views, biosphere stability, and ecological event generation. A behaviour should not remain only a prose tag if it affects simulation.
+Plant and soil generation should be constrained by parent climate, worldgen, location context, natural materials, hydrology, terrain, atmosphere, and existing or overlapping Biospheres. A Biosphere should not be applied to a blank abstract surface; it should check the target area's inherited environmental and material context.
+A target area and a Biosphere may each expose soil profiles. The area soil profile describes the current local material/ecological substrate. The Biosphere soil profile describes the soil state required, produced, or stabilized by the Biosphere assemblage.
+Biosphere cards should carry a distinct generated soil profile that is exposed to BioSim and other simulations. This profile may include organic layer, topsoil, subsoil, parent material, moisture capacity, pH, salinity, nutrients, microbial activity, drainage, compaction, erosion risk, and root-depth constraints.
+Terraforming should be able to modify soil profiles through material delivery, atmospheric change, hydrology change, temperature change, engineered organisms, fertilization, irrigation, erosion control, or long-running site operations.
+Plants should mirror the animal resolution model. Plant representation depends on simulation type, scale, grain, and narrative/operational importance. Plants may appear as functional groups, vegetation layers, patches, stands, clusters, individual plants, roots, litter, or local microhabitat effects.
+BioSim should support plant functional profiles generated from clade/species inheritance, function tags, soil profile, climate, hydrology, Biosphere template, disturbance state, and terraforming state. Plant functional modules may include growth form, root profile, reproductive strategy, disturbance response, water strategy, light strategy, nutrient strategy, and succession role.
+Soil and plants should co-develop. Soil constrains vegetation, but vegetation also feeds back into soil through organic matter, litter, roots, shade, water uptake, nutrient cycling, erosion resistance, compaction effects, and microbial/fungal activity.
+Plant-to-soil feedback should use a hybrid threshold model. At large scales, plants modify aggregate soil summaries. At small scales, individual roots, litter, shade, and decomposition can affect local patches. At narrative or operational thresholds, local plant-soil changes may write upward into parent Biosphere or location summaries.
+Person-layer actions in BioSim and related simulations should be able to feed back into the parent simulation as ecological disturbance or intervention. Examples include observing species, disturbing habitat, hunting, harvesting, seeding, introducing species, removing invasive species, building paths, patrolling, burning, clearing, irrigating, collecting samples, or triggering animal flight/aggression.
+Write-back from person-layer ecological action should use both a threshold model and an authority model. Tiny actions may remain local. Repeated, large, rare, destructive, constructive, or narratively selected actions should write back to parent biospheres. Official or role-authorized actors such as wardens, researchers, officers, or site managers may update stronger or more trusted knowledge records than random travelers.
+
+21. VEHICLES: DESIGN VS INDIVIDUALS
+Is-State:
+Vehicle schema and examples imply a distinction between vehicle type/design and acquired individual vehicle.
+Vehicle Simulation exists as a repository-backed workspace with design, interior, and operational modes.
+It loads dimensions from entity fields, uses a component catalog, supports component placement, and derives requirement status from required categories and placed components.
+
+Should-Be State:
+Vehicle design entries should represent available designs, prototypes, market offerings, and production recipes.
+Individual vehicle entries should represent acquired corporal vehicles with serial-level identity.
+Aggregate logistics may assign vehicle types/counts, while corporal logistics should use individual vehicles when the player interacts with a specific journey.
+Vehicle design cards should distinguish production history from legacy history. Production history tracks when the design was actively produced or offered. Legacy history tracks how long the design remained in service, memory, markets, museums, salvage circulation, derivatives, or operational use until the last known example was destroyed, lost, retired, or otherwise ceased to matter.
+Vehicle legacy phases should support resurgence. A design may leave production, become rare or obsolete, and later return through restoration, wartime reuse, niche market revival, factional adoption, reproduction, museum-to-service conversion, or cultural rediscovery.
+From an individual corporal vehicle card, the user should be able to plan a journey by choosing an origin location and destination location. The visible UI may start simply, but the saved plan should be able to store a staged internal model.
+Journey stages may include map surface route, building/interior movement, atmospheric ascent, orbital transfer, atmospheric entry, landing, interstellar transfer, docking, loading, unloading, and local surface route.
+Journey planning should take propulsion type, propulsion capabilities, and vehicle quirks into account at every stage. Ground surface compatibility, amphibious capability, asphalt/road dependence, runway or launch requirements, atmospheric ceiling, ascent capability, delta-v, fuel/energy limits, docking ability, interstellar drive type, reliability quirks, and special restrictions should all be treated as route-shaping constraints.
+Accepted, launched, consequential, or multi-stage journeys should initially be persisted as `activity_periods` on the extant corporal vehicle rather than requiring a dedicated journey entity. Later, important journeys may be promoted into transport job, mission, voyage, expedition, or flight-plan entities when they gain independent identity, obligation, cargo, passengers, authority, or historical importance.
+Components should support material-tinted illustrations. When an illustration is connected to a component view through a parent relation or equivalent component-illustration relationship, the pixel editor should enter Semantic Greyscale Mask Editor mode by default, while preserving explicit effect/accent color editing.
+
+22. PERSONS AND POPS
+Is-State:
+People and pops are separate but related concepts.
+People schema includes `person_class`, affiliations, associated locations, and participated events.
+Pops schema includes role, faction, location, and culture.
+Person Simulation now combines a repository-backed dossier with a first embodied runtime: autonomous and direct control, a live task queue, current need fulfillment, five test-map interaction points, and shared laboratory artifacts that exercise the production implementation.
+The shared person test map is now an ontology-authored site rather than an abstract empty room. Its first layout is a lumber-processing compound with a barracks, an attached kitchen, a storage facility, a factory hall, and a broad western wild-terrain/wood-lot zone. The site stores its bounds, representative heightmap/true-color layer declarations, terrain zones, structures, residents, and interaction points in ontology-backed fields. Each building stores its own bounds, class, map color, and wall openings. Person-scale navigation treats wall segments as impassable and plans movement through those authored openings.
+Person pathfinding must be knowledge-bounded rather than omniscient. A person's ontology-backed knowledge record for a place may declare route knowledge, exact remembered waypoints, direction-only knowledge, confidence/familiarity, and source. A known route is followed through currently passable openings. Direction-only knowledge causes the person to begin along that heading rather than immediately obtaining a complete route. When certainty runs out, the person either continues in the same direction or approaches another present person to ask for directions; that choice may be biased by personality and context. The answer is limited to what the asked person knows. Route choice, asking, failed answers, continued headings, stale/blocked routes, and being stuck should be retained in transient navigation history and exposed alongside task-decision explanations. Direct player guidance may use local collision-aware routing because the player is supplying the missing guidance in real time.
+The initial resident cohort contains four individual people: two women and two men. Their durable employment assignments comprise one cook, two lumber laborers, and one site overseer. The kitchen is already linked to the cook, Cooking and Electric Oven Cooking technologies, sink and oven components, a known recipe, and item-tracked food stores. The factory's lumber intake, plank production line, recreational workshop, vehicles, and logistics remain deliberate next-stage workflow additions rather than hidden hardcoded behavior.
+Repository authoring should expose these site facts through ordinary cards and schema fields. A Site view should summarize and link structures, openings, residents, representational layers, stored items, operators, and production requirements while preserving the generic field editor as the complete authoring fallback. Simulation consumes the same ontology projection; the laboratory fixture mirrors its shape only to test current production code deterministically.
+A site/location may launch two distinct but related contexts. Map opens the authored location workspace in which bounds, roads, buildings, openings, terrain declarations, and later representational surface layers are encoded and edited. Site Simulation opens the local person/pop runtime, consumes that same ontology geometry, and adds transient embodied state. Runtime people and their routes must never be written into the map layer merely because they are visible there during simulation.
+Site population projection is scale-dependent. Authored people remain full individuals. A present pop contributes a small deterministic set of representative full people plus an aggregate for everyone else. Plausible visitors and travellers may begin as named lightweight presences and receive full personality, knowledge, needs, task state, and durable ontology identity only when interaction or consequence justifies promotion. This prevents a site from simulating every person while keeping encountered individuals available for later inspection and authoring.
+The lumber test site is the first concrete projection. Its expanded ontology layout includes an eastern logistics-road placeholder, a northern council-owned village containing a thirty-person cultural pop, three full representative villagers, and twenty-seven generic villagers represented as one aggregate. Authored Elda Marr visits to request lumber for house repairs; her request creates a pending sell/refuse decision for overseer Tomas Rhee. A named horse driver and municipal inspector materialize on entry, while road travellers begin lightweight and are promoted on interaction. The road is not yet a logistics simulation and promoted runtime encounters are staged for durable authoring rather than silently persisted before Save.
+The person screen has four right-side overlays. Needs displays a Maslowian pyramid of current fulfillment together with Wishes and Goals. Wishes and goals prefer authored person relations or fields, while current need pressure, assigned employment, and the live task queue supply clearly identified runtime entries. Wishes, dreams, and goals are authored as structured entity references into a dedicated wishes dataset rather than free-text strings: each wish records a task type, an optional qualifier, an optional linked target entity, a wish type used for tag matching against interaction points, and a free-text note retained for display only. A wish drives a person's own internally formed task only when its wish type intersects the tags of an interaction point the person can access; job-assigned duties such as the lumber site's cart unload and dispatch work remain entirely separate, arriving only through externally issued tasks tied to employment, never through wishes. Personality displays the five Big Five axes as a radar chart and reads durable scores and adjective markers from the person entity. Missing scores remain visibly marked neutral previews and are not silently randomized or persisted outside ontology. Knowledge groups known ontology entities into readable categories and displays interest, familiarity, stance, and conviction. Tasks distinguishes internally formed intentions from externally allocated duties and exposes the competing decision scores, conviction conflicts, likely response, selected reason, and recent decision history.
+
+Should-Be State:
+The pop system may generate contextual individuals as playable suggestions, including residence, workplace, role, and current task.
+A generated person, vehicle, or other corporal entity should become permanent once meaningfully interacted with by the player.
+People should bridge biography, affiliation, location, event participation, production roles, and current simulation context.
+Person-level simulation should normally be anchored to a concrete person entity. If no suitable person exists, the system may use a role slot as fallback and generate or select a suitable person from the current faction, formation, site, vehicle, or institutional context.
+Person-level simulation may also be situated through a corporal host entity such as a vehicle, ship, formation, station, drone, or tracked animal. Examples include a soldier inside a formation, a spaceship captain aboard a vessel, a convoy driver inside a vehicle, a hunter or warden in a biosphere, or a worker at a production site.
+Directly controlled person simulation should become an interactive role-playing layer rather than only a dossier. It should support embodied local action, dialogue, equipment/inventory, personal tasks, social pressure, danger, needs, and improvisational problem solving while still writing back only the durable consequences that matter to ontology, timeline, knowledge, relations, or parent simulations.
+Person simulation has two control modes. Autonomous Queue mode follows a RimWorld-like model: each person executes an ordered task queue and continuously resolves pressure from Maslowian needs, player or institutional assignments, assigned Jobs and employment, preferred leisure, authored wishes and goals, social obligations, convictions, coercion, and other situated pressures. Assigned duties are influential rather than absolute: sufficiently urgent survival pressure or sufficiently strong conflicting conviction may pre-empt or alter them. Direct Control mode temporarily suspends autonomous selection and lets the player issue click-to-move and click-to-use orders directly.
+The first embodied person-simulation test environment is a fixed map containing five interaction points: Bed, Ingredients, Kitchen, Job, and Target. Food is the first complete consequence chain: a compound task collects owned ingredient Items, travels to the Kitchen, confirms that the person knows the Recipe, checks that the Kitchen production line employs the required Cooking and Electric Oven Cooking technologies and contains the required Sink and Electric Oven components, creates a cooked-meal Item in transient possession, and consumes it to satisfy hunger. Bed, Job, and Target retain their earlier placeholder consequences until their own systems are refined. Every person simulation may use this test map until host-scene adapters can situate a person inside an authored building, station, vehicle, or surface site.
+Tasks move through explicit proposed, accepted, travelling, executing, interrupted, completed, and failed lifecycle states. Compound tasks expose the current concrete action, preserve elapsed progress when interrupted, and record failures such as denied ownership, missing recipe knowledge, absent technology, absent components, missing ingredients, or missing output items. The Tasks panel and compact dossier show lifecycle and current action so the simulation remains transparent.
+The initial Maslow display uses five fulfillment bands: physiological, safety, love and belonging, esteem, and self-actualization. Food and rest currently compose physiological fulfillment; leisure is an explicit prototype driver for self-actualization until richer competence, purpose, creativity, and meaning systems exist. The UI must distinguish these runtime approximations from authored semantic facts.
+People and pops should act from a bounded knowledge field rather than global truth. They should reason from direct experience, hearsay, local education, propaganda, institutional training, observed symbols, group membership, language, visible equipment, and remembered harms or benefits.
+Knowledge fields should be able to generalize across entity types. If a raided settlement only knows the attackers as offworld soldiers wearing a certain exo armor pattern, later actors wearing the same armor may inherit suspicion even if they belong to another organization. If a person was harmed by the only known visitor from a given tribe or planet, they may be cautious around later people they identify as belonging to that place.
+Education and interpretive tools should affect causal attribution. A person with little education may blame a named official, foreman, priest, commander, or local landlord; someone with basic institutional knowledge may attribute the same suffering to a tax rule, property regime, labor system, political structure, or logistics failure.
+Personality fields should shape interpretation and intent after perception. Seeing great riches in a place might lead one person toward theft, another toward delight in beauty, another toward institutional ambition, another toward religious awe, another toward resentment, and another toward protective stewardship.
+Personality should be defined within the Big Five spectrum: openness, conscientiousness, extraversion, agreeableness, and neuroticism/emotional stability. These axes should provide the durable coordinate space for personality instead of a loose bag of unrelated traits.
+Person cards should be able to list readable adjective markers, such as curious, cautious, dutiful, suspicious, sociable, reserved, ambitious, tender, orderly, volatile, or serene. Each adjective should fall somewhere in the Big Five space and act as a human-readable handle on the underlying coordinates rather than becoming a separate hidden personality system.
+The resulting personality field should be usable by decision logic. When a person interprets known facts, chooses salient desires, weighs risk, accepts authority, reacts to injustice, responds to beauty or wealth, or complies with a directive, the simulation should be able to ask how the person's Big Five field and adjective markers bias that decision.
+Personality should not replace knowledge; it should interpret knowledge. A person's greed, curiosity, fearfulness, conscientiousness, resentment, aesthetic sensitivity, deference to authority, risk tolerance, empathy, ambition, ideology, trauma, habits, and social attachments should bias how they explain what they saw and what tasks or desires become salient, while remaining traceable back to the Big Five field where possible.
+Agency should be modeled as pressure resolution, not pure obedience. People may weigh faction directives, laws, institutional roles, personal preservation, wishes, loyalty, ideology, fear, kinship, reputation, perceived legitimacy, available knowledge, and local opportunity.
+Need pressure should be nonlinear. Slight hunger may normally lose against a strong duty, while starvation should overwhelm almost any ordinary work assignment. Convictions may attach behavioral rules to knowledge of religions, cultures, ideologies, institutions, people, or events. A strongly held prohibition against killing may lower the effective pressure of a military firing order and make refusal, deliberate non-compliance, or a request for kitchen or medical reassignment more likely, depending on personality and available alternatives.
+Every autonomous task choice and pre-emption should remain inspectable. The UI should show the positive and negative contributors, the task source and issuer, relevant personality mediation, need urgency, coercive pressure, conviction conflict, alternatives considered, and a short plain-language account of why the selected action beat its competitors.
+New people should be able to emerge from populations when a concrete person is needed. If a faction hires from a city containing a population such as Polish migrants and no suitable person entity exists yet, Index0 should generate a person from that pop context.
+Person generation from a pop should run a low-detail previous-life pass. The pass should infer residence history, work, family or cohort ties, education, languages, memories, local events, experienced institutions, skills, injuries, obligations, cultural familiarity, political/cultural preferences, and knowledge-field contents before the person enters the current task.
+Generated people should become permanent once hired, directly controlled, meaningfully interacted with, historically important, or linked to consequential tasks. Before that threshold, they may remain contextual candidates derived from the pop.
+
+23. TEMPORAL MODEL
+Is-State:
+The current coarse temporal model uses `start_year` and `end_year`.
+WorldModel has hard-coded major periods for timeline display.
+`temporal_periods` define named bands inside a card timeline.
+`start_commentary` and `end_commentary` annotate timeline endpoints.
+Timeline snapshots are stored separately from general wiki text.
+Period filtering exists in repository browser/timeline contexts.
+When a year is selected in the timeline, the UI also includes context for things that happened, began, or ended within 100 years of the selected year.
+The shared timeline supports filtering, relationship-oriented and offspring-oriented grouping, horizontal and vertical panning, zoom-sensitive labels/commentary, map-history timelines, and direct opening of linked entity cards. Card timelines expose endpoint commentary, temporal-period bands, related in-range events/periods, snapshot chips, and two-click temporal-period authoring in edit mode.
+
+Should-Be State:
+Production lines, logistics demands, routes, journeys, deployment histories, events, and worldgen histories should become time-bounded where meaningful.
+The timeline should help users understand local context around a selected year without drowning them in all history.
+Event-based changes can be added later, but should not overcomplicate the current year-range model.
+Individual corporal vehicles should distinguish broad `temporal_periods` from concrete `activity_periods`.
+`temporal_periods` describe narrative or historical bands such as service eras, ownership eras, or deployment eras.
+`activity_periods` describe operational episodes such as planned journeys, active journeys, completed journeys, failed journeys, interrupted journeys, storage, maintenance, loading, unloading, refuelling, orbital transfer, landing, assignment to a site or formation, or other concrete states of use.
+Vehicle design timelines should support `legacy_phases` or an equivalent structured period model separate from production periods. A vehicle design's main production timeline answers when it was made or offered; legacy phases answer when examples, derivatives, memories, markets, or revived production meaningfully persisted.
+Legacy phases may include active service, declining service, museum or heritage survival, black-market/salvage persistence, derivative influence, extinct/no-known-survivors, and resurgence. Resurgence should be able to reopen production-like activity without erasing the earlier production and legacy phases.
+The same activity-period idea may later be generalized to other corporal entities such as people, animals, cargo loads, formations, ships, stations, or sites if the design proves useful.
+`activity_periods` should use a hybrid persistence model. Ordinary operational episodes remain embedded on the corporal entity. Important episodes may be promoted into standalone records/entities when they gain historical, logistical, legal, mission, ecological, combat, or narrative importance.
+Activity-period promotion should use a mixed rule. Major categories may auto-promote, medium-importance activities should trigger a promotion suggestion, and ordinary actions should remain embedded. Promotion may be triggered by cargo, passengers, combat, ecological impact, damage, delay, death, discovery, legal obligation, contract status, orbital/interstellar travel, or large-scale consequence.
+Card embedded timelines should show both events and periods. Periods represent duration or state. Events represent point-like or short-duration changes. Activity periods represent operational episodes. Promoted activities should appear as timeline items that link to their own cards.
+Timeline detail should be simulation-relative rather than globally fixed. The same activity may appear as low detail on a nation card, medium detail on a formation card, and high detail on a driver/person/vehicle card.
+Low, medium, and high detail timeline views should depend on the viewer entity, source simulation, and scale. For example, a nation may only need service in campaign, a formation may need convoy operations and deployments, while the driver may need route stages, incidents, and local actions.
+A higher-level Simulation Matrix should define how simulations, card-launched modes, activity periods, events, and summaries appear from different card/entity viewpoints at different scales. It should describe visible summaries, hidden details, promotion triggers, and timeline detail level for cross-simulation views.
+The Simulation Matrix should begin as hardcoded Python design logic in a `.py` file. Each simulation can define initial rules for how its activity, events, and summaries appear from other entity/simulation viewpoints. This should remain hardcoded until stable patterns justify config or ontology-backed matrix entries.
+
+24. WIKI AND TASKS
+Is-State:
+Wiki view is general prose plus simple formatting.
+Wiki links can resolve to entity cards.
+Link colors can use referenced entity colors.
+Unnumbered lists start with "-".
+Tasks start with "()".
+Task schema currently includes `checklist` and `entry_status`.
+Wiki-link editing supports resolving an existing entity, selecting a match, or retaining an unresolved target. Person cards also support structured quote and conversation-message capture in their dedicated interface.
+
+Should-Be State:
+Tasks created through wiki "() Task name" should become lightweight task references.
+Random task selection should use simple task references, not the legacy task system.
+When a task is selected, it should open the relevant card.
+Logistics tasks may later be more structured because they can carry cargo, route, authority, schedule, and obligation details.
+Faction and institution tasks should begin as directives: skeletal task records that describe issuer, target members or roles, objective, authority basis, location/scope, priority, constraints, start/end conditions, and expected reporting. Directives should be able to spawn concrete person, formation, site, vehicle, logistics, or production tasks when a simulation mode needs them.
+Directive compliance should depend on the receiving actor's role, knowledge field, authority recognition, risk, need, loyalty, coercion, reward, legality, and personal goals. This keeps faction tasks useful without making people mechanical extensions of faction will.
+
+25. PHYLOGENY AND COLORS
+Is-State:
+Cladistic/species entries can launch to Phylogeny Simulation.
+Phylogeny rows and nodes can use `card_color`, `card_header_color`, and `wiki_field_colors` from referenced entities.
+Cladistic cards can display local parents, children, and member/descendant layouts. When a cladistic entry has no custom color, the current card workflow can derive a palette from descendant custom colors.
+
+Should-Be State:
+If a cladistic entry has no custom color, it should be able to average colors from all last-tier descendants that have custom colors.
+This should include indirect descendants, not just direct children.
+Color updates should trigger when entering edit mode and when children are added or connected.
+The Phylogeny/Cladistics view should support a behaviour overlay. The overlay should make inherited behaviours, locally assigned behaviours, overridden behaviours, missing required categories, and convergent behaviours visible or toggleable.
+The cladistics view should help users understand behaviour inheritance and replacement: behaviours may first evolve at a parent clade, then be overridden or specialized by child clades or species.
+
+26. CURRENT ANCHORS AND KNOWN GAPS
+Is-State:
+Useful current anchors include `system_sol`, `system_ross_system`, restored stellar-neighbour entries, many orbital body entries, worldgen planet examples, `prod_steel_plate_rolling`, `prod_pump_module_assembly`, `mkt_market_of_the_gold_sector`, `mkt_planetary_period_markets`, `log_new_001`, vehicle/component examples, collection schema entries, and the ontology-backed material catalog.
+Known gaps include an unpopulated tag-entry dataset, skeletal logistics and markets, non-normalized production requirement vocabulary, conceptual-only spacecraft/maneuver planning, runtime orbital motion that is still effectively 2D, thin collection UX/content, early natural-material inference and material refinement without survey tooling, no Material Affordance Resolver, basic gas-giant band visuals, early formation-theory generation, incomplete volatile-history modeling, absent terraforming logistics workflows, missing vehicle journey planning, no vehicle legacy/resurgence phase model, no mature BioSim/Biosphere implementation, only an early single-person embodied control sandbox with static fellow residents, no person-layer mode for most simulations, no successor-allocation workflow for factions/institutions/countries, no Semantic Greyscale Mask Editor, no material-tinted component illustration workflow, no formal hardcoded `simulation_matrix.py`, no card-launched simulation-mode matrix, no behaviour-module inheritance/overlay system for cladistics/species, no plant-soil feedback model, and an unresolved internal distinction between folded locations versus distinct systems/spatial-feature ontology classes.
+Current launch behavior exists for major entity classes, but situated launch modes such as soldier-from-formation, convoy-from-logistics, tank-from-formation, or warden-from-biosphere remain conceptual.
+
+Should-Be State:
+The next medium-sized projects should reduce cross-surface incoherence: worldgen-to-space/map/card consistency, material/resource inference, collection browseability, logistics/market foundations, vehicle journey planning, BioSim/Biosphere foundations, material-aware component visuals, animal/plant behaviour foundations, hardcoded simulation-mode matrix foundations, or orbital navigation depth.
+Known gaps should be tracked as conceptual gaps unless they already block daily use, in which case they should become concrete implementation tasks.
+
+27. DESIGN PRINCIPLES
+Is-State:
+The current code increasingly follows these principles: ontology facts over UI-only state; durable entities for identity/history/relations/saved plans; runtime state for transient calculations/previews; repository projections over duplicate source truths; guided actions over requiring ontology knowledge; locations as the main spatial/orbital/map-facing surface; production records as first-class entities; tags lightweight but card-capable; search forgiving enough for partial word sequences.
+
+Should-Be State:
+Keep the ontology as the conceptual backbone.
+All entities and all ontological or semantic information about them must be contained in the ontology. Python dictionaries, lookup tables, generated indexes, and renderer palettes may exist only as disposable caches or projections constructed from ontology state at startup or query time; they must not become parallel semantic registries.
+Keep simulations honest by persisting only what should survive reload, inspection, and relation traversal.
+Prefer extending existing entity types and ontology-backed structured fields over creating new entity families. Add a new entity type only when the thing has independent identity, relations, history, agency, ownership, or user-facing knowledge value.
+Use external files only for data that is impractical to embed directly, such as PNG raster pixels. The ontology should still store the semantic contract for those files: what they mean, which entity they describe, how they were generated or authored, and how confident or authoritative they are.
+Keep sites generic, logistics layered, production technologies declarative, and production records concrete.
+Avoid resolving the same demand through both aggregate and corporal simulation at the same time.
+Make conceptual relations visible and editable from the places where users naturally notice them.
+Prefer context-generated suggestions over hard-coded route rejection when a vehicle cannot complete a journey alone.
+Prefer situated simulation modes over isolated simulation silos. A simulation mode should be understood as a viewpoint and scale over ontology facts: access card, launched subject, scale, active relations, and dependent systems.
+When aggregate systems need corporal detail, the system may use existing related entities or generate new contextual people, vehicles, subformations, cargo loads, animals, or sites. Generated entities should become durable only when meaningfully interacted with or when their history becomes important.
+Use scale-dependent representation in BioSim: entities may appear as individuals, groups, nests, population patches, abstract pressures, or external visitors depending on simulation grain and extent.
+Allow person-level modes to expose local slices of larger simulations without making every local interaction a durable ontology fact.
+Keep material-driven visuals reusable by separating semantic masks, material rendering hints, and explicit effect/accent colors.
+Separate hidden generated material truth from survey confidence and authored overrides, so simulations can reason over reproducible worldgen while the UI can show what is actually known.
+Use tag/template-driven setup where large numbers of clades, species, behaviours, plant functions, soils, and biospheres need fast initialization without hand-authoring every entity.
+
+28. KNOWLEDGE FIELDS, MONIKERS, AND DIRECTIVES
+Is-State:
+People and pop entries exist, but there is not yet a mature durable perception model.
+Task entries exist, wiki task references exist, and logistics tasks are still skeletal.
+Faction, institution, person, pop, formation, location, culture, technology, vehicle, and item entities already provide many of the anchors a future knowledge/directive system needs.
+Entity naming currently relies mainly on `name`, `pretty_name`, and type-specific common-name fields rather than scoped alternate names.
+
+Should-Be State:
+Knowledge fields should describe a bounded actor perspective. They may belong to a person, pop, faction, institution, culture, settlement, formation, crew, or other coherent observer group.
+A knowledge field should be able to store known entities, known categories, inferred affiliations, memories of events, observed symbols, reputation weights, trust/fear/hostility associations, confidence, source, scope, start/end years, and whether the belief is direct experience, testimony, education, propaganda, rumor, deduction, or mistaken identity.
+Knowledge fields should extend across entity types. A population may know a person, a tribe, a planet, an armor silhouette, a uniform color, a ship class, a language, a political slogan, a law, a tax collector, a market practice, a religious symbol, or a production technology as linked pieces of one interpretive field.
+Perception should support association and transfer. Harm by an offworld PMC can create hostility toward the PMC, its faction symbols, its armor pattern, its vehicles, its language, its origin world, or people believed to be connected to it. Benefit, protection, trade, medical help, ritual respect, or fair law can create positive associations the same way.
+Knowledge fields should not overwrite truth. They should sit beside true ontology facts and let simulation ask what the actor believes, recognizes, can explain, and can reasonably choose.
+Population preference for cultural aspects, institutions, and political systems should derive from experienced treatment and interpreted cause. A tax regime, caste rule, police practice, food distribution system, religious custom, market access policy, or occupation force may become liked, tolerated, feared, hated, misattributed, or defended depending on the population's experience and explanatory tools.
+Education should affect abstraction level. Low institutional knowledge tends to localize blame or credit in visible persons. Higher knowledge can shift causal attribution toward laws, systems, class relations, institutional incentives, supply chains, or political arrangements, while still allowing propaganda and trauma to distort interpretation.
+Personality fields should resolve perception into interpretation and intent through a Big Five spectrum. The primary durable personality structure should record openness, conscientiousness, extraversion, agreeableness, and neuroticism/emotional stability as inspectable and editable scores or bands rather than hidden random weights.
+Person cards should expose adjective markers positioned in that Big Five space. Adjectives are the readable card surface; the underlying field is the simulation-facing basis for personality decisions.
+Personality should be allowed to interact with culture, class, education, trauma, role, ideology, and current need. The same person may interpret wealth differently when hungry, hired as a guard, traveling as a pilgrim, acting under orders, or remembering past deprivation.
+Pop-to-person emergence should preserve aggregate consistency. A generated individual should inherit likely properties from their source pop, faction, city, workplace, culture, language group, class position, and time period, then receive individualized variation.
+The previous-life pass should be low detail by default. It should create enough history to explain current knowledge, memories, relationships, skills, wounds, debts, habits, and preferences without simulating every day of the person's life.
+`monikers` should be a structured field available to all entities. A moniker record should minimally support label, population/faction/culture scope, language or register when known, start/end years, source/authority, confidence, sentiment, reason, and whether it is public, private, derogatory, honorific, euphemistic, mistaken, translated, or operational shorthand.
+Directives should be the skeleton form of faction/institution tasking. A directive should minimally support issuer, authorized-by, target actors or roles, objective, task kind, priority, location/scope, time window, constraints, resources, reporting expectation, success/failure condition, and escalation/promotion rules.
+Directives should resolve into concrete tasks only when a simulation mode needs operational detail. A faction directive to patrol a border may become a formation patrol plan, a vehicle journey, a person watch shift, a logistics supply run, or a map event depending on scale.
+Directive execution should respect agentic conflict. A person may comply, delay, reinterpret, delegate, sabotage, flee, report falsely, negotiate, or refuse depending on authority recognition, risk, loyalty, coercion, reward, fear, personal wishes, and what their knowledge field tells them about the world.
+Successor workflows should preserve both factual continuity and perceived legitimacy. A successor to a faction, institution, or country may inherit laws, assets, debts, members, territory, symbols, enemies, reputation, directives, and institutional memory, but different populations may recognize, reject, misname, or dispute that succession through their own knowledge fields.
+
+29. OPEN QUESTIONS AND LOOSE ENDS
+Is-State:
+Current open questions:
+1. How exactly should corporal vs conceptual entities be represented?
+2. Should the folded-location model become permanent, or should systems/spatial_features remain distinct ontology classes projected into locations?
+3. Should current string tags be migrated into real tag entities now that tag schema/UI support exists?
+4. Should tags remain only tags, or can some become traits/classes/capabilities?
+5. Should collections have formal membership fields, prose-only references, generated query membership, or all three?
+6. What fields define Natural Material as a subclass of Material?
+7. How should natural material abundance become resource layers and site conditions?
+8. Should site conditions be manually assigned, inferred from map/material layers, or both?
+9. Should `production.required_technology` be normalized to `required_technologies`, or should production records keep their own requirement vocabulary?
+10. Should producer `produced_*` fields become projections from production records?
+11. How should markets expose available vehicle designs before individual vehicles are acquired?
+12. How should transport demand, transport jobs, routes, cargo loads, and aggregate throughput be represented in ontology terms?
+13. How should authority and freedom of action be modeled for logistics tasks?
+14. Which entities should launch to map view versus domain-specific simulation view when multiple affordances apply?
+15. Should spacecraft maneuvers be calculated fully in 3D before projection, or directly against the projected 2D simulation orbit?
+16. How much spacecraft flight-plan information should be durable ontology state versus reloadable simulation state?
+17. How should tasks created from wiki be persisted and numbered?
+18. What fields should be pruned from inappropriate location subclasses?
+19. How should ontology class hierarchy guide new-entry creation without overwhelming users?
+20. What maximum feasible planet count heuristic should formation-theory generation use for each star/system architecture?
+21. How much formation history should be durable lore versus reproducible generation seed?
+22. What volatile-loss processes should be represented first: thermal escape, impact erosion, stellar wind stripping, sequestration, or photochemistry?
+23. How should terraforming logistics convert delivered materials and energy into gradual planetary-state changes?
+24. Which mantle/crust composition fields are required before tectonic regime can be fully derived rather than user-chosen?
+25. What exact fields should an `activity_period` support on corporal vehicles, and should this be a generic corporal-entity field shared by vehicles, people, animals, cargo loads, and formations?
+26. How should the journey planner rank support suggestions when multiple contextually available options exist: ownership, authority, cost, speed, safety, legality, faction access, market access, or player preference?
+27. Which vehicle capability fields should be normalized first so that route planning can reason over ground surfaces, asphalt/road dependence, atmospheric flight, orbital insertion, interplanetary transfer, and interstellar travel?
+28. How should atmospheric boundary data from worldgen be exposed to journey planning so that map trajectory can hand off to planetary orbital simulation at the correct altitude or condition?
+29. How many greyscale/material-mask bands should the Semantic Greyscale Mask Editor support at first, and should they be fixed semantic bands or configurable per illustration/component?
+30. Should component material coloration come from one assigned material, a list of component materials, subcomponent assignments, production recipe outputs, or user-selected overrides?
+31. How should explicit effect/accent colors be stored so they survive material tinting without becoming confused with material-derived colors?
+32. Should the Semantic Greyscale Mask Editor store raw pixel values only, or should it store a higher-level mask layer model that can later be reused by maps and worldgen?
+33. What exact fields define a Biosphere entity: species assemblage, population bands, ecological roles, stability period, establishment conditions, compatible environment tags, failure modes, scale rules, and transfer constraints?
+34. How should BioSim decide which organisms become individuals, groups, colonies, nests, population patches, abstract pressures, or external visitor events at a given extent and grain?
+35. How should overlapping biospheres resolve conflict, mixing, invasive species, predation, edge effects, and transient visitors?
+36. How long and under what criteria must a simulated patch remain stable before it unlocks a reusable Biosphere card?
+37. Which parts of a person-layer BioSim or logistics simulation should write back as durable ontology facts, and which should remain transient local simulation state?
+38. What should the first hardcoded `simulation_matrix.py` structure look like: simple dictionaries, dataclasses, rule functions, or a registry of access-card, launched-subject, scale, dependency, and timeline-detail mappings?
+39. Which source systems or card types should be included in the first simulation matrix pass: logistics, BioSim, formation/army, space, production, building, person, vehicle, map, site, biosphere, producer, or location?
+40. Which card types should receive situated launch modes first: formation, logistics, vehicle, person, biosphere, site, spacecraft, producer, or location?
+41. How should the UI present multiple possible simulation modes from one card without cluttering the card or confusing the existing Launch button?
+42. What minimal behaviour categories should be imposed by the broadest animal clades, and which should only appear in narrower clades?
+43. Should behaviour modules become their own card-capable ontology entities immediately, or begin as tag-resolved Python/config definitions?
+44. How should convergent behaviours be displayed when the same behaviour module appears in unrelated clades?
+45. What fields should define the first reusable `soil_profile` structure, and which fields are required versus inferred?
+46. How should terraforming interventions modify soil profiles over time without bypassing material, hydrology, climate, and logistics systems?
+47. Which plant functional categories should broad plant clades impose by default, and which should remain freely extensible like animal behaviour categories?
+48. What first set of material heatmaps should be generated by default: bedrock/parent material, regolith, clay, sand/silt, metal enrichment, sulfides, salts, carbonates, water ice, organics, and volcanic material?
+49. How should authored overrides interact with deterministic generated truth and knowledge confidence?
+50. Which access modes should call the Material Affordance Resolver first: map inspection, site creation, mine planning, Biosphere generation, settlement planning, logistics route planning, or terraforming?
+51. What should the first implemented `knowledge_fields` structure look like: embedded records on people/pops/factions, standalone knowledge-profile entities, or both?
+52. Which perception outputs should be normalized first: trust/fear/hostility, known affiliations, recognition of symbols/equipment, causal attribution, or cultural/political preference?
+53. Should `monikers` live in entity core for all entities immediately, or begin on people, factions, locations, cultures, and political systems?
+54. When should a directive become a standalone task entity rather than an embedded directive record on the issuing faction or institution?
+55. How should contradictory knowledge fields reconcile during communication, education, interrogation, propaganda, migration, or shared institutional service?
+56. How should person cards let the user author and visualize Big Five coordinates and adjective markers without making the personality surface too clinical or too cluttered?
+57. How detailed should the low-detail previous-life pass be before a generated person becomes durable?
+58. Which pop fields are required before reliable person generation is possible: culture, language, role/class, education, migration history, faction relation, location history, occupation, or household structure?
+59. How should multi-classing work without making entity identity vague: primary class plus roles, multiple ontology classes, mode-specific facets, tags promoted into class roles, or another structure?
+60. What minimal fields should define vehicle `legacy_phases`, and should they be vehicle-design-only or reusable by other designs, technologies, institutions, and cultural objects?
+61. How should a legacy resurgence relate to normal production periods: a new production period on the same design, a derivative design, a successor design, a market offering, or a separate revival record?
+62. What is the first playable scope for directly controlled person simulation: local movement and inspection, dialogue/tasks, inventory/equipment, needs/risk, or all of these in a narrow vertical slice?
+63. What exact relation fields and guided UI steps should define faction, institution, and country successor allocation or creation from a card window?
+64. Should a future repository-wide derived-object store use SQLite, content-addressed immutable blobs, versioned archive packages, or a hybrid in which entity JSON remains authoritative while large arrays and media use a separate object database?
+65. At what fidelity and time scale should coastal evolution progress from a static generated snapshot to migrating shorelines, avulsing deltas, barrier rollover, inlet cycling, cliff retreat, and marine-terrace formation?
+66. Which Biosphere outputs should convert abiotic reef, marsh, mangrove, and other biogenic-accommodation potential into actual persistent coastal landforms, and how should biological construction feed back into elevation and wave attenuation?
+67. What simulation trigger should justify upgrading reduced wave-fetch and tidal-range proxies to spectral wave transformation, harmonic tidal constituents, storm chronology, or local hydrodynamics?
+
+Should-Be State:
+Open questions should be resolved only when the codebase or design direction forces a choice.
+For each resolution, document whether it is an implemented fact, a near-term design target, or a deferred conceptual direction.
+Future document versions should move resolved items into the relevant Is-State or Should-Be State section rather than leaving them in this list.
+
+30. HANDOFF FORMAT FOR NEXT GPT RESPONSE
+Is-State:
+When suggesting changes, use this format:
+
+Changes to next version:
+1. Replace/add/remove: ...
+2. Open question resolved: ...
+3. New open question: ...
+
+Optional notes:
+- Rationale:
+- Risks:
+- Suggested priority:
+
+Should-Be State:
+Future conceptual edits should preserve the Is-State / Should-Be State structure.
+Is-State should describe only implemented or currently present behavior.
+Should-Be State should describe targets, preferred modeling direction, and unresolved design intent.
+
+31. PLANETARY GENERATION CAUSAL CONTRACT
+Is-State:
+The existing seven-stage World Generation workflow remains the production generator. The player UI and headless validation route instantiate the same WorldGenSimulation, call the same stage actions, and use the same WorldGenRenderer. The headless route is not a parallel generator.
+The first screen is a boundary-condition editor. Its astronomical context, orbit, template, radius, core fraction, crust thickness, spin, water/volatile inventory, map seed, and crust composition are persisted in a versioned world_gen_input_contract with a tamper-evident fingerprint. Later stages derive their state from that contract plus deterministic seeded variation.
+Every validation run writes the input contract, player-stage sequence, and a full selected-planet state fingerprint after each stage. A saved player contract can be replayed against an isolated repository without changing the production algorithms.
+The implemented dependency chain is star/system context -> formation and accretion reconstruction -> bulk physics and differentiation -> volatile/atmosphere evolution -> interior thermal/tectonic regime -> tectonic provinces and geologic prehistory -> heightfield and basin fill -> spatial climate and hydrology -> bounded erosion feedback -> cryosphere, regolith/soil, and geological material occurrences.
+Stellar history records mass, radius, luminosity, spectrum proxy, age, metallicity, rotation/activity, UV/X-ray activity, flares, wind, and multiplicity where source facts exist. Missing activity fields are derived by an age-and-temperature scaling and marked as reduced-physics proxies.
+Formation history stores a protoplanetary-disc state, condensation fronts, formation orbit, migration, giant impacts, late accretion, and volatile delivery. Spin is not independently rerolled after the first screen; the hidden accretion history is reconstructed consistently around the saved spin.
+Bulk-structure output includes mass/radius/layer geometry, density, gravity, escape speed, binding energy, central-pressure proxy, and moment-of-inertia proxy. Differentiation records accretionary melting, magma-ocean extent, core completion, crust extraction, and volatile partitioning.
+Atmospheres remain derived. They include equilibrium forcing, greenhouse/cloud/circulation parameters, volatile sources and sinks, species retention, Jeans/thermal escape, hydrodynamic and non-thermal proxies, magnetic-shielding proxy, and global volatile phase state. Mature wet temperate planets apply abiotic aqueous/weathering CO2 drawdown while keeping oxygen trace until a separate biosphere model exists.
+Thermal evolution records radiogenic, tidal, and intrinsic heat, mantle viscosity and temperature-contrast proxies, a Rayleigh-number diagnostic, heat-pipe support, and the derived mantle/tectonic regime.
+Plate worlds use curved anisotropic/lobed plate geometry, spherical Euler-style motion, divergent/convergent/transform classification, crust ages, cratons, failed rifts, basins, hotspots, and a seeded pre-present geologic history independent of registry time. Major relief is tectonic/isostatic/impact-derived; multiscale noise supplies unresolved detail rather than defining continents.
+Water inventory is converted into equivalent global depth and sea level is solved against generated basin hypsometry. Climate/hydrology resolve latitude, seasons, eccentric forcing, synchronous day/night forcing, ocean thermal buffering, orographic precipitation, rain shadows, evaporation, infiltration, groundwater recharge, snowmelt, runoff, rivers, lakes, deltas, and endorheic drainage. Two bounded climate-landscape iterations apply fluvial, chemical, hillslope, depositional, aeolian, glacial, coastal, and crater-degradation processes.
+The abiotic regolith/soil model derives depth, porosity, permeability, pH, salinity, and soil class from parent material, climate, topography, process history, and exposure time. Organic carbon and all organism-dependent changes are explicitly deferred to Biosphere design.
+Planetary True Color and the planetary climate/Koppen layer are abiotic. They must not paint generic green areas or infer vegetation from a warm/wet climate. Vegetation, plant cover, biological pigments, organic soil effects, and their feedbacks enter only through a dedicated Biosphere layer and its simulation; once present, that layer may contribute biologically derived surface color to an appropriate composed view.
+Natural materials are split by spatial scale. Planetary maps show broad lithologies and stable surface phases. Ores, alluvium, laterite, bauxite, hydrothermal products, placers, evaporites, and other local deposits resolve as small deterministic parent-conditioned occurrences during regional refinement. Each occurrence stores a process-based genesis and causal provenance.
+Regional refinement inherits saved atmosphere, sea level, tectonic surface, climate boundary conditions, impact history, and root material inventory. New detail fades into the parent at patch edges and does not replace planetary truth.
+The global surface palette is version 3. It considers only planetary-scale exposed phases; regional deposits can no longer recolor an entire planet, and ocean color is rendered separately from land. Obsolete generated palettes are invalidated and regenerated rather than translated on display.
+Planetary heightfield sampling uses an exact spatial index for tectonic boundary segments and caches immutable seeded constants. The optimization changes search cost rather than the scientific calculation: benchmark heightfield fingerprints and all checked downstream physical summaries remain identical. The measured full-route reduction on the coastal showcase seed is 28.7 percent.
+
+Should-Be State:
+The governing rule is: values are derived together, not rolled independently. Seeded variation should choose among physically compatible histories, including eccentric Venus-like outcomes, rather than exposing atmosphere/climate outcome controls on later screens.
+Tier 0 should remain algebraic constraint generation; Tier 1 reduced physics should serve ordinary worlds; Tier 2 spatial models should run for inspected planets; Tier 3 regional high fidelity should be invoked only where play or simulation demands it. Higher resolution must consume saved coarse boundary conditions.
+System-wide disc and N-body evolution, close-encounter rejection, explicit moons/tidal orbital integration, equation-of-state radial solvers, wavelength-resolved photochemistry/radiative transfer, full GCM/CFD, dynamic ice sheets, coast migration through erosion time, groundwater aquifers, 3D soil horizons, and metamorphic pressure-temperature paths remain deferred high-fidelity work rather than fabricated precision.
+Full spectral wave transformation, harmonic tidal-constituent evolution, event-resolved storms and tsunamis, seasonal sea-ice/wave coupling, three-dimensional sediment transport and facies architecture, and million-year shoreline stratigraphy remain deferred beyond the first coastal implementation. The first implementation should preserve the causal fields and confidence needed to upgrade these selectively later.
+Biosphere, prebiotic chemistry, organic soils, biological atmospheric feedback, and life-climate coupling are excluded from this implementation and require their own design pass.
+A repository-wide database or content-addressed object store, distributed artifact storage, and cloud synchronization remain deferred beyond the immediate single-bundle, deterministic-path, retention, and garbage-collection work. No generated planets are currently intended to persist: during this pre-persistence development stage, a changed worldgen contract invalidates old generated products and requires regeneration, not backward compatibility. Compatibility and migration obligations begin only after a future persistence contract is deliberately declared.
+Generated state should continue gaining causal identifiers linking particular mountains, basins, rivers, deposits, and weathering profiles to specific tectonic or climatic events, so upstream edits can invalidate only their true descendants.
+Further generation-time work should prioritize measured hotspots and fidelity-neutral changes: reusing invariant intermediate fields, avoiding duplicate transient products when a stage is immediately superseded, and moving numerically independent loops to array-oriented implementations. Any shortcut that changes geological history depth, climate-landscape feedback count, or final spatial resolution must remain an explicit lower-fidelity mode rather than becoming the default.
+
+32. PLANNED UPDATES
+
+32.1 WORLDGEN UPDATE 1: MOUNTAIN REFINEMENT
+Status:
+Planned conceptual update. This section distinguishes the useful world-generation systems that already exist from the causal mountain-forming systems that must be added or replaced. It does not describe implemented behavior unless explicitly identified as current Is-State.
+
+Implementation progress:
+The first Phase 1 package is implemented: coherent OrogenSystem records are grouped from tectonic boundaries, signed cross-range forcing replaces incoherent segment-local mountain placement at planetary scale, and the planetary-heightmap gate has been refined against visible artifacting. This remains the global structural envelope, not the later persistent deformation, mechanical-geology, landscape-evolution, or structure-driven regional-detail phases.
+The Phase 2/3 foundation is now implemented. Planetary generation retains separate coarse fields for crust thickness, cumulative strain, rock uplift, tectonic subsidence, volcanic construction, sediment load, effective elastic thickness, flexural response, isostatic response, and their composed surface response. Natural geological material entities carry ontology-authored mechanical class, density, cohesion, friction, tensile strength, erodibility, permeability, slope resistance, fracture density, elastic strength, and fabric properties. A weighted planetary mechanical-lithology prior influences broad relief retention and deformation response until later 2.5D geologic units provide spatially varying rock packages. Detailed geological columns, vector faults/folds, and local structure-driven terrain remain pending.
+
+Purpose:
+Replace the present "plate boundary plus procedural relief" mountain model with mountains that emerge from tectonic history, crustal deformation, rock structure, lithology, uplift, climate, drainage, erosion, sediment transport, and isostatic response. The update should retain the existing tectonic, climate, drainage, surface-process, material, regional-refinement, and rendering infrastructure wherever it already provides suitable inputs or downstream behavior.
+
+Governing principle:
+A mountain is not a single terrain primitive or ruggedness mask. It is the current surface expression of a history: geodynamics -> tectonic events -> deformation and crustal structure -> rock uplift and subsidence -> lithologic exposure -> climate and drainage -> erosion, mass wasting, and sediment deposition -> isostatic response -> present topography.
+
+Rock uplift, surface uplift, erosion/exhumation, sediment deposition, and isostatic adjustment must remain distinguishable state. Geological age must represent elapsed process history rather than acting as a direct smoothing or ruggedness control.
+
+Current Is-State assessment:
+Index0 is not starting this update from scratch. It already has a useful causal scaffold upstream of mountain generation and substantial landscape, material, and visual systems downstream. The missing part is the persistent geological and mechanical layer between those systems.
+
+The tectonic model already calculates plate ownership, spherical/Euler-style plate motion, relative normal and shear velocity, convergence obliquity, plate neighbours, triple junctions, ocean-floor age, crust type, and collision, subduction, divergent, transform, and passive boundaries. It also seeds cratons, failed rifts, intracratonic basins, sutures, hotspots, and a latent history containing rifting, accretion, collision, arc, supercontinent-assembly, breakup, orogenic, and transform-reorganization events.
+
+Those history events are presently descriptive and inferential. They do not yet create persistent faults, folds, crustal roots, metamorphic cores, stratigraphic packages, sedimentary basins, or cumulative strain fields. Advancing the tectonic model moves plate centres and recalculates kinematics on existing boundary segments, but does not fully rebuild changing plate topology or deform persistent geological structures. Its present surface consequences are reduced chiefly to aggregate orogenic-uplift, ocean-basin-opening, and erosion-progress values.
+
+The global height sampler presently constructs much of the visible mountain geometry. Collision boundaries create analytic uplift bands with simplified foreland depressions and outer bulges. Subduction boundaries create simplified trench, forearc, volcanic-arc, and backarc bands. Along-strike segmentation is supplied substantially by seeded sine texture and fractal terrain. Additional ruggedness, shields, basins, continental texture, and legacy mountain belts are produced by broad periodic fields and fractal noise. This is a useful visual prototype, but it does not yet make relief the result of accumulated deformation and landscape evolution.
+
+The regional-refinement framework is strong and should be preserved. It already provides stable global coordinates, physical detail scales, parent-child height contracts, inherited climate/material/drainage context, edge fading, and a rule preventing child terrain from contradicting the parent surface. However, its mountain detail is presently created chiefly by fractal noise and branching-mountain relief functions conditioned by inherited morphology and a dominant tectonic strike. These functions currently decide too much of the ridge and valley geometry.
+
+The water-cycle model already calculates latitude and seasonal climate, upwind relief, windward precipitation, cumulative rain shadows, temperature, snow, runoff, evaporation, and related climate fields. The drainage model already provides priority-flood routing, flow directions, accumulation, rivers, lakes, basins, catchments, stream order, and channel morphology. These are strong reusable components for climate-topography and drainage-topography feedback.
+
+The surface-evolution model already provides a bounded stream-power-like channel-incision pass, chemical weathering, fluvial, aeolian, glacial, hillslope, crater-degradation, erosion, and deposition proxies. The world-generation workflow already performs bounded climate, drainage, erosion, and heightfield feedback iterations. These should be extended rather than discarded. Present limitations include weak lithologic control, linear rather than threshold/nonlinear slope response, no explicit landslide events, no mass-conserving sediment routing, no tools-and-cover effects, no evolving drainage divides or river capture, no propagating knickpoints, no glacier-flow or basal-thermal model, and no isostatic response.
+
+The surface-geomorphology model already derives ridges, valleys, scarps, incised valleys, talus, alluvium, mantled plains, and bedrock exposure from the finished heightfield, drainage, and surface-process state. These are downstream interpretations of relief, not yet geological causes of it, but they remain useful for materials and rendering.
+
+The natural-material system already contains material identity, composition, formation context, broad lithologic provinces, weathering response, exposure state, and surface-fabric descriptions. It does not yet provide a systematic mechanical-rock contract covering strength, cohesion, friction, fracture and jointing, permeability, erodibility, bedding, foliation, or metamorphic structure. The natural-material catalog is available before height generation, but spatial material heatmaps and surface exposures are currently resolved after the initial heightmap; therefore spatial lithology can color and classify mountains but cannot yet determine their initial shape.
+
+The current mountain optics should not be misdiagnosed as wholly independent visual noise. The true-colour compositor already derives visible relief texture from the actual heightfield and its broad, mesoscopic, and local form, together with slopes, ridges, valleys, scarps, talus, alluvium, exposure, weathering, and materials. The principal remaining noise problem is mountain geometry. The renderer should be retained and later supplied with improved geological fields rather than rewritten first.
+
+Mountain mechanisms and adaptation assessment:
+1. Continental collision orogens are partially present as convergence kinematics, collision boundaries, uplift bands, and simplified foreland response. They are the easiest first mechanism to adapt into explicit orogen systems, but fold-thrust belts, plateau growth, metamorphic cores, crustal roots, asymmetric exhumation, and evolving foreland basins require new state.
+2. Ocean-continent subduction is partially present through signed subducting/overriding plate identity and trench, forearc, arc, and backarc relief bands. The existing profile can become an explicit subduction-system record. Accretionary prisms, crustal shortening, volcanic construction history, slab-age effects, flexure, and sediment coupling remain to be added.
+3. Ocean-ocean subduction and island arcs can reuse the same boundary kinematics and volcanic-arc framework, but must be distinguished by plate crust types and should generate island chains, arc curvature, forearc basins, remnant arcs, and backarc spreading rather than a generic continental mountain band.
+4. Extensional and fault-block mountains can reuse existing divergent-normal kinematics, inherited rifts, and basin infrastructure. They need explicit normal faults, tilted blocks, half-grabens, straight mountain fronts, footwall uplift, hanging-wall basins, and alluvial-fan response.
+5. Strike-slip, transpressional, and transtensional systems can reuse shear velocity and boundary direction. Boundary curvature and stepovers should identify restraining bends, releasing bends, local uplifts, and pull-apart basins. The current transform height response is too simple for these landforms.
+6. Volcanic mountains are partially represented by subduction arcs, hotspots, and plume-lid features. A reusable volcanic-edifice generator should derive shape and construction history from magma composition, eruption style, supply, vent migration, erosion, collapse, caldera formation, and age. Volcanic systems should remain distinct from compressional orogenic relief even where they overlap.
+7. Rift-flank uplift can reuse rift and divergent context but needs broad thermal/domical uplift, shoulder asymmetry, faulted margins, subsiding rift basins, and later passive-margin inheritance.
+8. Mantle or dynamic uplift has upstream internal-heat, convection, plume, gravity, viscosity, and Rayleigh-number proxies but no spatial dynamic-topography response. This requires a new long-wavelength uplift/subsidence field rather than another mountain noise family.
+9. Rejuvenated ancient mountains can reuse craton, suture, failed-rift, province-age, and history records. Reactivation requires persistent inherited weaknesses that later stress fields can select. Old range state must survive burial, erosion, renewed uplift, drainage rearrangement, and renewed exhumation.
+
+Elements that can be adapted without replacing the whole generator:
+1. Group adjacent tectonic boundary segments into persistent OrogenSystem records. Each system should store its mechanism, active and inherited age, along-strike extent, signed sides, convergence or extension rate, obliquity, width, maturity, crustal response, volcanic state, and erosion state.
+2. Convert the existing collision and subduction cross-range bands into initial reduced-physics forcing profiles. These profiles should output separate uplift, subsidence, crustal-thickening, volcanic-construction, and basin-load fields instead of writing final elevation directly.
+3. Use existing normal and shear kinematics to identify extensional blocks, transpressional uplifts, transtensional basins, and boundary segmentation. Smooth or fit coherent boundary curves before deriving regional structure so raster-derived stair-step plate boundaries do not become literal geological geometry.
+4. Assign existing materials to a first set of coarse mechanical-lithology classes, such as weak sediment, strong carbonate, massive crystalline rock, foliated metamorphic rock, jointed volcanic rock, and unconsolidated sediment. Feed class-dependent erodibility and slope resistance into the existing channel and hillslope processes.
+5. Route sediment over the existing drainage graph. Track sediment production, transport capacity, stored sediment, alluvial fans, floodplains, foreland and rift-basin deposition, deltas, and sediment delivered to the ocean.
+6. Use existing climate fields for orographic precipitation, snowline, frost-weathering windows, glacier potential, and eventually slope-aspect microclimate. The climate solver should consume updated relief and return revised process forcing.
+7. Preserve the regional-refinement coordinate, inheritance, and edge contracts while changing the source of added relief. Regional queries should resolve structures, rock units, catchments, and events within the parent geological envelope.
+8. Preserve the current true-colour and material-optics systems. Later additions should expose bedding, foliation, fault surfaces, fresh rock, weathered mantles, and sediment cover through those existing render paths.
+
+Fundamental changes required:
+1. Mountains must stop being authored primarily inside the height sampler. Boundary-distance Gaussians, ridge belts, periodic texture, fractal noise, and branching-mountain noise must no longer determine principal mountain location, asymmetry, structural grain, drainage organization, basin placement, or range segmentation. They may remain as bounded sub-resolution irregularity.
+2. Geological events must modify persistent geological state. A collision event must thicken crust, accumulate strain, create fold and thrust domains, load a foreland, and alter later erosion and exposure. A rifting event must establish faults, blocks, thermal uplift, basin accommodation, and inherited weakness. Event records must become causes rather than only descriptions.
+3. A spatial geological-state model must be introduced. At minimum it must retain crust thickness, lithosphere strength or effective elastic thickness, thermal state, basement age, cumulative strain, rock uplift, tectonic subsidence, sediment thickness, metamorphic state, inherited weakness, and causal event identifiers.
+4. Geological structure and lithology must exist beneath the surface. The first implementation should use a practical 2.5D representation: layered geological columns on a coarse grid combined with vector faults, folds, sutures, intrusions, volcanic centres, and basin boundaries. Full three-dimensional voxel crust and complete pressure-temperature paths remain deferred until a specific simulation scale requires them.
+5. Elevation must become the result of state rather than the storage location for every process. Tectonic rock uplift, surface uplift, erosion/exhumation, sediment deposition, volcanic construction, flexural response, and isostatic adjustment must be tracked separately and combined to update the surface.
+6. Isostasy and flexure require a new reduced-physics solver. It should initially provide local/Airy compensation, low-pass load response, effective-elastic-thickness-controlled flexure, crustal roots, foreland subsidence, erosional rebound, sediment loading, and glacial loading/unloading without claiming full lithospheric geodynamics.
+7. Geological time must become event and process duration. The current shortcut in which simulated age applies a small number of heightfield-smoothing passes must be removed from the causal mountain path. An old range may be subdued, buried, rejuvenated, dissected, glaciated, or still high depending on its complete history.
+8. Landscape evolution must become more stateful. It should add lithology-dependent stream power, nonlinear slope thresholds, landslides and debris transfer, sediment mass balance, transport capacity, tools-and-cover effects, base-level changes, knickpoints, divide migration, capture, glacier flow, and erosion-driven isostatic feedback in staged fidelity tiers.
+9. Plate evolution must eventually update topology and geological structures rather than only move plate centres around a fixed segmentation. This can remain reduced physics, but inherited structures must move, deform, become inactive, and sometimes reactivate coherently.
+10. Spatial geology must precede terrain where it is causal. World generation should distinguish hidden pre-topographic geological units and structures from surface exposure, weathered mantle, regolith, and transported deposits derived after landscape evolution.
+
+Planned data contracts:
+OrogenSystem should identify a coherent mountain-forming system rather than an individual map pixel or short boundary segment. Suggested fields include id, mechanism, source_boundary_ids, source_event_ids, start_age_myr, end_age_myr, active_state, overriding_side, subducting_side, convergence_or_extension_rate, shear_rate, obliquity, along_strike_geometry, cross_range_zones, maturity, inherited_structures, and confidence/fidelity.
+
+GeologicEvent should identify the cause, duration, affected plates/provinces/structures, forcing parameters, and created or modified state. Events should include rifting, collision, accretion, subduction initiation or cessation, terrane docking, transform reorganization, plume activity, volcanism, glaciation/loading, erosion interval, basin filling, and structural reactivation.
+
+GeologicUnit should represent a rock body or practical layered package rather than merely a surface colour. Suggested fields include material or material-family identity, depositional or intrusive origin, age interval, thickness, density, strength class, cohesion, friction, erodibility, permeability, bedding or foliation orientation, joint/fracture state, metamorphic grade, weathering response, and provenance events.
+
+GeologicStructure should represent faults, folds, sutures, detachments/decollements, shear zones, intrusions, volcanic centres, basin boundaries, and other geometry that can influence deformation, drainage, erosion, exposure, mineralization, and regional detail. It should retain type, geometry, orientation, age, displacement or strain proxy, activity state, inherited weakness, related units/events, and confidence/fidelity.
+
+LandscapeState should retain surface elevation separately from bedrock elevation, sediment/regolith thickness, erosion/exhumation, deposition, drainage, ice load, water load where relevant, and the latest isostatic/flexural response.
+
+Planned generation dependency:
+interior and mantle state -> plate geometry and kinematics -> geological event history -> geological units and inherited structures -> orogen/tectonic forcing systems -> crustal deformation, uplift, subsidence, volcanism, flexure, and isostasy -> provisional elevation -> climate, snow/ice, and drainage -> weathering, incision, hillslope failure, glacial erosion, and sediment routing -> revised loads and isostatic response -> present global terrain -> regional structural and catchment refinement -> exposure, regolith, materials, and rendering.
+
+The climate, drainage, erosion, sediment, load, and elevation portion is iterative. Ordinary worlds should use a bounded reduced-physics iteration count. Inspected regions may request higher-fidelity or more numerous timesteps while inheriting the same parent history and boundary conditions.
+
+Implementation sequence:
+Phase 1 - Explicit mountain systems:
+Add OrogenSystem generation over existing tectonic boundaries and history. Group coherent boundary segments, resolve signed sides, classify collision, continental subduction, island arc, extension, transform, rift-flank, volcanic, dynamic-uplift, and reactivated systems, and produce separate forcing fields. Preserve the current heightmap contract so this phase can be validated without rewriting downstream systems.
+
+Phase 2 - Persistent deformation state:
+Add coarse global fields for crust thickness, cumulative strain, rock uplift, tectonic subsidence, thermal/dynamic uplift, volcanic construction, sediment load, effective elastic thickness, and isostatic response. Replace the current direct tectonic-height calculation with elevation derived from this state.
+
+Phase 3 - Mechanical lithology and 2.5D geology:
+Create layered geological columns and vector structures. Map the existing material catalog into mechanical classes, then allow faults, folds, bedding, foliation, intrusions, and unit contacts to control erodibility, slope form, groundwater tendencies, exposure, and mineralization.
+
+Phase 4 - Stateful landscape evolution:
+Extend the existing climate/drainage/surface-evolution loop with lithology-dependent incision, nonlinear hillslopes, landslide transfer, sediment mass conservation, transport capacity, basin and fan deposition, changing base level, drainage capture, knickpoints, glacier processes, and erosion/deposition loading. Feed these changes back through reduced isostasy and flexure.
+
+Phase 5 - Structure-driven regional refinement:
+Replace branching-mountain noise as the primary regional mountain generator. Resolve ridge crests, asymmetric slopes, fault scarps, bedding-controlled benches, fold trains, tilted blocks, volcanic edifices, cirques, glacial troughs, terraces, fans, and catchment-specific valley networks from parent structures and process history. Retain geological noise only for unresolved heterogeneity and surface roughness below the current simulation scale.
+
+Phase 6 - Geological visual refinement:
+Pass structural orientation, rock-unit exposure, fresh fault and landslide surfaces, bedding, foliation, weathered mantle, talus, alluvium, snow/ice, and sediment-cover state to the existing geomorphology and true-colour systems. Rendering should reveal generated geological truth rather than invent a second visual geology.
+
+Validation and acceptance criteria:
+1. Determinism and parent-child inheritance must remain stable for identical input contracts, seeds, model versions, and fidelity settings.
+2. Collision systems should produce causally ordered foreland basin, fold-thrust belt, high range, metamorphic/core domain, and possible plateau expressions when the relevant maturity and crustal conditions support them.
+3. Subduction systems should preserve signed trench, accretionary/forearc, volcanic-arc, and backarc order and should differ between ocean-continent and ocean-ocean settings.
+4. Extensional and strike-slip systems should create asymmetric fault blocks, straight fronts, half-grabens, pull-apart basins, and localized restraining-bend uplifts where kinematics require them.
+5. Geological age changes process duration and event sequence rather than directly selecting ruggedness. Test worlds should demonstrate young active, old subdued, old rejuvenated, buried, dissected, and glaciated ranges.
+6. Erosion and deposition should conserve sediment mass within declared sinks, sources, exports, and tolerances. Erosion should alter loads and trigger bounded isostatic response.
+7. Rock properties and structures should produce differential erosion, structurally aligned valleys/ridges, resistant caps, fault scarps, and lithology-controlled slopes without relying on independent visual masks.
+8. Global resolution should store broad envelopes, systems, and causal fields rather than pretending to resolve kilometre-scale geology. Regional and site refinement should reveal smaller structures while agreeing with the global parent surface at boundaries.
+9. Optics must continue to follow terrain and materials. Removing primary mountain noise must not reintroduce independent random albedo fields or allow regional deposits to recolor whole planets.
+10. Performance, storage, and fingerprint tests must distinguish durable geological truth from reproducible derived rasters and disposable diagnostics.
+
+Implementation guardrails:
+Do not begin by rewriting the renderer; improved geological elevation and exposure will already improve the current terrain-derived optics.
+Do not delete procedural noise entirely. Demote it to unresolved heterogeneity, weathering variation, and sub-grid roughness whose amplitude is bounded by rock type, process history, and level of detail.
+Do not begin with a full volumetric crustal simulation. Use coarse fields, layered columns, vector structures, reduced isostasy/flexure, and event-driven evolution until a gameplay or scientific requirement justifies higher fidelity.
+Do not evolve every world through billions of tiny numerical timesteps. Use geologically meaningful events and bounded representative intervals, with higher temporal fidelity only for inspected systems or regions.
+Do not allow global grid resolution to dictate literal range detail. The planetary model should retain mountain systems, structural envelopes, uplift/subsidence fields, and event provenance; the regional model should materialize the smaller landforms.
+
+Expected architectural outcome:
+The update should preserve tectonics, planetary interior inputs, climate, drainage, surface evolution, materials, regional inheritance, storage contracts, and rendering. It should replace the direct "boundary plus noise equals mountain" bridge with a persistent geological deformation and landscape-evolution layer. Mountains should consequently remain identifiable products of particular events and structures, and their present appearance should be explainable through uplift, lithology, climate, drainage, erosion, deposition, and time.
+
+32.2 PLANNED UPDATES: CANONICAL PLANET AND STRICT LOD LINEAGE
+Status:
+The scale and lineage correction is now wired into the representative and regional-refinement paths. The detailed mechanism matrix remains the authoritative contract in `docs/worldgen_lod_mechanism_matrix_v001.md`.
+
+The present planetary render canvas is 8192 x 4096, but the scientific heightfield is capped at 385 x 193 samples, or approximately 108 km per sample on an Earth-sized body. A 100 km first refinement therefore contains too little parent geography to be a valid macroregion test. The 100 km diagnostic target should be treated as LOD2 regional scale after the scale contract is corrected.
+
+The target default profile is: LOD0 full planet; LOD1 500–2,000 km macroregion; LOD2 50–250 km region; LOD3 5–30 km local; LOD4 0.5–5 km site; LOD5 100–500 m parcel; LOD6 20–100 m plot; LOD7 5–30 m survey. The active representative fixture now uses the explicit square sequence 1,000 km, 100 km, 25 km, 6.25 km, 1.56 km, 0.39 km, and 0.10 km for LOD1 through LOD7; 0.03 km is reserved for a future LOD8 contract. These are physical footprints and must be distinct from render-pixel dimensions and scientific sample spacing.
+
+LOD0 is the canonical full-planet reference. Normal world generation must produce it through the ordinary causal pipeline, with parameterized scientific support of at least a 1025 x 513 baseline and a denser benchmark mode such as 2049 x 1025. It should preserve broad variation and causal fields even when a mechanism is not visually complete at a deeper level.
+
+Every LOD N child must be derived from the persisted LOD N-1 snapshot. It may add bounded, child-scale residual detail, but it must not re-query the root as a second live geography source. Parent map identity, height/material/climate/tectonic fingerprints, source bounds, scale profile, and generation contract must be persisted. The regional path now uses the immediate parent for live geography and carries the root only as ancestry metadata. If LOD0 changes, descendants become explicitly stale and can be regenerated selectively; they must not silently drift or be rebuilt through an implicit root dependency.
+
+The normal pipeline remains authoritative for every level. The LOD adapter changes physical extent, sample support, and fidelity budget; it does not replace world generation with a test-only terrain generator. Renderers and diagnostics must expose missing inherited assets or stale lineage instead of silently falling back to a visually plausible but causally incomplete layer.

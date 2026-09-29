@@ -2,6 +2,14 @@ from simulations.bioregion.bioregion_renderer import BioregionRenderer
 from simulations.map.map_renderer import MapRenderer
 from simulations.space.space_renderer import SpaceRenderer
 from simulations.vehicle.vehicle_renderer import VehicleRenderer
+from simulations.vehicle.vehicle_registry_renderer import VehicleRegistryRenderer
+from simulations.world_gen.world_gen_renderer import WorldGenRenderer
+from simulations.phylogeny.phylogeny_renderer import PhylogenyRenderer
+from simulations.person.person_renderer import PersonRenderer
+from simulations.formation.formation_renderer import FormationRenderer
+from simulations.species.species_renderer import SpeciesRenderer
+from simulations.biosphere.biosphere_renderer import BiosphereBuilderRenderer
+from simulations.building.blueprint_designer_renderer import BlueprintDesignerRenderer
 
 
 class Renderer:
@@ -23,6 +31,17 @@ class Renderer:
         self.map_renderer = MapRenderer(simulation)
         self.space_renderer = SpaceRenderer(simulation)
         self.vehicle_renderer = VehicleRenderer(simulation)
+        self.vehicle_registry_renderer = VehicleRegistryRenderer(simulation)
+        self.world_gen_renderer = WorldGenRenderer(simulation)
+        self.phylogeny_renderer = PhylogenyRenderer(simulation)
+        self.person_renderer = PersonRenderer(simulation)
+        self.formation_renderer = FormationRenderer(simulation)
+        self.species_renderer = SpeciesRenderer(simulation)
+        self.biosphere_builder_renderer = BiosphereBuilderRenderer(
+            simulation,
+            species_renderer=self.species_renderer,
+        )
+        self.blueprint_designer_renderer = BlueprintDesignerRenderer(simulation)
 
     # --------------------------------------------------
     # MAIN ENTRY
@@ -51,13 +70,43 @@ class Renderer:
 
         if render_mode == "map":
             self.map_renderer.draw(self.screen, sim)
+            self.biosphere_builder_renderer.draw(self.screen, sim)
             return
 
         if render_mode == "space":
             self.space_renderer.draw(self.screen, sim)
             return
+
+        if render_mode == "world_gen":
+            self.world_gen_renderer.draw(self.screen, sim)
+            return
+
         if render_mode == "vehicle":
             self.vehicle_renderer.draw(self.screen, sim)
+            return
+
+        if render_mode == "vehicle_registry":
+            self.vehicle_registry_renderer.draw(self.screen, sim)
+            return
+
+        if render_mode in {"person", "site_people"}:
+            self.person_renderer.draw(self.screen, sim)
+            return
+
+        if render_mode == "formation":
+            self.formation_renderer.draw(self.screen, sim)
+            return
+
+        if render_mode == "phylogeny":
+            self.phylogeny_renderer.draw(self.screen, sim)
+            return
+
+        if render_mode == "species":
+            self.species_renderer.draw(self.screen, sim)
+            return
+
+        if render_mode == "building_blueprint":
+            self.blueprint_designer_renderer.draw(self.screen, sim)
             return
 
         if hasattr(sim, "system"):

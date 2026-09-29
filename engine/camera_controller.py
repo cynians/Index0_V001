@@ -1,3 +1,6 @@
+import math
+
+
 class CameraController:
     """
     Applies per-simulation camera setup and runtime constraints.
@@ -21,6 +24,10 @@ class CameraController:
             self.camera.x = cx
             self.camera.y = cy
 
+        if hasattr(sim, "get_initial_camera_zoom"):
+            self.camera.zoom = sim.get_initial_camera_zoom(self.screen_w, self.screen_h)
+            return
+
         preferred_zoom = getattr(sim, "preferred_zoom", None)
         if preferred_zoom is not None:
             self.camera.zoom = preferred_zoom
@@ -39,8 +46,33 @@ class CameraController:
         if sim is None:
             return
 
-        # No hard zoom clamping here anymore.
-        # Only positional bounds remain, if a simulation explicitly defines them.
+        # Simulation zoom ranges are renderer safety contracts as well as UI
+        # preferences. Letting a wheel burst exceed them can feed oversized
+        # rectangles and transforms into SDL before the next frame settles.
+        try:
+            zoom = float(self.camera.zoom)
+        except (TypeError, ValueError):
+            zoom = 1.0
+        minimum = getattr(sim, "min_zoom", None)
+        maximum = getattr(sim, "max_zoom", None)
+        try:
+            minimum = float(minimum) if minimum is not None else float(self.camera.min_zoom)
+        except (TypeError, ValueError):
+            minimum = float(self.camera.min_zoom)
+        try:
+            maximum = float(maximum) if maximum is not None else math.inf
+        except (TypeError, ValueError):
+            maximum = math.inf
+        minimum = max(float(self.camera.min_zoom), minimum) if math.isfinite(minimum) else float(self.camera.min_zoom)
+        if not math.isfinite(maximum) or maximum < minimum:
+            maximum = math.inf
+        if not math.isfinite(zoom) or zoom <= 0.0:
+            zoom = minimum
+        self.camera.zoom = max(minimum, min(maximum, zoom))
+
+        if getattr(sim, "free_camera_pan", False):
+            return
+
         if hasattr(sim, "bounds"):
             half_w = self.screen_w / (2 * self.camera.zoom)
             half_h = self.screen_h / (2 * self.camera.zoom)

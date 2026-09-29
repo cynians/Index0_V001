@@ -1,0 +1,602 @@
+"""Practical functional-trait schema for plant species.
+
+The schema intentionally sits above laboratory trait databases.  It keeps
+traits that are useful to Species Sim, commonly documented, or often
+recognisable from field references and photographs.  Most categorical values
+remain open strings until botanical terminology has had a dedicated review.
+"""
+
+PLANT_TRAIT_SECTION = "Simulation / Plant Ecology"
+
+PLANT_TRAIT_SCHEMA_FIELDS = {
+    "plant_growth_form": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_growth_behaviour": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_lifespan": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_life_form": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_woodiness": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "mature_height": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "mature_height_class": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "growth_rate": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "maturity_rate": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "longevity_class": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_phenology": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_size_class": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_length": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_structure": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_division_order": {"type": "number", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaflet_count": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaflet_length": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaflet_width": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_arrangement": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Integer count of leaves sharing one fascicle/short-shoot socket.  This
+    # stays separate from cluster density: the former is botanical identity,
+    # while the latter is a continuous canopy-fullness calibration.
+    "leaf_fascicle_size": {"type": "number", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_attachment_pattern": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_clustering": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "leaf_cluster_size": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "frond_stipe_fraction": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # These fields separate the architectural strategy from its continuous
+    # expression.  Normalised values are intentionally 0..1 so a species can
+    # sit anywhere between two named extremes without inventing new labels.
+    "plant_shoot_dimorphism": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_leaf_distribution": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Orthogonal architectural observations. These describe how woody axes
+    # are assembled; growth_form and growth_behaviour remain the coarse
+    # body-plan/grammar selectors.
+    "plant_axis_continuity": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # How aggressively lower/shaded branches die and drop off as the tree
+    # grows, producing a clear trunk below the live crown (the standard
+    # forestry "self-pruning" / clear-bole concept) -- separate from
+    # axis_continuity, which is about the *shape* of the axis, not where
+    # the crown begins along it.
+    "plant_self_pruning": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # The overall silhouette outline the mature canopy fills -- a separate
+    # concept from crown_openness (density within that outline),
+    # axis_continuity (the trunk's own shape) and self_pruning (where the
+    # outline begins vertically). Standard silvicultural crown-form
+    # typology (conical/pyramidal, ovoid/rounded, umbrella/flat-topped,
+    # spreading, irregular).
+    "plant_crown_shape": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # How narrow/columnar the mature canopy reads versus how fully it fills
+    # crown_shape's outline -- a continuous refinement of crown_shape, not a
+    # replacement for it: crown_shape picks the qualitative pattern
+    # (conical/umbrella/spreading/irregular/ovoid), crown_taper continuously
+    # narrows whichever pattern was picked. 0 = the shared default width for
+    # that crown_shape (unauthored species render identically to before this
+    # field existed); 1 = a tall, narrow column. Exists so a species-specific
+    # silhouette (e.g. a self-pruning conifer's slender crown) comes from one
+    # authored number instead of a bespoke per-species code branch.
+    "plant_crown_taper": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # How stout the trunk reads relative to the shared default for the same
+    # height -- nothing represented trunk girth-to-height ratio at all
+    # before this (every tree used the same fixed height-fraction radius
+    # regardless of species). 0 = the existing shared default (unauthored
+    # species render identically to before this field existed); 1 = a
+    # strongly pachycaul, baobab-style stout trunk. Same "one continuous
+    # authored number instead of a bespoke per-species code branch"
+    # convention as plant_crown_taper.
+    "plant_trunk_girth": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_branching_rhythm": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_branching_timing": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_lateral_axis_orientation": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_flowering_position": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # What kind of reproductive structure the species actually bears --
+    # separate from flowering_position (where it sits) and reproductive_mode
+    # (sexual/vegetative/etc). Every tree previously rendered its
+    # reproductive placements as a generic pink "flower", including
+    # conifers, which don't have flowers at all -- gymnosperms bear cones
+    # (strobili): usually small, dry, brown/green/purple, nothing like an
+    # angiosperm flower. Unauthored species keep the original flower
+    # rendering unchanged. A third value, "spike", was added once a real
+    # case needed it (a grass's narrow, petal-less inflorescence -- see
+    # Perennial Ryegrass, species_sim_lolium_perenne_v001.md): still not
+    # every real reproductive-structure term (catkin, strobilus, ...) --
+    # add more only once a species actually needs one that
+    # "flower"/"cone"/"spike" misrepresents.
+    "plant_reproductive_structure": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_apical_control": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_leaf_spacing_bias": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_branch_droop": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_branch_angle_gradient": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_crown_openness": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_leaf_depth_gradient": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_fine_twig_density": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_leaf_cluster_density": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "photosynthesis_pathway": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "succulence": {"type": "string_list", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "root_architecture": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "root_depth_class": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "belowground_storage": {"type": "string_list", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "max_root_depth": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "reproductive_mode": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "pollination": {"type": "string_list", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "dispersal": {"type": "string_list", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "seed_size_class": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "clonal_spread": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "resprouting": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "regeneration_strategy": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "nitrogen_fixation": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "nutrition_mode": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "mycorrhizal_type": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "shade_tolerance": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "moisture_preference": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "waterlogging_tolerance": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "temperature_range": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "frost_tolerance": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "soil_ph_range": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "salinity_tolerance": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_leaf_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_root_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_stem_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_branch_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_flower_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_fruit_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_module_anchors": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+}
+
+PLANT_TRAIT_FIELDS = frozenset(PLANT_TRAIT_SCHEMA_FIELDS)
+
+PLANT_ARCHITECTURE_RANGE_FIELDS = frozenset({
+    "plant_apical_control",
+    "plant_leaf_spacing_bias",
+    "plant_branch_droop",
+    "plant_branch_angle_gradient",
+    "plant_crown_openness",
+    "plant_crown_taper",
+    "plant_trunk_girth",
+    "plant_leaf_depth_gradient",
+    "plant_fine_twig_density",
+    "plant_leaf_cluster_density",
+})
+
+PLANT_DERIVED_FIELDS = frozenset({
+    "plant_canopy_layer",
+    "succession_roles",
+    "worldgen_suitability_profile",
+    "biosphere_growth_profile",
+})
+
+PLANT_LEGACY_FIELDS = frozenset({
+    "plant_life_cycle",
+    "plant_canopy_layer",
+    "light_tolerance",
+    "moisture_tolerance",
+    "soil_texture_tolerance",
+    "soil_drainage_tolerance",
+    "soil_ph_tolerance",
+    "temperature_tolerance_c",
+    "frost_tolerance_c",
+    "disturbance_tolerance",
+    "trampling_tolerance",
+    "altitude_tolerance_m",
+    "worldgen_suitability_profile",
+    "biosphere_growth_profile",
+    "establishment_requirements",
+    "rooting_profile",
+    "reproductive_strategy",
+    "dispersal_vectors",
+    "succession_roles",
+    "pollination_vectors",
+    "biotic_interactions",
+    "simulation_notes",
+})
+
+
+def _choices(*values):
+    return tuple(
+        {
+            "value": value,
+            "label": label,
+        }
+        for value, label in values
+    )
+
+
+# These are intentionally conservative UI vocabularies, not closed scientific
+# ontologies.  ``other_unknown`` keeps the picker usable while terminology is
+# still being reviewed.
+PLANT_TRAIT_CHOICES = {
+    "plant_life_form": _choices(
+        ("therophyte", "Therophyte"),
+        ("hemicryptophyte", "Hemicryptophyte"),
+        ("geophyte", "Geophyte"),
+        ("chamaephyte", "Chamaephyte"),
+        ("phanerophyte", "Phanerophyte"),
+        ("hydrophyte", "Hydrophyte"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_woodiness": _choices(
+        ("woody", "Woody"),
+        ("herbaceous", "Herbaceous"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "mature_height_class": _choices(
+        ("dwarf", "Dwarf"),
+        ("low", "Low"),
+        ("medium", "Medium"),
+        ("tall", "Tall"),
+        ("canopy", "Canopy"),
+        ("emergent", "Emergent"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "growth_rate": _choices(
+        ("slow", "Slow"),
+        ("moderate", "Moderate"),
+        ("fast", "Fast"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "maturity_rate": _choices(
+        ("rapid", "Rapid"),
+        ("fast", "Fast"),
+        ("moderate", "Moderate"),
+        ("slow", "Slow"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "longevity_class": _choices(
+        ("very_short", "Very short"),
+        ("short", "Short"),
+        ("moderate", "Moderate"),
+        ("long", "Long"),
+        ("very_long", "Very long"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "leaf_phenology": _choices(
+        ("evergreen", "Evergreen"),
+        ("deciduous", "Deciduous"),
+        ("semi_deciduous", "Semi-deciduous"),
+        ("drought_deciduous", "Drought-deciduous"),
+        ("marcescent", "Marcescent"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "leaf_size_class": _choices(
+        ("very_small", "Very small"),
+        ("small", "Small"),
+        ("medium", "Medium"),
+        ("large", "Large"),
+        ("very_large", "Very large"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "leaf_structure": _choices(
+        ("simple", "Simple"),
+        ("pinnately_compound", "Pinnately compound"),
+        ("palmately_compound", "Palmately compound"),
+        ("scale_like", "Scale-like"),
+        ("needle_like", "Needle-like"),
+        ("frond_like", "Frond-like"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "leaf_arrangement": _choices(
+        ("alternate", "Alternate"),
+        ("opposite", "Opposite"),
+        ("whorled", "Whorled"),
+        ("basal", "Basal"),
+        ("distichous", "Distichous"),
+        ("spiral", "Spiral"),
+        ("fascicled", "Fascicled"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "leaf_attachment_pattern": _choices(
+        ("along_stem", "Along stem"),
+        ("terminal_cluster", "Terminal cluster"),
+        ("basal_rosette", "Basal rosette"),
+        ("branch_tips", "Branch tips"),
+        ("mixed", "Mixed"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "leaf_clustering": _choices(
+        ("solitary", "Solitary"),
+        ("paired", "Paired"),
+        ("tufted", "Tufted"),
+        ("rosette", "Rosette"),
+        ("dense_cluster", "Dense cluster"),
+        ("distributed", "Distributed"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_shoot_dimorphism": _choices(
+        ("single_shoot_system", "Single shoot system"),
+        ("long_and_short_shoots", "Long and short shoots"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_leaf_distribution": _choices(
+        ("along_shoot", "Along shoot"),
+        ("mixed_long_short_shoots", "Mixed long / short shoots"),
+        ("terminal_cluster", "Terminal cluster"),
+        ("basal_rosette", "Basal rosette"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_axis_continuity": _choices(
+        ("monopodial", "Monopodial"),
+        ("sympodial", "Sympodial"),
+        ("monopodial_to_sympodial", "Monopodial to sympodial"),
+        ("mixed", "Mixed"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_self_pruning": _choices(
+        ("strong", "Strong"),
+        ("moderate", "Moderate"),
+        ("light", "Light"),
+        ("none", "None"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_crown_shape": _choices(
+        ("conical", "Conical / pyramidal"),
+        ("ovoid", "Ovoid / rounded"),
+        ("umbrella", "Umbrella / flat-topped"),
+        ("spreading", "Spreading"),
+        ("irregular", "Irregular"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_branching_rhythm": _choices(
+        ("rhythmic", "Rhythmic"),
+        ("continuous", "Continuous"),
+        ("diffuse", "Diffuse"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_branching_timing": _choices(
+        ("immediate", "Immediate / sylleptic"),
+        ("delayed", "Delayed / proleptic"),
+        ("mixed", "Mixed"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_lateral_axis_orientation": _choices(
+        ("orthotropic", "Orthotropic"),
+        ("plagiotropic", "Plagiotropic"),
+        ("mixed", "Mixed"),
+        ("pendent", "Pendent"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_flowering_position": _choices(
+        ("lateral", "Lateral"),
+        ("terminal", "Terminal"),
+        ("mixed", "Mixed"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_reproductive_structure": _choices(
+        ("flower", "Flower"),
+        ("capitulum", "Capitulum / flower head"),
+        ("cone", "Cone"),
+        ("spike", "Spike"),
+        ("panicle", "Panicle"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "photosynthesis_pathway": _choices(
+        ("c3", "C3"),
+        ("c4", "C4"),
+        ("cam", "CAM"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "root_architecture": _choices(
+        ("taproot", "Taproot"),
+        ("fibrous", "Fibrous"),
+        ("adventitious", "Adventitious"),
+        ("mixed", "Mixed"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "root_depth_class": _choices(
+        ("shallow", "Shallow"),
+        ("intermediate", "Intermediate"),
+        ("deep", "Deep"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "reproductive_mode": _choices(
+        ("sexual", "Sexual"),
+        ("vegetative", "Vegetative"),
+        ("both", "Both"),
+        ("apomictic", "Apomictic"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "seed_size_class": _choices(
+        ("tiny", "Tiny"),
+        ("small", "Small"),
+        ("medium", "Medium"),
+        ("large", "Large"),
+        ("very_large", "Very large"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "clonal_spread": _choices(
+        ("none", "None"),
+        ("low", "Low"),
+        ("moderate", "Moderate"),
+        ("high", "High"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "resprouting": _choices(
+        ("absent", "Absent"),
+        ("weak", "Weak"),
+        ("moderate", "Moderate"),
+        ("strong", "Strong"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "regeneration_strategy": _choices(
+        ("seed_bank", "Seed bank"),
+        ("vegetative_recruitment", "Vegetative recruitment"),
+        ("resprouting", "Resprouting"),
+        ("disturbance_colonization", "Disturbance colonization"),
+        ("gap_recruitment", "Gap recruitment"),
+        ("mixed", "Mixed"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "nitrogen_fixation": _choices(
+        ("none", "None"),
+        ("associated", "Associated / facultative"),
+        ("active", "Active / capable"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "nutrition_mode": _choices(
+        ("autotrophic", "Autotrophic"),
+        ("parasitic", "Parasitic"),
+        ("hemiparasitic", "Hemiparasitic"),
+        ("mycoheterotrophic", "Mycoheterotrophic"),
+        ("carnivorous", "Carnivorous"),
+        ("mixotrophic", "Mixotrophic"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "mycorrhizal_type": _choices(
+        ("none", "None"),
+        ("arbuscular", "Arbuscular"),
+        ("ectomycorrhizal", "Ectomycorrhizal"),
+        ("ericoid", "Ericoid"),
+        ("orchid", "Orchid"),
+        ("mixed", "Mixed"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "shade_tolerance": _choices(
+        ("low", "Low"),
+        ("medium", "Medium"),
+        ("high", "High"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "moisture_preference": _choices(
+        ("very_dry", "Very dry"),
+        ("dry", "Dry"),
+        ("mesic", "Mesic"),
+        ("moist", "Moist"),
+        ("wet", "Wet"),
+        ("aquatic", "Aquatic"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "waterlogging_tolerance": _choices(
+        ("low", "Low"),
+        ("medium", "Medium"),
+        ("high", "High"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "salinity_tolerance": _choices(
+        ("low", "Low"),
+        ("medium", "Medium"),
+        ("high", "High"),
+        ("other_unknown", "Other / unknown"),
+    ),
+}
+
+PLANT_TRAIT_DROPDOWN_FIELDS = frozenset(PLANT_TRAIT_CHOICES)
+
+PLANT_TRAIT_BEHAVIOR_PATHS = {
+    "plant_life_form": ("Plant Life History", "Plant Life Form"),
+    "plant_woodiness": ("Plant Life History", "Woodiness"),
+    "mature_height_class": ("Plant Life History", "Mature Height Class"),
+    "growth_rate": ("Growth", "Growth Rate"),
+    "maturity_rate": ("Growth", "Maturity Rate"),
+    "longevity_class": ("Growth", "Longevity Class"),
+    "leaf_phenology": ("Leaf / Shoot Function", "Leaf Phenology"),
+    "leaf_size_class": ("Leaf / Shoot Function", "Leaf Size Class"),
+    "leaf_length": ("Leaf / Shoot Function", "Leaf Length"),
+    "leaf_structure": ("Leaf / Shoot Function", "Leaf Structure"),
+    "leaf_division_order": ("Leaf / Shoot Function", "Leaf Division Order"),
+    "leaflet_count": ("Leaf / Shoot Function", "Leaflet Count"),
+    "leaflet_length": ("Leaf / Shoot Function", "Leaflet Length"),
+    "leaflet_width": ("Leaf / Shoot Function", "Leaflet Width"),
+    "leaf_arrangement": ("Leaf / Shoot Architecture", "Leaf Arrangement"),
+    "leaf_fascicle_size": ("Leaf / Shoot Architecture", "Leaves per Fascicle"),
+    "leaf_attachment_pattern": ("Leaf / Shoot Architecture", "Leaf Attachment"),
+    "leaf_clustering": ("Leaf / Shoot Architecture", "Leaf Clustering"),
+    "leaf_cluster_size": ("Leaf / Shoot Architecture", "Leaves per Cluster"),
+    "frond_stipe_fraction": ("Leaf / Shoot Architecture", "Frond Stipe Fraction"),
+    "plant_shoot_dimorphism": ("Leaf / Shoot Architecture", "Shoot Dimorphism"),
+    "plant_leaf_distribution": ("Leaf / Shoot Architecture", "Leaf Distribution"),
+    "plant_leaf_spacing_bias": ("Leaf / Shoot Architecture", "Leaf Spacing Bias"),
+    "plant_leaf_depth_gradient": ("Leaf / Shoot Architecture", "Leaf Depth Gradient"),
+    "plant_leaf_cluster_density": ("Leaf / Shoot Architecture", "Leaf Cluster Density"),
+    "plant_axis_continuity": ("Branch Architecture", "Axis Continuity"),
+    "plant_self_pruning": ("Branch Architecture", "Self-Pruning"),
+    "plant_crown_shape": ("Branch Architecture", "Crown Shape"),
+    "plant_crown_taper": ("Branch Architecture", "Crown Taper"),
+    "plant_trunk_girth": ("Branch Architecture", "Trunk Girth"),
+    "plant_branching_rhythm": ("Branch Architecture", "Branching Rhythm"),
+    "plant_branching_timing": ("Branch Architecture", "Branching Timing"),
+    "plant_lateral_axis_orientation": ("Branch Architecture", "Lateral Axis Orientation"),
+    "plant_flowering_position": ("Branch Architecture", "Flowering Position"),
+    "plant_reproductive_structure": ("Reproduction", "Reproductive Structure"),
+    "plant_apical_control": ("Branch Architecture", "Apical Control"),
+    "plant_branch_droop": ("Branch Architecture", "Branch Droop"),
+    "plant_branch_angle_gradient": ("Branch Architecture", "Branch Angle Gradient"),
+    "plant_crown_openness": ("Branch Architecture", "Crown Openness"),
+    "plant_fine_twig_density": ("Branch Architecture", "Fine Twig Density"),
+    "photosynthesis_pathway": ("Physiology / Water Strategy", "Photosynthesis Pathway"),
+    "root_architecture": ("Roots / Belowground", "Root Architecture"),
+    "root_depth_class": ("Roots / Belowground", "Root Depth Class"),
+    "reproductive_mode": ("Reproduction", "Reproductive Mode"),
+    "seed_size_class": ("Reproduction", "Seed Size Class"),
+    "clonal_spread": ("Reproduction", "Clonal Spread"),
+    "resprouting": ("Regeneration / Disturbance", "Resprouting"),
+    "regeneration_strategy": ("Regeneration / Disturbance", "Regeneration Strategy"),
+    "nitrogen_fixation": ("Nutrition / Symbiosis", "Nitrogen Fixation"),
+    "nutrition_mode": ("Nutrition / Symbiosis", "Nutrition Mode"),
+    "mycorrhizal_type": ("Nutrition / Symbiosis", "Mycorrhizal Type"),
+    "shade_tolerance": ("Environmental Response", "Shade Tolerance"),
+    "moisture_preference": ("Environmental Response", "Moisture Preference"),
+    "waterlogging_tolerance": ("Environmental Response", "Waterlogging Tolerance"),
+    "salinity_tolerance": ("Environmental Response", "Salinity Tolerance"),
+}
+
+
+def plant_trait_choice_rows(field_key):
+    choices = PLANT_TRAIT_CHOICES.get(field_key)
+    if not choices:
+        return []
+    path = PLANT_TRAIT_BEHAVIOR_PATHS.get(field_key, (field_key,))
+    headings = [
+        {"kind": "heading", "depth": 0, "label": "Behaviour"},
+        {"kind": "heading", "depth": 1, "label": "Plant Behaviour"},
+    ]
+    headings.extend(
+        {"kind": "heading", "depth": index + 2, "label": label}
+        for index, label in enumerate(path)
+    )
+    return headings + [dict(choice) for choice in choices]
+
+
+def canonical_plant_trait_value(field_key, value):
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not text:
+        return ""
+    return text
+
+
+def normalised_plant_trait_range(value, default=0.5, *, default_span=0.10):
+    """Return a stable 0..1 ``min / typical / max`` calibration envelope.
+
+    Legacy scalar values remain valid and resolve to a point range. New editor
+    values carry a status so visually tuned parameters are not mistaken for
+    measured botanical observations.
+    """
+
+    def bounded(candidate, fallback):
+        try:
+            return max(0.0, min(1.0, float(candidate)))
+        except (TypeError, ValueError):
+            return max(0.0, min(1.0, float(fallback)))
+
+    fallback = bounded(default, 0.5)
+    if isinstance(value, dict):
+        typical = bounded(value.get("typical", value.get("value", fallback)), fallback)
+        minimum = bounded(value.get("min", typical - default_span), typical)
+        maximum = bounded(value.get("max", typical + default_span), typical)
+        minimum, maximum = min(minimum, maximum), max(minimum, maximum)
+        typical = max(minimum, min(maximum, typical))
+        status = str(value.get("status") or "provisional_visual_calibration")
+    else:
+        typical = bounded(value, fallback)
+        minimum = maximum = typical
+        status = "legacy_point_value" if value not in (None, "") else "runtime_default"
+    result = {
+        "min": round(minimum, 4),
+        "typical": round(typical, 4),
+        "max": round(maximum, 4),
+        "status": status,
+    }
+    if isinstance(value, dict) and value.get("source"):
+        result["source"] = str(value["source"])
+    return result
+
+
+def plant_trait_display_label(field_key, value):
+    canonical = canonical_plant_trait_value(field_key, value)
+    choice = next(
+        (choice for choice in PLANT_TRAIT_CHOICES.get(field_key, ()) if choice["value"] == canonical),
+        None,
+    )
+    if choice:
+        return choice["label"]
+    return f"Custom: {value}" if value not in (None, "") else "Choose a value"

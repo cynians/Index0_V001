@@ -138,18 +138,28 @@ class Camera:
     def handle_event(self, event):
         # mouse wheel zoom
         if event.type == pygame.MOUSEWHEEL:
-            mouse_pos = pygame.mouse.get_pos()
+            mouse_pos = (
+                pygame.mouse.get_pos()
+                if pygame.display.get_init()
+                else (self.width / 2, self.height / 2)
+            )
 
-            zoom_factor = 1.0 + (event.y * 0.15)
-
-            if zoom_factor <= 0:
-                zoom_factor = 0.1
+            # High-resolution wheels and touchpads can deliver large bursts in
+            # one frame. Exponential steps remain symmetric while the bound
+            # prevents a single native event batch from creating enormous
+            # renderer dimensions before simulation constraints are applied.
+            wheel_y = max(-6.0, min(6.0, float(getattr(event, "y", 0.0) or 0.0)))
+            zoom_factor = 1.15 ** wheel_y
 
             self.change_zoom(zoom_factor, mouse_pos)
 
         # keyboard fallback
         if event.type == pygame.KEYDOWN:
-            mouse_pos = pygame.mouse.get_pos()
+            mouse_pos = (
+                pygame.mouse.get_pos()
+                if pygame.display.get_init()
+                else (self.width / 2, self.height / 2)
+            )
 
             if event.key == pygame.K_q:
                 self.change_zoom(0.9, mouse_pos)

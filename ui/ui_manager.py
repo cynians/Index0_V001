@@ -1,6 +1,10 @@
+import math
+
 import pygame
 
 from ui.knowledge_browser_ui import KnowledgeBrowserUI
+from ui.selection_inspector_ui import SelectionInspectorUI
+from ui.timeline_ui import TimelineUI
 from ui.ui_types import UIButton
 
 
@@ -17,18 +21,45 @@ class UIManager:
     """
 
     DAY_SECONDS = 24 * 60 * 60
+    MAP_SURFACE_FIELDS = (
+        "bounds",
+        "geometry",
+        "map_canvas_width_px",
+        "map_canvas_height_px",
+        "map_status",
+        "map_generation_recipe",
+        "map_layers",
+        "map_image_path",
+        "heightmap_model",
+        "material_heatmap_model",
+    )
 
     def __init__(self):
         self.buttons = []
+        self.vehicle_pixel_editor_ui = None
         self.scope_label = None
         self.breadcrumb_label = None
         self.vehicle_requirement_lines = []
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
+        self.person_dossier_lines = []
+        self.person_dossier_model = None
+        self.person_ui_active = False
+        self.person_panel_mode = None
+        self.person_panel_model = None
+        self.person_panel_rect = None
+        self.person_panel_close_rect = None
+        self.person_panel_icons = []
+        self.pop_ui_active = False
+        self.pop_panel_model = None
+        self.simulation_selection_payload = None
+        self.simulation_selection_buttons = []
+        self.simulation_selection_rect = None
 
         self.simulation_bar_rect = None
         self.simulation_bar_title = None
         self.simulation_bar_hint_lines = []
+        self.simulation_bar_panel_lines = []
         self.simulation_bar_catalog_entries = []
         self.simulation_bar_catalog_hitboxes = []
         self.simulation_bar_active_catalog_id = None
@@ -43,18 +74,87 @@ class UIManager:
         self.simulation_panel_tabs = []
         self.simulation_panel_active_tab_id = None
         self.simulation_panel_tab_hitboxes = []
+        self.species_diagnostic_active = False
 
         self.tab_labels = []
         self.active_tab_index = 0
         self.tab_hitboxes = []
 
         self.time_lines = []
+        self.time_info = None
         self.timeline_fraction = 0.0
         self.mouse_world_label = None
 
         self.menu_active = False
+        self.system_menu_active = False
+        self.system_settings_active = False
+        self.system_menu_buttons = []
+        self.system_menu_rect = None
+        self.repository_return_confirm_active = False
+        self.repository_return_confirm_rect = None
+        self.repository_return_confirm_buttons = []
         self.knowledge_ui = KnowledgeBrowserUI()
+        # Deliberately a *separate* instance from self.knowledge_ui (the
+        # full-screen modal repository browser), not a shared reference.
+        # The floating in-sim card used to reuse self.knowledge_ui directly,
+        # which meant opening it overwrote the modal browser's own
+        # layout["right_rect"]/canvas_offset_x/canvas_offset_y/canvas_zoom
+        # and appended into its shared .cards list -- so exiting a
+        # simulation without explicitly closing the floating card first left
+        # a stale, broken card entry haunting the repository browser's own
+        # canvas. A dedicated instance means the two can never leak state
+        # into each other, in either direction.
+        self.floating_knowledge_ui = KnowledgeBrowserUI()
+        self.selection_inspector = SelectionInspectorUI()
+        self.floating_card_rect = None
+        self.floating_card_mode = None
+        self.map_history_timeline = TimelineUI()
+        self.map_history_timeline_visible = False
+        self.map_history_timeline_rect = None
+        self.repository_return_confirm_rect = None
+        self.repository_return_confirm_buttons = []
+        self.map_history_timeline_drag_mode = None
+        self.map_history_timeline_drag_start_pos = None
+        self.map_history_timeline_drag_last_x = None
+        self.map_history_timeline_reanchor_target = None
+        self.map_history_selected_year = None
+        self.map_history_selected_context_key = None
+        self.map_ui_active = False
+        self.regional_loading_active = False
+        self.map_context_lines = []
+        self.map_status_lines = []
+        self.map_empty_state_lines = []
+        self.map_empty_state_actions = []
+        self.map_empty_state_buttons = []
+        self.map_empty_state_rect = None
+        self.map_location_browser_items = []
+        self.map_location_browser_hitboxes = []
+        self.map_location_browser_rect = None
+        self.map_legend_items = []
+        self.map_legend_rect = None
+        self.map_sidebar_rect = None
+        self.map_sidebar_sections = []
+        self.map_context_rect = None
+        self.map_layer_selector_rect = None
+        self.map_layer_selector_items = []
+        self.map_layer_menu_mode = "root"
         self.app_font = pygame.font.SysFont("consolas", 16)
+        self._text_surface_cache = {}
+        self._text_surface_cache_limit = 512
+        self._biosphere_preview_cache = {}
+        self._biosphere_species_renderer = None
+
+    def is_text_input_active(self):
+        return self.selection_inspector.is_text_input_active()
+
+    def get_map_content_viewport_rect(self, app_width, app_height):
+        """Full map canvas footprint, including content behind overlay panels.
+
+        Map menus float over the simulation rather than reducing its canvas.
+        Refinement therefore has to capture the surface beneath those menus as
+        well as the unobscured center of the screen.
+        """
+        return pygame.Rect(0, 0, max(1, int(app_width)), max(1, int(app_height)))
 
     def _format_sim_time(self, sim):
         base_year = getattr(sim, "year", 0)
@@ -75,19 +175,34 @@ class UIManager:
             "hours": hours,
             "minutes": minutes,
             "timeline_fraction": seconds_in_day / self.DAY_SECONDS,
+            "year_fraction": ((day_of_year - 1) + seconds_in_day / self.DAY_SECONDS) / 365.0,
         }
 
     def _reset_shared_state(self):
         self.buttons = []
+        self.vehicle_pixel_editor_ui = None
         self.scope_label = None
         self.breadcrumb_label = None
         self.vehicle_requirement_lines = []
         self.hover_tooltip_lines = []
         self.hover_tooltip_pos = None
+        self.person_dossier_lines = []
+        self.person_dossier_model = None
+        self.person_ui_active = False
+        self.person_panel_model = None
+        self.person_panel_rect = None
+        self.person_panel_close_rect = None
+        self.person_panel_icons = []
+        self.pop_ui_active = False
+        self.pop_panel_model = None
+        self.simulation_selection_payload = None
+        self.simulation_selection_buttons = []
+        self.simulation_selection_rect = None
 
         self.simulation_bar_rect = None
         self.simulation_bar_title = None
         self.simulation_bar_hint_lines = []
+        self.simulation_bar_panel_lines = []
         self.simulation_bar_catalog_entries = []
         self.simulation_bar_catalog_hitboxes = []
         self.simulation_bar_active_catalog_id = None
@@ -96,14 +211,763 @@ class UIManager:
         self.simulation_panel_tabs = []
         self.simulation_panel_active_tab_id = None
         self.simulation_panel_tab_hitboxes = []
+        self.species_diagnostic_active = False
+
+        self.map_history_timeline_visible = False
+        self.map_history_timeline_rect = None
+        self.map_ui_active = False
+        self.regional_loading_active = False
+        self.map_context_lines = []
+        self.map_status_lines = []
+        self.map_empty_state_lines = []
+        self.map_empty_state_actions = []
+        self.map_empty_state_buttons = []
+        self.map_empty_state_rect = None
+        self.map_location_browser_items = []
+        self.map_location_browser_hitboxes = []
+        self.map_location_browser_rect = None
+        self.map_legend_items = []
+        self.map_legend_rect = None
+        self.map_sidebar_rect = None
+        self.map_sidebar_sections = []
+        self.map_context_rect = None
+        self.map_layer_selector_rect = None
+        self.map_layer_selector_items = []
+        self.biosphere_ui_active = False
+        self.biosphere_active_sim = None
+        self.biosphere_dashboard = None
+        self.biosphere_picker_model = None
+        self.biosphere_picker_open = False
+        self.biosphere_top_bar_rect = None
+        self.biosphere_population_rect = None
+        self.biosphere_tool_dock_rect = None
+        self.biosphere_picker_rect = None
 
         self.tab_labels = []
         self.active_tab_index = 0
         self.tab_hitboxes = []
 
         self.time_lines = []
+        self.time_info = None
         self.timeline_fraction = 0.0
         self.mouse_world_label = None
+
+    def _short_button_label(self, label, max_chars=24):
+        text = str(label or "").strip()
+        if len(text) <= max_chars:
+            return text
+        return text[: max(1, max_chars - 1)].rstrip() + "..."
+
+    def _render_text(self, font, text, color):
+        color = tuple(color)
+        cache_key = (id(font), str(text), color)
+        cached = self._text_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        surface = font.render(str(text), True, color)
+        self._text_surface_cache[cache_key] = surface
+        while len(self._text_surface_cache) > self._text_surface_cache_limit:
+            self._text_surface_cache.pop(next(iter(self._text_surface_cache)))
+        return surface
+
+    def _append_map_layer_button(self, button_id, label, x, y, width, height, active=False, enabled=True, depth=0):
+        indent = max(0, int(depth or 0)) * 16
+        rect = pygame.Rect(x + indent, y, max(80, width - indent), height)
+        button = UIButton(button_id, self._short_button_label(label), rect, enabled=enabled)
+        button.map_layer_active = bool(active)
+        button.map_layer_depth = max(0, int(depth or 0))
+        self.buttons.append(button)
+        return y + height + 6
+
+    def _rebuild_map_layer_menu(self, active_sim, x, y, width=226):
+        button_h = 28
+        available_layers = set(getattr(active_sim, "get_available_layer_kinds", lambda: [])())
+        active_layer = getattr(active_sim, "get_active_layer_kind", lambda: None)()
+        has_materials = bool(getattr(active_sim, "get_material_distribution_items", lambda: [])())
+
+        if self.map_layer_menu_mode == "materials":
+            self.map_layer_menu_mode = "root"
+        if self.map_layer_menu_mode not in {"root", "materials", "locations"}:
+            self.map_layer_menu_mode = "root"
+
+        if self.map_layer_menu_mode == "materials":
+            y = self._append_map_layer_button("map_layer_menu_root", "Back", x, y, width, button_h)
+            for item in getattr(active_sim, "get_material_distribution_items", lambda: [])():
+                item_id = str(item.get("id") or "")
+                if not item_id:
+                    continue
+                label = item.get("label") or item_id
+                if item.get("confidence") not in (None, ""):
+                    label = f"{label} ({float(item.get('confidence')):.2f})"
+                y = self._append_map_layer_button(
+                    f"map_select_material:{item_id}",
+                    label,
+                    x,
+                    y,
+                    width,
+                    button_h,
+                    active=bool(item.get("active")) and active_layer == "material_heatmaps",
+                )
+            return y
+
+        if self.map_layer_menu_mode == "locations":
+            y = self._append_map_layer_button("map_layer_menu_root", "Back", x, y, width, button_h)
+            items = getattr(active_sim, "get_location_layer_tree_items", lambda: [])()
+            if not items:
+                y = self._append_map_layer_button(
+                    "map_set_layer:locations",
+                    "No child locations",
+                    x,
+                    y,
+                    width,
+                    button_h,
+                    active=active_layer == "locations",
+                    enabled=False,
+                )
+            for item in items:
+                item_id = str(item.get("id") or "")
+                if not item_id:
+                    continue
+                y = self._append_map_layer_button(
+                    f"map_select_location:{item_id}",
+                    item.get("label") or item_id,
+                    x,
+                    y,
+                    width,
+                    button_h,
+                    active=bool(item.get("active")) and active_layer == "locations",
+                    depth=item.get("depth", 0),
+                )
+            if bool(getattr(active_sim, "can_create_location_draft", lambda: False)()):
+                y += 4
+                options = getattr(active_sim, "get_location_draft_options", lambda: [])()
+                if not options:
+                    options = [{"id": "region", "label": "New Location"}]
+                for option in options:
+                    option_id = str(option.get("id") or "region")
+                    option_label = option.get("label") or "New Location"
+                    y = self._append_map_layer_button(
+                        f"new_location:{option_id}",
+                        option_label,
+                        x,
+                        y,
+                        width,
+                        button_h,
+                        active=False,
+                    )
+                point_options = getattr(active_sim, "get_point_location_draft_options", lambda: [])()
+                if point_options:
+                    y += 4
+                    for option in point_options[:3]:
+                        option_id = str(option.get("id") or "site")
+                        option_label = option.get("label") or "Point Location"
+                        y = self._append_map_layer_button(
+                            f"new_point_location:{option_id}",
+                            option_label,
+                            x,
+                            y,
+                            width,
+                            button_h,
+                            active=False,
+                        )
+            return y
+
+        self.map_layer_selector_items = []
+        title_h = 18
+        chip_h = 28
+        chip_gap = 6
+        selector_y = y
+        entries = []
+        atmosphere_entry = None
+        contours_entry = None
+        if "locations" in available_layers:
+            entries.append({
+                "label": "Map",
+                "detail": "Locations",
+                "layer_kind": "locations",
+                "active": active_layer in {"locations", "visual_map"},
+                "color": (82, 108, 92),
+            })
+        if "true_color" in available_layers:
+            entries.append({
+                "label": "True Color",
+                "detail": "Orbital surface",
+                "layer_kind": "true_color",
+                "active": active_layer == "true_color",
+                "color": (151, 128, 101),
+            })
+        if "heightmap" in available_layers:
+            entries.append({
+                "label": "Height",
+                "detail": "",
+                "layer_kind": "heightmap",
+                "active": active_layer == "heightmap",
+                "color": (118, 132, 144),
+            })
+        if "hydrology" in available_layers:
+            entries.append({
+                "label": "Climate",
+                "detail": "",
+                "layer_kind": "hydrology",
+                "active": active_layer == "hydrology",
+                "color": (82, 132, 148),
+            })
+        if has_materials:
+            entries.append({
+                "label": "Materials",
+                "detail": "",
+                "layer_kind": "material_heatmaps",
+                "active": active_layer == "material_heatmaps",
+                "color": (156, 118, 74),
+            })
+        if "ground_materials" in available_layers:
+            entries.append({
+                "label": "Regions",
+                "detail": "Contours + boundaries",
+                "layer_kind": "ground_materials",
+                "active": active_layer == "ground_materials",
+                "color": (138, 118, 88),
+            })
+        if bool(getattr(active_sim, "has_atmosphere_visual", lambda: False)()):
+            atmosphere_on = bool(getattr(active_sim, "is_atmosphere_visible", lambda: False)())
+            atmosphere_entry = {
+                "label": "Atmosphere On" if atmosphere_on else "Atmosphere Off",
+                "detail": "Atmosphere",
+                "action_id": "toggle_map_atmosphere",
+                "active": atmosphere_on,
+                "color": (202, 166, 82),
+            }
+        if bool(getattr(active_sim, "has_height_contours", lambda: False)()):
+            contours_on = bool(getattr(active_sim, "is_height_contours_visible", lambda: False)())
+            contours_entry = {
+                "label": "Contours On" if contours_on else "Contours Off",
+                "detail": "Elevation contours",
+                "action_id": "toggle_map_height_contours",
+                "active": contours_on,
+                "color": (206, 214, 220),
+            }
+
+        columns = 2 if len(entries) <= 2 else 3
+        chip_w = max(66, (width - chip_gap * (columns - 1)) // columns)
+        for index, entry in enumerate(entries):
+            col = index % columns
+            row = index // columns
+            rect = pygame.Rect(
+                x + col * (chip_w + chip_gap),
+                y + title_h + row * (chip_h + chip_gap),
+                chip_w,
+                chip_h,
+            )
+            self.map_layer_selector_items.append({**entry, "rect": rect})
+
+        rows = (len(entries) + columns - 1) // columns if entries else 0
+        total_h = title_h + rows * chip_h + max(0, rows - 1) * chip_gap
+        if atmosphere_entry is not None:
+            atmosphere_y = selector_y + total_h + chip_gap
+            self.map_layer_selector_items.append({
+                **atmosphere_entry,
+                "rect": pygame.Rect(x, atmosphere_y, width, chip_h),
+            })
+            total_h += chip_gap + chip_h
+        if contours_entry is not None:
+            contours_y = selector_y + total_h + chip_gap
+            self.map_layer_selector_items.append({
+                **contours_entry,
+                "rect": pygame.Rect(x, contours_y, width, chip_h),
+            })
+            total_h += chip_gap + chip_h
+        self.map_layer_selector_rect = pygame.Rect(x, selector_y, width, max(title_h, total_h))
+        y = selector_y + total_h + 10
+
+        if active_layer == "material_heatmaps" and has_materials:
+            self.map_layer_menu_mode = "materials"
+            y = self._append_map_layer_button("map_layer_menu_root", "Material Choices", x, y, width, button_h, enabled=False)
+            material_items = list(
+                getattr(active_sim, "get_material_distribution_items", lambda: [])()
+            )
+            composite_items = [
+                item for item in material_items
+                if str(item.get("id") or "") == "composite"
+            ]
+            distribution_items = [
+                item for item in material_items
+                if str(item.get("id") or "") != "composite"
+            ]
+            for item in composite_items:
+                item_id = str(item.get("id") or "")
+                label = item.get("label") or item_id
+                y = self._append_map_layer_button(
+                    f"map_select_material:{item_id}",
+                    label,
+                    x,
+                    y,
+                    width,
+                    button_h,
+                    active=bool(item.get("active")),
+                )
+            grid_gap = 6
+            grid_columns = 2
+            grid_width = max(80, (width - grid_gap) // grid_columns)
+            grid_start_y = y
+            for index, item in enumerate(distribution_items):
+                item_id = str(item.get("id") or "")
+                if not item_id:
+                    continue
+                label = item.get("label") or item_id
+                if item.get("confidence") not in (None, ""):
+                    label = f"{label} ({float(item.get('confidence')):.2f})"
+                column = index % grid_columns
+                row = index // grid_columns
+                rect = pygame.Rect(
+                    x + column * (grid_width + grid_gap),
+                    grid_start_y + row * (button_h + grid_gap),
+                    grid_width,
+                    button_h,
+                )
+                button = UIButton(
+                    f"map_select_material:{item_id}",
+                    self._short_button_label(label, max_chars=16),
+                    rect,
+                )
+                button.map_layer_active = bool(item.get("active"))
+                button.map_layer_depth = 0
+                self.buttons.append(button)
+            if distribution_items:
+                grid_rows = (
+                    len(distribution_items) + grid_columns - 1
+                ) // grid_columns
+                y = grid_start_y + grid_rows * (button_h + grid_gap)
+        elif active_layer == "hydrology":
+            self.map_layer_menu_mode = "root"
+            climate_items = list(
+                getattr(active_sim, "get_climate_display_items", lambda: [])()
+            )
+            if climate_items:
+                y = self._append_map_layer_button(
+                    "map_climate_display_header",
+                    "Climate Display",
+                    x,
+                    y,
+                    width,
+                    button_h,
+                    enabled=False,
+                )
+                for item in climate_items:
+                    item_id = str(item.get("id") or "")
+                    if not item_id:
+                        continue
+                    y = self._append_map_layer_button(
+                        f"map_select_climate:{item_id}",
+                        item.get("label") or item_id,
+                        x,
+                        y,
+                        width,
+                        button_h,
+                        active=bool(item.get("active")),
+                    )
+        else:
+            self.map_layer_menu_mode = "root"
+        return y
+
+    def _rebuild_ecosystem_controls(self, active_sim, x, y, width=226):
+        button_height = 28
+        y += 8
+        if getattr(active_sim, "simulation_mode", None) == "biosphere_builder":
+            running = not bool(getattr(active_sim, "builder_paused", True))
+            run_button = UIButton(
+                "biosphere_toggle_running",
+                "Pause Succession" if running else "Run Succession",
+                pygame.Rect(x, y, width, button_height),
+            )
+            run_button.map_layer_active = running
+            self.buttons.append(run_button)
+            y += 36
+            self.buttons.append(UIButton(
+                "biosphere_advance_season",
+                "Advance One Season",
+                pygame.Rect(x, y, width, button_height),
+            ))
+            y += 40
+            items = list(getattr(active_sim, "get_species_palette_items", lambda: [])() or [])
+            columns = 2 if width >= 220 else 1
+            gap = 6
+            item_width = (width - gap) // columns
+            for index, item in enumerate(items):
+                col = index % columns
+                row = index // columns
+                species_button = UIButton(
+                    f"biosphere_select_species:{item.get('id')}",
+                    item.get("label") or item.get("id"),
+                    pygame.Rect(x + col * (item_width + gap), y + row * (button_height + gap), item_width, button_height),
+                    enabled=bool(item.get("enabled", True)),
+                )
+                species_button.map_layer_active = bool(item.get("selected"))
+                self.buttons.append(species_button)
+            if items:
+                y += ((len(items) + columns - 1) // columns) * (button_height + gap) + 6
+            representatives = list(getattr(active_sim, "get_representative_ui_items", lambda: [])() or [])
+            if representatives:
+                y = self._append_map_sidebar_section("DEEP REPRESENTATIVES", x, y, width)
+                for item in representatives[:8]:
+                    state = "" if item.get("alive", True) else " (dead)"
+                    representative_button = UIButton(
+                        f"biosphere_select_representative:{item.get('id')}",
+                        f"{item.get('label')}{state}",
+                        pygame.Rect(x, y, width, button_height),
+                    )
+                    representative_button.map_layer_active = bool(item.get("selected"))
+                    self.buttons.append(representative_button)
+                    y += 34
+            return y
+
+        can_create_biosphere_patch = bool(
+            getattr(active_sim, "can_create_biosphere_patch_draft", lambda: False)()
+        )
+        self.buttons.append(
+            UIButton(
+                "new_biosphere_patch",
+                "Biosphere Area",
+                pygame.Rect(x, y, width, button_height),
+                enabled=can_create_biosphere_patch,
+            )
+        )
+        y += 40
+
+        if bool(getattr(active_sim, "can_create_biosphere_from_selection", lambda: False)()):
+            self.buttons.append(
+                UIButton(
+                    "create_biosphere",
+                    "Create Biosphere",
+                    pygame.Rect(x, y, width, button_height),
+                )
+            )
+            y += 40
+
+        return y
+
+    @staticmethod
+    def _set_button_active(button, active):
+        button.map_layer_active = bool(active)
+        return button
+
+    @staticmethod
+    def _mark_biosphere_modal(button):
+        button.biosphere_modal = True
+        return button
+
+    def _rebuild_biosphere_builder_ui(self, active_sim, app_width, app_height):
+        """Lay out BioSim as a city-builder HUD rather than a map debug sidebar."""
+        self.biosphere_ui_active = True
+        self.biosphere_active_sim = active_sim
+        self.biosphere_dashboard = getattr(active_sim, "get_biosphere_dashboard_model", lambda: {})()
+        self.biosphere_picker_model = getattr(active_sim, "get_species_picker_model", lambda: {"open": False})()
+        self.biosphere_picker_open = bool(self.biosphere_picker_model.get("open"))
+        self.map_context_lines = []
+        self.map_status_lines = []
+        self.map_sidebar_rect = None
+        self.map_layer_selector_rect = None
+        self.map_layer_selector_items = []
+        self.map_sidebar_sections = []
+        self.map_empty_state_lines = []
+        self.map_location_browser_items = []
+        self.map_legend_items = []
+
+        margin = 18
+        top_y = 42
+        top_h = 76
+        dock_h = 86
+        dock_y = max(top_y + top_h + 160, app_height - dock_h - 18)
+        population_w = min(286, max(240, app_width // 5))
+        self.biosphere_top_bar_rect = pygame.Rect(margin, top_y, app_width - margin * 2, top_h)
+        self.biosphere_population_rect = pygame.Rect(margin, top_y + top_h + 12, population_w, max(190, dock_y - top_y - top_h - 24))
+        self.biosphere_tool_dock_rect = pygame.Rect(population_w + margin * 2, dock_y, app_width - population_w - margin * 3, dock_h)
+
+        population = self.biosphere_population_rect
+        catalogue_button = UIButton(
+            "biosphere_open_species_picker",
+            "+  Species Catalogue",
+            pygame.Rect(population.x + 12, population.y + 42, population.width - 24, 42),
+        )
+        catalogue_button.city_builder_primary = True
+        self.buttons.append(catalogue_button)
+
+        representative_y = population.y + 142
+        for item in list(getattr(active_sim, "get_representative_ui_items", lambda: [])() or [])[:8]:
+            label = f"{item.get('label')}{'' if item.get('alive', True) else ' · deceased'}"
+            button = UIButton(
+                f"biosphere_select_representative:{item.get('id')}",
+                label,
+                pygame.Rect(population.x + 12, representative_y, population.width - 24, 30),
+            )
+            self._set_button_active(button, item.get("selected"))
+            self.buttons.append(button)
+            representative_y += 35
+
+        dock = self.biosphere_tool_dock_rect
+        selected_label = self.biosphere_dashboard.get("selected_species") or "Choose species"
+        species_button = UIButton(
+            "biosphere_open_species_picker",
+            f"PLANT  ·  {selected_label}",
+            pygame.Rect(dock.x + 14, dock.y + 28, min(330, dock.width // 3), 42),
+        )
+        species_button.city_builder_primary = True
+        self.buttons.append(species_button)
+
+        time_state = self.biosphere_dashboard.get("time") or {}
+        controls = ((0.0, "Pause"), (1.0, "1×"), (4.0, "4×"), (16.0, "16×"))
+        control_w = 62
+        gap = 7
+        total_w = len(controls) * control_w + (len(controls) - 1) * gap
+        start_x = dock.right - total_w - 14
+        for index, (scale, label) in enumerate(controls):
+            button = UIButton(
+                f"biosphere_set_speed:{scale:g}",
+                label,
+                pygame.Rect(start_x + index * (control_w + gap), dock.y + 28, control_w, 42),
+            )
+            self._set_button_active(button, float(time_state.get("scale", 0.0) or 0.0) == scale)
+            self.buttons.append(button)
+
+        self.buttons.append(UIButton(
+            "open_repository",
+            "Repository",
+            pygame.Rect(self.biosphere_top_bar_rect.right - 142, self.biosphere_top_bar_rect.y + 19, 126, 36),
+        ))
+
+        if not self.biosphere_picker_open:
+            return
+
+        modal_margin_x = max(32, app_width // 30)
+        modal_margin_y = 54
+        self.biosphere_picker_rect = pygame.Rect(
+            modal_margin_x,
+            modal_margin_y,
+            app_width - modal_margin_x * 2,
+            app_height - modal_margin_y - 28,
+        )
+        modal = self.biosphere_picker_rect
+        close = self._mark_biosphere_modal(UIButton(
+            "biosphere_close_species_picker", "Close  Esc", pygame.Rect(modal.right - 126, modal.y + 18, 106, 34)
+        ))
+        self.buttons.append(close)
+
+        list_x = modal.x + 20
+        list_y = modal.y + 78
+        list_w = min(316, max(250, modal.width // 4))
+        row_h = max(48, min(58, (modal.height - 160) // 8))
+        for index, item in enumerate(self.biosphere_picker_model.get("items") or []):
+            button = self._mark_biosphere_modal(UIButton(
+                f"biosphere_picker_focus:{item.get('id')}",
+                item.get("label") or item.get("id"),
+                pygame.Rect(list_x, list_y + index * (row_h + 5), list_w, row_h),
+                enabled=True,
+            ))
+            button.catalog_species_item = item
+            self._set_button_active(button, item.get("focused"))
+            self.buttons.append(button)
+
+        page = int(self.biosphere_picker_model.get("page", 0))
+        page_count = int(self.biosphere_picker_model.get("page_count", 1))
+        nav_y = modal.bottom - 56
+        previous = self._mark_biosphere_modal(UIButton(
+            "biosphere_picker_previous", "‹", pygame.Rect(list_x, nav_y, 44, 34), enabled=page > 0
+        ))
+        next_button = self._mark_biosphere_modal(UIButton(
+            "biosphere_picker_next", "›", pygame.Rect(list_x + list_w - 44, nav_y, 44, 34), enabled=page + 1 < page_count
+        ))
+        self.buttons.extend((previous, next_button))
+
+        focused = self.biosphere_picker_model.get("focused") or {}
+        confirm = self._mark_biosphere_modal(UIButton(
+            "biosphere_picker_confirm",
+            "Select for planting" if focused.get("enabled") else focused.get("unlock_label", "Locked"),
+            pygame.Rect(modal.right - 250, modal.bottom - 58, 230, 38),
+            enabled=bool(focused.get("enabled")),
+        ))
+        confirm.city_builder_primary = True
+        self.buttons.append(confirm)
+
+    def _rebuild_map_authoring_controls(self, active_sim, x, y, width=226, button_height=32, enabled=True):
+        polygon_options = list(getattr(active_sim, "get_location_draft_options", lambda: [])() or [])
+        point_options = list(getattr(active_sim, "get_point_location_draft_options", lambda: [])() or [])
+        if not polygon_options:
+            polygon_options = [{"id": "region", "label": "New Region"}]
+
+        options = [(option, False) for option in polygon_options[:6]]
+        options.extend((option, True) for option in point_options[:1])
+        columns = 2 if width >= 220 and len(options) > 2 else 1
+        gap = 6
+        item_width = (width - gap) // 2 if columns == 2 else width
+        for index, (option, is_point) in enumerate(options):
+            option_id = str(option.get("id") or "region")
+            label = option.get("label") or str(option_id).replace("_", " ").title()
+            col = index % columns
+            row = index // columns
+            self.buttons.append(
+                UIButton(
+                    f"new_point_location:{option_id}" if is_point else f"new_location:{option_id}",
+                    label,
+                    pygame.Rect(x + col * (item_width + gap), y + row * (button_height + gap), item_width, button_height),
+                    enabled=enabled,
+                )
+            )
+        rows = (len(options) + columns - 1) // columns if options else 0
+        return y + rows * button_height + max(0, rows - 1) * gap + 8
+
+    def _append_map_sidebar_section(self, label, x, y, width):
+        self.map_sidebar_sections.append({
+            "label": str(label),
+            "rect": pygame.Rect(x, y, width, 18),
+        })
+        return y + 22
+
+    def _map_root_has_surface(self, root_entity):
+        if not isinstance(root_entity, dict):
+            return False
+        return any(bool(root_entity.get(field)) for field in self.MAP_SURFACE_FIELDS)
+
+    def _map_entity_name(self, active_sim, entity_id):
+        if not entity_id:
+            return None
+        world_model = getattr(active_sim, "world_model", None)
+        entity = world_model.get_entity(entity_id) if world_model is not None and hasattr(world_model, "get_entity") else None
+        if not isinstance(entity, dict):
+            return str(entity_id)
+        return entity.get("pretty_name") or entity.get("name") or entity.get("id") or str(entity_id)
+
+    def _build_map_empty_state_lines(
+        self,
+        active_sim,
+        root_name,
+        root_has_surface,
+        is_editing_map_selection,
+        parent_root_entity_id=None,
+    ):
+        if root_has_surface:
+            return []
+
+        placing_id = getattr(active_sim, "placing_location_entity_id", None)
+        if is_editing_map_selection and placing_id:
+            target_name = self._map_entity_name(active_sim, placing_id) or "this place"
+            if parent_root_entity_id:
+                parent_name = self._map_entity_name(active_sim, parent_root_entity_id) or "its parent"
+                return [
+                    "This parent map has not been defined yet.",
+                    f"You are placing {target_name} on an empty parent workspace.",
+                    f"Place {root_name or 'the parent'} on {parent_name} first, or keep this as a rough sketch.",
+                ]
+            return [
+                "This parent map has not been defined yet.",
+                f"You are placing {target_name} on an empty parent workspace.",
+                "No higher parent is assigned, so there is no map context above this yet.",
+            ]
+
+        if is_editing_map_selection:
+            return [
+                "This map has not been defined yet.",
+                "Click the grid to sketch the first polygon.",
+                "Finish becomes available after at least 3 points.",
+            ]
+
+        return [
+            "This map has not been defined yet.",
+            f"{root_name or 'This entry'} has no bounds, geometry, map image, or generated surface.",
+            "Define it from a parent map, upload a map image, or choose a parent in the repository.",
+        ]
+
+    def _build_map_empty_state_actions(self, active_sim, root_has_surface, parent_root_entity_id=None):
+        if root_has_surface:
+            return []
+
+        actions = []
+        root_id = getattr(getattr(active_sim, "context", None), "root_entity_id", None)
+        if parent_root_entity_id and root_id:
+            actions.append({
+                "id": "place_current_root_on_parent",
+                "label": "Place Parent On Its Parent",
+            })
+            actions.append({
+                "id": "open_parent_region_map",
+                "label": "Open Parent Map",
+            })
+        else:
+            actions.append({
+                "id": "choose_parent_in_repository",
+                "label": "Choose Parent In Repository",
+            })
+
+        return actions
+
+    def _layout_map_empty_state(self, app_width, app_height, font):
+        self.map_empty_state_buttons = []
+        self.map_empty_state_rect = None
+        if not self.map_empty_state_lines:
+            return
+
+        padding = 18
+        line_gap = 7
+        button_h = 30
+        button_gap = 8
+        max_panel_w = min(660, max(360, app_width - 680))
+        line_widths = [
+            font.size(self._ellipsize_text(str(line), font, max_panel_w - padding * 2))[0]
+            for line in self.map_empty_state_lines
+        ]
+        panel_w = max(line_widths or [320]) + padding * 2
+        action_specs = list(self.map_empty_state_actions or [])
+        action_h = 0
+        if action_specs:
+            panel_w = max(panel_w, 360)
+            action_h = 14 + len(action_specs) * button_h + max(0, len(action_specs) - 1) * button_gap
+        panel_h = (
+            font.get_height() * len(self.map_empty_state_lines)
+            + line_gap * max(0, len(self.map_empty_state_lines) - 1)
+            + padding * 2
+            + action_h
+        )
+        center_x = min(app_width // 2, app_width - 360)
+        center_y = max(230, min(app_height // 2, app_height - 260))
+        rect = pygame.Rect(0, 0, panel_w, panel_h)
+        rect.center = (center_x, center_y)
+        self.map_empty_state_rect = rect
+
+        if action_specs:
+            y = rect.y + padding + font.get_height() * len(self.map_empty_state_lines)
+            y += line_gap * max(0, len(self.map_empty_state_lines) - 1) + 14
+            button_w = rect.width - padding * 2
+            for action in action_specs:
+                self.map_empty_state_buttons.append(
+                    UIButton(
+                        action.get("id"),
+                        action.get("label", action.get("id", "Action")),
+                        pygame.Rect(rect.x + padding, y, button_w, button_h),
+                        enabled=bool(action.get("id")),
+                    )
+                )
+                y += button_h + button_gap
+
+    def _layout_map_location_browser(self, x, y, font):
+        self.map_location_browser_hitboxes = []
+        self.map_location_browser_rect = None
+        if not self.map_location_browser_items:
+            return 0
+
+        panel_w = 360
+        row_h = max(20, font.get_height() + 6)
+        max_rows = min(15, len(self.map_location_browser_items))
+        panel_h = 38 + row_h * max_rows + 10
+        rect = pygame.Rect(x, y, panel_w, panel_h)
+        self.map_location_browser_rect = rect
+        row_y = rect.y + 34
+        for item in self.map_location_browser_items[:max_rows]:
+            entity_id = str(item.get("id") or "")
+            if entity_id:
+                self.map_location_browser_hitboxes.append(
+                    (entity_id, pygame.Rect(rect.x + 8, row_y, rect.width - 16, row_h))
+                )
+            row_y += row_h
+        return rect.height
 
     def _rebuild_simulation_panel_tab_hitboxes(self):
         self.simulation_panel_tab_hitboxes = []
@@ -123,6 +987,77 @@ class UIManager:
             rect = pygame.Rect(x, y, tab_w, h)
             self.simulation_panel_tab_hitboxes.append((tab.get("id"), rect))
             x += tab_w + gap
+
+    def _rebuild_species_diagnostic_panel(self, active_sim, app_width, app_height):
+        """Build the lower tab strip shared by the Species Sim diagnostics."""
+        self.species_diagnostic_active = getattr(active_sim, "diagnostic_view", "individual") != "individual"
+        bar_margin = 20
+        bar_height = 116
+        self.simulation_bar_height = bar_height
+        self.simulation_bar_rect = pygame.Rect(
+            bar_margin,
+            app_height - bar_height - 20,
+            app_width - bar_margin * 2,
+            bar_height,
+        )
+        self.simulation_bar_resize_hitbox = None
+        self.simulation_bar_title = "Species Sim diagnostic suite"
+        self.simulation_panel_tabs = active_sim.get_simulation_panel_tabs()
+        self.simulation_panel_active_tab_id = active_sim.get_active_simulation_panel_tab_id()
+        self._rebuild_simulation_panel_tab_hitboxes()
+
+        summary = active_sim.get_growth_summary()
+        active_tab = self.simulation_panel_active_tab_id
+        if active_tab == "top_down":
+            self.simulation_bar_panel_lines = [
+                "Top-down crown view",
+                "3D x/y projection • crown spread, direction and footprint.",
+            ]
+        elif active_tab == "architecture":
+            self.simulation_bar_panel_lines = [
+                "Tree Patterns",
+                "Birch, English oak and horse chestnut at matched maturity and scale.",
+                "Front and top views expose axis continuity, branching rhythm and crown footprint.",
+            ]
+        elif active_tab == "editor":
+            self.simulation_bar_panel_lines = [
+                "Species Editor",
+                "Overlay a temporary reference; compare minimum, typical, maximum, or four seeded variants.",
+                "Grouped visual fields, confidence badges, undo/redo, and hot-reloading Pixel Studio modules.",
+            ]
+        elif active_tab == "gallery":
+            self.simulation_bar_panel_lines = [
+                "20 Growth Stages",
+                "Five maturity stages × four deterministic seeds.",
+                "Use this to compare branch emergence and proportions.",
+            ]
+        elif active_tab == "forest":
+            self.simulation_bar_panel_lines = [
+                "Forest View",
+                "A seeded woodland with irregular spacing, younger trees and clearings.",
+                "S: spacing   T: shade tolerance   V: ground-light comparison",
+            ]
+        elif active_tab == "compare":
+            roots = getattr(active_sim, "comparison_subject", "individual") == "roots"
+            self.simulation_bar_panel_lines = [
+                "Root Comparison" if roots else "Comparison View",
+                "Developed plants at matched maturity; missing root traits remain unresolved." if roots else "The current individual beside its growth gallery. R: compare roots across species.",
+                "S: shared / enlarged scale   Left / Right: page   R: individual comparison" if roots else "Open Roots, then Compare to compare root systems.",
+            ]
+        elif active_tab == "roots":
+            self.simulation_bar_panel_lines = [
+                "Roots",
+                "Tapered structural axes, fine branches and lighter tips.",
+                "Open Compare to see root systems across the developed plants.",
+            ]
+        else:
+            self.simulation_bar_panel_lines = [
+                "Individual viewport",
+                f"{summary.get('life_phase', 'juvenile')} • {summary.get('branch_count', 0)} branches • "
+                f"{summary.get('leaf_cluster_count', 0)} leaf clusters • "
+                f"≈{summary.get('estimated_leaf_count', 0)} leaves",
+                "Age and detail controls remain available at right.",
+            ]
 
     def _rebuild_vehicle_design_panel(self, active_sim, payload, app_width, app_height):
         blocks_by_id = {
@@ -156,22 +1091,84 @@ class UIManager:
         self.simulation_panel_active_tab_id = active_sim.get_active_simulation_panel_tab_id()
         self._rebuild_simulation_panel_tab_hitboxes()
 
+        if getattr(active_sim, "design_step", "components") == "specifications":
+            specifications = payload.get("specifications", {})
+            self.simulation_bar_title = "Vehicle Specification"
+            self.simulation_panel_tabs = []
+            self.simulation_panel_active_tab_id = None
+            self.simulation_panel_tab_hitboxes = []
+            self.simulation_bar_hint_lines = [
+                "Click a field in the workspace and type",
+                "Unknown values may remain blank",
+                "Add only the characteristics and requirements you need",
+            ]
+            self.simulation_bar_panel_lines = [
+                "Ontology-backed design brief",
+                f"{len(specifications.get('characteristics', []))} characteristics  ·  {len(specifications.get('requirements', []))} requirements",
+                "Identity fields stay directly searchable; flexible rows retain sparse design data.",
+                "Continue to Hull when the brief is useful enough—not necessarily complete.",
+            ]
+            self.simulation_bar_catalog_entries = []
+            self.simulation_bar_catalog_hitboxes = []
+            self.simulation_bar_active_catalog_id = None
+            return
+
+        if getattr(active_sim, "design_step", "components") == "hull":
+            dims = active_sim.get_vehicle_dimensions_m()
+            self.simulation_bar_title = "Hull Studio"
+            self.simulation_panel_tabs = []
+            self.simulation_panel_active_tab_id = None
+            self.simulation_panel_tab_hitboxes = []
+            self.simulation_bar_hint_lines = [
+                "Six linked orthographic canvases",
+                "Left mouse draws · right mouse erases",
+                "Change length, width, and height at right",
+            ]
+            self.simulation_bar_panel_lines = [
+                "Define the vehicle envelope",
+                f"Length {dims['x']:g} m  ·  Width {dims['y']:g} m  ·  Height {dims['z']:g} m",
+                "Blank opposite views inherit a grey silhouette guide.",
+                "Choose 2 Components when the hull reads correctly from every direction.",
+            ]
+            self.simulation_bar_catalog_entries = []
+            self.simulation_bar_catalog_hitboxes = []
+            self.simulation_bar_active_catalog_id = None
+            return
+
+        if getattr(active_sim, "design_step", "components") in {"details", "liveries"}:
+            step = active_sim.design_step
+            selected_view = str(getattr(active_sim, "selected_hull_view_id", "right")).replace("_", " ").title()
+            livery_resolution = payload.get("livery_resolution", {}).get(getattr(active_sim, "selected_hull_view_id", "right"), (0, 0))
+            self.simulation_bar_title = "Structural Detail Studio" if step == "details" else "Livery Studio"
+            self.simulation_panel_tabs = []
+            self.simulation_panel_active_tab_id = None
+            self.simulation_panel_tab_hitboxes = []
+            self.simulation_bar_hint_lines = [
+                "Paint is hard-clipped to the authored hull",
+                "Right mouse erases",
+                "Opposite-side paint appears as a dimmed guide",
+            ]
+            self.simulation_bar_panel_lines = [
+                f"Editing {selected_view}",
+                f"tool: {getattr(active_sim, 'pixel_tool', 'draw')}  ·  brush: {getattr(active_sim, 'pixel_brush_radius', 0) + 1}px",
+                (f"micro-pixel raster: {livery_resolution[0]} × {livery_resolution[1]}" if step == "liveries" else "blueprint-aligned structural raster"),
+                "Components can be hidden without changing their placement.",
+            ]
+            self.simulation_bar_catalog_entries = []
+            self.simulation_bar_catalog_hitboxes = []
+            self.simulation_bar_active_catalog_id = None
+            return
+
         if self.simulation_panel_active_tab_id == "catalog":
             self.simulation_bar_hint_lines = [
-                "Drag top border to resize panel",
-                "Hold a card and drag into hull",
-                "Card footprint scales by placed size",
+                "Drag the panel edge to resize",
+                "Drag catalog cards into the hull",
+                "Card footprint follows placed size",
             ]
         elif self.simulation_panel_active_tab_id == "selection":
-            self.simulation_bar_hint_lines = [
-                "Selection panel placeholder",
-                "Will show selected component details",
-            ]
+            self.simulation_bar_hint_lines = []
         elif self.simulation_panel_active_tab_id == "layout":
-            self.simulation_bar_hint_lines = [
-                "Layout panel placeholder",
-                "Will show arrangement and placement tools",
-            ]
+            self.simulation_bar_hint_lines = []
         else:
             self.simulation_bar_hint_lines = []
 
@@ -182,6 +1179,37 @@ class UIManager:
 
         self.simulation_bar_catalog_entries = []
         self.simulation_bar_catalog_hitboxes = []
+        self.simulation_bar_panel_lines = []
+
+        if active_panel_tab_id == "selection":
+            focus_part_id = selected_part_id or hover_part_id
+            if focus_part_id in blocks_by_id:
+                block = blocks_by_id[focus_part_id]
+                dims = dict(block.get("dimensions_m", {}))
+                self.simulation_bar_panel_lines = [
+                    "Selected Component",
+                    block.get("label", focus_part_id),
+                    block.get("component_type", "component"),
+                    f"size: {dims.get('x', '?')} x {dims.get('y', '?')} x {dims.get('z', '?')} m",
+                ]
+            else:
+                self.simulation_bar_panel_lines = [
+                    "Selection",
+                    "No component selected",
+                    "Choose a placed component in the hull",
+                ]
+
+        elif active_panel_tab_id == "layout":
+            dims = dict(payload.get("vehicle_dimensions_m", {}))
+            placed_components = payload.get("blocks", [])
+            requirements = payload.get("requirement_status", [])
+            satisfied = sum(1 for entry in requirements if entry.get("is_satisfied"))
+            self.simulation_bar_panel_lines = [
+                "Layout Summary",
+                f"hull: {dims.get('x', '?')} x {dims.get('y', '?')} x {dims.get('z', '?')} m",
+                f"placed components: {len(placed_components)}",
+                f"requirements: {satisfied}/{len(requirements)} satisfied",
+            ]
 
         if active_panel_tab_id == "catalog":
             content_x = self.simulation_bar_rect.x + 14
@@ -312,31 +1340,133 @@ class UIManager:
             ]
             self.hover_tooltip_pos = getattr(active_sim, "hover_screen_pos", None) or pygame.mouse.get_pos()
 
-    def _rebuild_active_simulation_ui(self, active_sim, app_width, app_height, camera):
-        if active_sim is None:
+    def _rebuild_map_history_timeline(self, active_sim, app_width, app_height, font):
+        panel_h = 126
+        margin = 20
+        left = margin
+        bottom = app_height - margin
+        right_reserved = 300 if getattr(self, "map_ui_active", False) else 0
+
+        inspector_rect = getattr(self.selection_inspector, "rect", None)
+        if getattr(self.selection_inspector, "is_open", False) and inspector_rect is not None:
+            candidate_left = inspector_rect.right + margin
+            if app_width - candidate_left - margin - right_reserved >= 420:
+                left = candidate_left
+            else:
+                bottom = inspector_rect.y - 12
+
+        width = app_width - left - margin - right_reserved
+        if width < 360:
+            self.map_history_timeline_visible = False
+            self.map_history_timeline_rect = None
             return
 
-        time_info = self._format_sim_time(active_sim)
-        self.timeline_fraction = time_info["timeline_fraction"]
+        timeline_items = []
+        if hasattr(active_sim, "get_history_timeline_items"):
+            timeline_items = active_sim.get_history_timeline_items()
+        elif hasattr(active_sim.world_model, "get_timeline_items"):
+            timeline_items = active_sim.world_model.get_timeline_items()
 
-        self.time_lines = [
-            f"Year {time_info['year']} | Day {time_info['day_of_year']}",
-            f"{time_info['hours']:02d}:{time_info['minutes']:02d} | Tick {active_sim.sim_clock.tick}",
-            f"Time Scale x{active_sim.sim_clock.time_scale:.2f}",
-        ]
+        picker_active = self.map_history_timeline_reanchor_target is not None
+        if not timeline_items and not picker_active:
+            self.map_history_timeline_visible = False
+            self.map_history_timeline_rect = None
+            self.map_history_timeline.set_items([])
+            self.map_history_timeline.set_selected_year(None)
+            return
 
-        if camera is not None:
+        top = max(170, bottom - panel_h)
+        rect = pygame.Rect(left, top, width, panel_h)
+
+        context_label = None
+        if hasattr(active_sim, "get_year_context_label"):
+            context_label = active_sim.get_year_context_label()
+        context_key = getattr(getattr(active_sim, "context", None), "root_entity_id", None)
+        if self.map_history_selected_context_key is None:
+            self.map_history_selected_context_key = context_key
+        elif context_key != self.map_history_selected_context_key:
+            self.map_history_selected_year = None
+            self.map_history_selected_context_key = context_key
+
+        if picker_active or not getattr(self, "map_ui_active", False):
+            selected_year = getattr(active_sim, "year", None)
+        else:
+            selected_year = self.map_history_selected_year
+
+        self.map_history_timeline_visible = True
+        self.map_history_timeline_rect = rect
+        self.map_history_timeline.set_title("Map History")
+        if hasattr(active_sim, "get_history_timeline_title"):
+            self.map_history_timeline.set_title(active_sim.get_history_timeline_title())
+        self.map_history_timeline.set_rect(rect)
+        self.map_history_timeline.set_font(font)
+        self.map_history_timeline.set_year_selection_enabled(True)
+        self.map_history_timeline.set_items(timeline_items)
+        self.map_history_timeline.set_selected_year(
+            selected_year,
+            context_label=context_label if selected_year is not None else None,
+        )
+        self.map_history_timeline.rebuild_layout()
+
+    def _rebuild_active_simulation_ui(self, active_sim, app_width, app_height, camera):
+        if active_sim is None:
+            self.person_panel_mode = None
+            return
+
+        render_mode = getattr(active_sim, "render_mode", None)
+        if render_mode != "person":
+            self.person_panel_mode = None
+        show_time_ui = bool(getattr(active_sim, "show_time_ui", True))
+
+        if show_time_ui:
+            time_info = self._format_sim_time(active_sim)
+            self.time_info = time_info
+            self.timeline_fraction = time_info["timeline_fraction"]
+
+            self.time_lines = [
+                f"Year {time_info['year']} | Day {time_info['day_of_year']}",
+                f"{time_info['hours']:02d}:{time_info['minutes']:02d} | Tick {active_sim.sim_clock.tick}",
+                f"Time Scale x{active_sim.sim_clock.time_scale:.2f}",
+            ]
+        else:
+            self.time_info = None
+            self.timeline_fraction = 0.0
+            self.time_lines = []
+
+        if show_time_ui and camera is not None:
             mouse_x, mouse_y = pygame.mouse.get_pos()
-            world_x = int((mouse_x - app_width / 2) / camera.zoom + camera.x)
-            world_y = int((mouse_y - app_height / 2) / camera.zoom + camera.y)
-            self.mouse_world_label = f"Mouse World: {world_x} , {world_y}"
+            world_x = (mouse_x - app_width / 2) / camera.zoom + camera.x
+            world_y = (mouse_y - app_height / 2) / camera.zoom + camera.y
+            if render_mode == "map":
+                lon_lat = active_sim.world_to_surface_lon_lat(world_x, world_y) if hasattr(active_sim, "world_to_surface_lon_lat") else None
+                if lon_lat is not None:
+                    self.mouse_world_label = f"Mouse Lon/Lat: {lon_lat[0]:.3f} , {lon_lat[1]:.3f}"
+                else:
+                    self.mouse_world_label = f"Mouse map position: {world_x:.3f} , {world_y:.3f}"
+            else:
+                self.mouse_world_label = f"Mouse World: {int(world_x)} , {int(world_y)}"
 
         button_width = 180
         button_height = 32
         button_x = app_width - button_width - 20
         button_y = 42
 
-        render_mode = getattr(active_sim, "render_mode", None)
+        get_selection_payload = getattr(active_sim, "get_selection_inspector_payload", None)
+        if get_selection_payload is not None:
+            self.simulation_selection_payload = get_selection_payload()
+
+        if render_mode == "vehicle_registry":
+            # A dedicated full-viewport screen like the Vehicle Designer's
+            # own design workspace -- it draws its own title/buttons, so the
+            # shared time/breadcrumb/scope chrome would just be redundant
+            # "debug-looking" text stacked on top of it.
+            self.time_lines = []
+            self.timeline_fraction = 0.0
+            self.mouse_world_label = None
+            self.scope_label = None
+            self.breadcrumb_label = None
+            self.vehicle_requirement_lines = []
+            return
 
         if render_mode == "vehicle":
             self.scope_label = (
@@ -349,30 +1479,162 @@ class UIManager:
                 UIButton("open_repository", "Open Repository",
                          pygame.Rect(button_x, button_y, button_width, button_height))
             )
-            self.buttons.append(
-                UIButton("vehicle_mode_design", "Vehicle Design",
-                         pygame.Rect(button_x, button_y + 40, button_width, button_height),
-                         enabled=active_sim.active_view_mode != "design")
-            )
-            self.buttons.append(
-                UIButton("vehicle_mode_interior", "Interior",
-                         pygame.Rect(button_x, button_y + 80, button_width, button_height),
-                         enabled=active_sim.active_view_mode != "interior")
-            )
-            self.buttons.append(
-                UIButton("vehicle_mode_operational", "Operational",
-                         pygame.Rect(button_x, button_y + 120, button_width, button_height),
-                         enabled=active_sim.active_view_mode != "operational")
-            )
+            self.buttons.append(UIButton(
+                "vehicle_mode_design", "Vehicle Designer",
+                pygame.Rect(button_x, button_y + 40, button_width, button_height),
+                enabled=active_sim.active_view_mode != "design",
+            ))
+            self.buttons.append(UIButton(
+                "vehicle_mode_operational", "Vehicle Sim",
+                pygame.Rect(button_x, button_y + 80, button_width, button_height),
+                enabled=active_sim.active_view_mode != "operational",
+            ))
+
+            if active_sim.active_view_mode == "design":
+                step = getattr(active_sim, "design_step", "hull")
+                dims = active_sim.get_vehicle_dimensions_m()
+                if step == "specifications":
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_finish", "Continue to Hull",
+                        pygame.Rect(button_x, button_y + 130, button_width, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_add_characteristic", "+ Characteristic",
+                        pygame.Rect(button_x, button_y + 172, button_width, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_add_requirement", "+ Requirement",
+                        pygame.Rect(button_x, button_y + 212, button_width, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_remove", "Remove Selected Row",
+                        pygame.Rect(button_x, button_y + 252, button_width, button_height),
+                        enabled=getattr(active_sim, "specification_selected_row", None) is not None,
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_page_characteristic_back", "Chars ‹",
+                        pygame.Rect(button_x, button_y + 294, 86, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_page_characteristic_forward", "Chars ›",
+                        pygame.Rect(button_x + 92, button_y + 294, 88, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_page_requirement_back", "Reqs ‹",
+                        pygame.Rect(button_x, button_y + 334, 86, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_specification_page_requirement_forward", "Reqs ›",
+                        pygame.Rect(button_x + 92, button_y + 334, 88, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_hull", "2  Hull",
+                        pygame.Rect(button_x, button_y + 382, 86, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_components", "3  Components",
+                        pygame.Rect(button_x + 92, button_y + 382, 88, button_height),
+                    ))
+                elif step in {"details", "liveries"}:
+                    self.buttons.append(UIButton(
+                        "vehicle_paint_finish", "Finish · Back to Components",
+                        pygame.Rect(button_x, button_y + 130, button_width, button_height),
+                    ))
+                    view_ids = ("left", "right", "front", "rear", "top", "bottom")
+                    for index, view_id in enumerate(view_ids):
+                        column = index % 2
+                        row = index // 2
+                        self.buttons.append(UIButton(
+                            f"vehicle_paint_view_{view_id}", view_id.title(),
+                            pygame.Rect(button_x + column * 92, button_y + 172 + row * 36, 88, 30),
+                            enabled=getattr(active_sim, "selected_hull_view_id", "right") != view_id,
+                        ))
+                    self.buttons.append(UIButton(
+                        "vehicle_paint_components_toggle",
+                        f"Components: {'On' if getattr(active_sim, 'show_paint_components', True) else 'Off'}",
+                        pygame.Rect(button_x, button_y + 284, button_width, 30),
+                    ))
+                    for index, tool in enumerate(("draw", "erase", "pick")):
+                        self.buttons.append(UIButton(
+                            f"vehicle_pixel_tool_{tool}", tool.title(),
+                            pygame.Rect(button_x + index * 61, button_y + 322, 57, 30),
+                            enabled=getattr(active_sim, "pixel_tool", "draw") != tool,
+                        ))
+                    brush = int(getattr(active_sim, "pixel_brush_radius", 0)) + 1
+                    self.buttons.append(UIButton("vehicle_pixel_brush_down", "−", pygame.Rect(button_x, button_y + 360, 32, 30)))
+                    self.buttons.append(UIButton("vehicle_pixel_brush_up", f"Brush {brush}px  +", pygame.Rect(button_x + 38, button_y + 360, 142, 30)))
+                    palette_labels = ("Light", "Steel", "Dark", "Rust", "Gold", "Teal")
+                    for index, label in enumerate(palette_labels):
+                        column = index % 2
+                        row = index // 2
+                        self.buttons.append(UIButton(
+                            f"vehicle_pixel_color_{index}", label,
+                            pygame.Rect(button_x + column * 92, button_y + 398 + row * 34, 88, 28),
+                        ))
+                    if step == "liveries":
+                        self.buttons.append(UIButton("vehicle_livery_copy", "Copy Livery", pygame.Rect(button_x, button_y + 504, 86, 30)))
+                        self.buttons.append(UIButton("vehicle_livery_paste", "Paste Copy", pygame.Rect(button_x + 92, button_y + 504, 88, 30)))
+                else:
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_specifications", "1  Spec",
+                        pygame.Rect(button_x, button_y + 130, 86, button_height), enabled=step != "specifications",
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_hull", "2  Hull",
+                        pygame.Rect(button_x + 92, button_y + 130, 88, button_height), enabled=step != "hull",
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_components", "3  Components",
+                        pygame.Rect(button_x, button_y + 168, 86, button_height), enabled=step != "components",
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_details", "4  Details",
+                        pygame.Rect(button_x + 92, button_y + 168, 88, button_height),
+                    ))
+                    self.buttons.append(UIButton(
+                        "vehicle_design_step_liveries", "5  Liveries",
+                        pygame.Rect(button_x, button_y + 206, 180, button_height),
+                    ))
+                    dimension_labels = (("x", "Length"), ("y", "Width"), ("z", "Height"))
+                    for index, (axis, label) in enumerate(dimension_labels):
+                        y = button_y + 248 + index * 39
+                        self.buttons.append(UIButton(f"vehicle_dimension_{axis}_down", "−", pygame.Rect(button_x, y, 32, button_height)))
+                        self.buttons.append(UIButton(f"vehicle_dimension_{axis}_up", f"{label} {dims[axis]:g} m  +", pygame.Rect(button_x + 38, y, 142, button_height)))
+                    if step == "hull":
+                        self.buttons.append(UIButton("vehicle_hull_draw", "Draw", pygame.Rect(button_x, button_y + 372, 56, button_height), enabled=getattr(active_sim, "hull_tool", "draw") != "draw"))
+                        self.buttons.append(UIButton("vehicle_hull_erase", "Erase", pygame.Rect(button_x + 62, button_y + 372, 56, button_height), enabled=getattr(active_sim, "hull_tool", "draw") != "erase"))
+                        self.buttons.append(UIButton("vehicle_hull_clear", "Clear", pygame.Rect(button_x + 124, button_y + 372, 56, button_height)))
+                        selected_view = str(getattr(active_sim, "selected_hull_view_id", "right")).title()
+                        focus_label = "Exit Focus" if getattr(active_sim, "hull_focus_mode", False) else f"Enlarge {selected_view}"
+                        self.buttons.append(UIButton("vehicle_hull_focus_toggle", focus_label, pygame.Rect(button_x, button_y + 412, button_width, button_height)))
+                    elif step == "components":
+                        systems_view_mode = getattr(active_sim, "systems_view_mode", "layout")
+                        self.buttons.append(UIButton(
+                            "vehicle_systems_view_layout", "Layout",
+                            pygame.Rect(button_x, button_y + 372, 88, button_height),
+                            enabled=systems_view_mode != "layout",
+                        ))
+                        self.buttons.append(UIButton(
+                            "vehicle_systems_view_diagram", "Diagram",
+                            pygame.Rect(button_x + 92, button_y + 372, 88, button_height),
+                            enabled=systems_view_mode != "diagram",
+                        ))
 
             payload = active_sim.get_focused_render_payload()
 
             if active_sim.active_view_mode == "design":
-                requirement_status = payload.get("requirement_status", [])
-                self.vehicle_requirement_lines = [
-                    f"{'[OK]' if entry.get('is_satisfied') else '[ ]'} {entry.get('category', 'requirement')} ({entry.get('source_class', 'vehicle')})"
-                    for entry in requirement_status
-                ]
+                # The design workspace is a full-viewport editor that owns the
+                # top-left corner and surfaces the vehicle name, class and
+                # requirement status in its own panels / the simulation bar.
+                # Leaving the shared time panel, day timeline, scope/breadcrumb
+                # and requirement info panels enabled just stacks redundant
+                # "debug-looking" text on top of the workspace, so drop them.
+                self.time_lines = []
+                self.timeline_fraction = 0.0
+                self.mouse_world_label = None
+                self.scope_label = None
+                self.breadcrumb_label = None
+                self.vehicle_requirement_lines = []
                 self._rebuild_vehicle_design_panel(active_sim, payload, app_width, app_height)
                 return
 
@@ -422,59 +1684,301 @@ class UIManager:
         self.vehicle_requirement_lines = []
 
         if render_mode == "map":
+            self.map_ui_active = True
+            map_mouse_label = self.mouse_world_label
+            self.time_lines = []
+            self.timeline_fraction = 0.0
+            self.mouse_world_label = None
+
             root_name = active_sim.get_root_name() if hasattr(active_sim, "get_root_name") else None
+            root_entity = active_sim.get_root_entity() if hasattr(active_sim, "get_root_entity") else None
+            root_has_surface = self._map_root_has_surface(root_entity)
             if root_name:
                 self.scope_label = f"Scope: {root_name}"
 
             existing_status_line = None
-            if hasattr(active_sim, "get_root_entity"):
-                root_entity = active_sim.get_root_entity()
-                if root_entity:
-                    canvas_w = root_entity.get("map_canvas_width_px")
-                    canvas_h = root_entity.get("map_canvas_height_px")
-                    map_status = root_entity.get("map_status")
+            if root_entity:
+                canvas_w = root_entity.get("map_canvas_width_px")
+                canvas_h = root_entity.get("map_canvas_height_px")
+                map_status = root_entity.get("map_status")
+                map_image_year = root_entity.get("map_image_year")
 
-                    if canvas_w and canvas_h:
-                        self.scope_label = f"Scope: {root_name} | Canvas: {canvas_w} x {canvas_h}"
+                if canvas_w and canvas_h:
+                    self.scope_label = f"Scope: {root_name} | Canvas: {canvas_w} x {canvas_h}"
 
-                    if map_status:
-                        existing_status_line = f"Status: {map_status}"
+                if map_status:
+                    existing_status_line = f"Status: {map_status}"
+                if map_image_year not in (None, ""):
+                    image_status = f"Map image: {map_image_year}"
+                    existing_status_line = (
+                        f"{existing_status_line} | {image_status}"
+                        if existing_status_line
+                        else image_status
+                    )
+
+            if hasattr(active_sim, "get_active_layer_label"):
+                layer_label = active_sim.get_active_layer_label()
+                if self.scope_label:
+                    self.scope_label = f"{self.scope_label} | Layer: {layer_label}"
+            else:
+                layer_label = None
+
+            if hasattr(active_sim, "is_map_editor_active"):
+                is_editing_map_selection = bool(active_sim.is_map_editor_active())
+            elif hasattr(active_sim, "is_polygon_editor_active"):
+                is_editing_map_selection = bool(active_sim.is_polygon_editor_active())
+            else:
+                is_editing_map_selection = bool(
+                    getattr(active_sim, "is_creating_spatial_feature", False)
+                )
 
             if hasattr(active_sim, "get_scope_breadcrumb"):
                 breadcrumb_parts = active_sim.get_scope_breadcrumb()
                 if breadcrumb_parts:
                     breadcrumb_text = " > ".join(breadcrumb_parts)
-                    self.breadcrumb_label = f"{existing_status_line} | {breadcrumb_text}" if existing_status_line else breadcrumb_text
+                    self.breadcrumb_label = f"Path: {breadcrumb_text}"
                 elif existing_status_line:
                     self.breadcrumb_label = existing_status_line
             elif existing_status_line:
                 self.breadcrumb_label = existing_status_line
 
+            if is_editing_map_selection:
+                if hasattr(active_sim, "get_map_editor_status_label"):
+                    draft_status_line = active_sim.get_map_editor_status_label()
+                else:
+                    point_count = len(getattr(active_sim, "draft_spatial_feature_points", []))
+                    draft_status_line = f"Draft selection: {point_count} points"
+
+                if self.breadcrumb_label:
+                    self.breadcrumb_label = f"{self.breadcrumb_label} | {draft_status_line}"
+                else:
+                    self.breadcrumb_label = draft_status_line
+
+            self.map_context_lines = ["Map Workspace"]
+            if getattr(active_sim, "simulation_mode", None) == "biosphere_builder":
+                self.map_context_lines = list(
+                    getattr(active_sim, "get_biosphere_builder_summary_lines", lambda: ["Biological City Builder"])()
+                )
+            if root_name:
+                self.map_context_lines.append(f"Scope: {root_name}")
+            if layer_label:
+                self.map_context_lines.append(f"Layer: {layer_label}")
+            if existing_status_line:
+                self.map_context_lines.append(existing_status_line)
+            if self.breadcrumb_label:
+                self.map_context_lines.append(self.breadcrumb_label)
+            if hasattr(active_sim, "get_projection_focus_label") and root_has_surface:
+                self.map_context_lines.append(active_sim.get_projection_focus_label())
+            if hasattr(active_sim, "get_map_generation_detail_label") and root_has_surface:
+                self.map_context_lines.append(active_sim.get_map_generation_detail_label())
+
+            self.map_status_lines = []
+            if is_editing_map_selection:
+                self.map_status_lines.append(draft_status_line)
+            if map_mouse_label:
+                self.map_status_lines.append(map_mouse_label)
+
+            if getattr(active_sim, "simulation_mode", None) == "biosphere_builder":
+                self._rebuild_biosphere_builder_ui(active_sim, app_width, app_height)
+                return
+
+            parent_root_entity_id = active_sim.get_parent_root_entity_id() if hasattr(active_sim,
+                                                                                      "get_parent_root_entity_id") else None
+
+            self.map_empty_state_lines = self._build_map_empty_state_lines(
+                active_sim,
+                root_name,
+                root_has_surface,
+                is_editing_map_selection,
+                parent_root_entity_id=parent_root_entity_id,
+            )
+            self.map_empty_state_actions = self._build_map_empty_state_actions(
+                active_sim,
+                root_has_surface,
+                parent_root_entity_id=parent_root_entity_id,
+            )
+            self.map_location_browser_items = []
+            if hasattr(active_sim, "get_map_location_browser_items"):
+                self.map_location_browser_items = active_sim.get_map_location_browser_items()
+            self.map_legend_items = list(getattr(active_sim, "get_map_legend_items", lambda: [])() or [])
+            map_panel_y = 44
+            context_lines_for_layout = list(self.map_context_lines)
+            if self.map_status_lines:
+                if context_lines_for_layout:
+                    context_lines_for_layout.append("")
+                context_lines_for_layout.extend(self.map_status_lines)
+            if context_lines_for_layout:
+                map_panel_y += self._info_panel_height(self.app_font, context_lines_for_layout) + 12
+            selection_rect = self._simulation_selection_panel_rect(self.app_font, 20, map_panel_y)
+            if selection_rect is not None:
+                map_panel_y += selection_rect.height + 12
+            if self.map_location_browser_items:
+                self._layout_map_location_browser(20, map_panel_y, self.app_font)
+            self._layout_map_empty_state(app_width, app_height, self.app_font)
+
+            map_control_w = min(270, max(226, app_width // 5))
+            map_control_x = max(20, app_width - map_control_w - 24)
+            map_control_y = 78
+            self.map_sidebar_sections = []
+            next_button_y = map_control_y + 30
+            next_button_y = self._rebuild_map_layer_menu(active_sim, map_control_x, map_control_y, width=map_control_w) + 12
+
+            is_biosphere_builder = getattr(active_sim, "simulation_mode", None) == "biosphere_builder"
+            if not is_biosphere_builder:
+                can_author_locations = bool(
+                    getattr(active_sim, "can_create_location_draft", lambda: False)()
+                ) and not is_editing_map_selection
+                next_button_y = self._append_map_sidebar_section("LOCATION TOOLS", map_control_x, next_button_y, map_control_w)
+                self.buttons.append(
+                    UIButton("link_existing_map_location", "Link Existing Location",
+                             pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                             enabled=not is_editing_map_selection)
+                )
+                next_button_y += 40
+                next_button_y = self._rebuild_map_authoring_controls(
+                    active_sim,
+                    map_control_x,
+                    next_button_y,
+                    width=map_control_w,
+                    button_height=button_height,
+                    enabled=can_author_locations,
+                )
+
+                can_regenerate_current_region = bool(
+                    getattr(active_sim, "can_regenerate_current_region", lambda: False)()
+                )
+                can_regenerate_visible_region = bool(
+                    getattr(active_sim, "can_regenerate_region", lambda: False)()
+                )
+                if can_regenerate_current_region or can_regenerate_visible_region:
+                    next_button_y = self._append_map_sidebar_section("DETAIL GENERATION", map_control_x, next_button_y, map_control_w)
+                if can_regenerate_current_region and not can_regenerate_visible_region:
+                    current_region_label = getattr(
+                        active_sim,
+                        "get_current_region_regeneration_label",
+                        lambda: "Regenerate This Region",
+                    )()
+                    self.buttons.append(UIButton(
+                        "regenerate_current_region",
+                        current_region_label,
+                        pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                    ))
+                    next_button_y += 40
+                if can_regenerate_visible_region:
+                    detail_label = getattr(active_sim, "get_next_detail_level_label", lambda: "Regenerate Region")()
+                    self.buttons.append(UIButton(
+                        "regenerate_visible_region",
+                        detail_label,
+                        pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                    ))
+                    next_button_y += 40
+
+                if bool(getattr(active_sim, "can_reset_planet_view", lambda: False)()):
+                    self.buttons.append(UIButton(
+                        "reset_planet_map_view",
+                        "Reset Equatorial View",
+                        pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                    ))
+                    next_button_y += 40
+
+            next_button_y = self._append_map_sidebar_section("WORKSPACE", map_control_x, next_button_y, map_control_w)
             self.buttons.append(
                 UIButton("open_repository", "Open Repository",
-                         pygame.Rect(button_x, button_y, button_width, button_height))
+                         pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))
             )
+            next_button_y += 40
+
+            if is_editing_map_selection:
+                can_finish = bool(
+                    getattr(active_sim, "can_finish_map_editor", lambda: False)()
+                )
+                self.buttons.append(
+                    UIButton("finish_map_selection", "Finish Selection (Enter)",
+                             pygame.Rect(map_control_x, next_button_y, map_control_w, button_height),
+                             enabled=can_finish)
+                )
+                next_button_y += 40
+                self.buttons.append(
+                    UIButton("cancel_map_selection", "Cancel Selection (Esc)",
+                    pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))
+                )
+                next_button_y += 40
+            else:
+                next_button_y = self._append_map_sidebar_section(
+                    "BIOSPHERE BUILDER" if is_biosphere_builder else "ENVIRONMENT",
+                    map_control_x,
+                    next_button_y,
+                    map_control_w,
+                )
+                next_button_y = self._rebuild_ecosystem_controls(
+                    active_sim,
+                    map_control_x,
+                    next_button_y,
+                    width=map_control_w,
+                )
 
             selected_entity_id = getattr(active_sim, "selected_entity_id", None)
             root_entity_id = getattr(active_sim.context, "root_entity_id", None)
 
+            has_navigation_controls = (
+                (selected_entity_id is not None and selected_entity_id != root_entity_id)
+                or parent_root_entity_id is not None
+            )
+            if has_navigation_controls:
+                next_button_y = self._append_map_sidebar_section("NAVIGATION", map_control_x, next_button_y, map_control_w)
+
             if selected_entity_id is not None and selected_entity_id != root_entity_id:
                 self.buttons.append(
                     UIButton("open_region_map", "Open Region Map",
-                             pygame.Rect(button_x, button_y + 40, button_width, button_height))
+                             pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))
                 )
+                next_button_y += 40
 
-            parent_root_entity_id = active_sim.get_parent_root_entity_id() if hasattr(active_sim,
-                                                                                      "get_parent_root_entity_id") else None
             if parent_root_entity_id is not None:
                 self.buttons.append(
                     UIButton("open_parent_region_map", "Up To Parent",
-                             pygame.Rect(button_x, button_y + 80, button_width, button_height))
+                             pygame.Rect(map_control_x, next_button_y, map_control_w, button_height))
                 )
+                next_button_y += 40
+            self.map_sidebar_rect = pygame.Rect(
+                map_control_x - 12,
+                max(42, map_control_y - 36),
+                map_control_w + 24,
+                max(180, next_button_y - map_control_y + 50),
+            )
 
+            hover_spatial_feature_id = getattr(active_sim, "hover_spatial_feature_id", None)
             hover_entity_id = getattr(active_sim, "hover_entity_id", None)
             hover_screen_pos = getattr(active_sim, "hover_screen_pos", None)
-            if hover_entity_id and hover_screen_pos:
+
+            if hover_spatial_feature_id and hover_screen_pos:
+                feature = active_sim.get_spatial_feature(hover_spatial_feature_id) if hasattr(active_sim, "get_spatial_feature") else None
+                feature_layer = None
+                if feature is None and hasattr(active_sim, "get_layers"):
+                    for layer in active_sim.get_layers():
+                        if layer.get("spatial_feature_id") == hover_spatial_feature_id:
+                            feature_layer = layer
+                            break
+
+                if feature is not None:
+                    owner_entity_id = feature.get("owner_entity")
+                    owner_text = f"owner: {owner_entity_id}" if owner_entity_id else "draft region"
+                    region_class = feature.get("region_class") or feature.get("layer_kind", "region")
+                    self.hover_tooltip_lines = [
+                        feature.get("name", hover_spatial_feature_id),
+                        f"region: {region_class}",
+                        owner_text,
+                    ]
+                    self.hover_tooltip_pos = hover_screen_pos
+                elif feature_layer is not None:
+                    self.hover_tooltip_lines = [
+                        feature_layer.get("name", hover_spatial_feature_id),
+                        f"region: {feature_layer.get('region_class', 'region')}",
+                        "virtual aggregate",
+                    ]
+                    self.hover_tooltip_pos = hover_screen_pos
+
+            elif hover_entity_id and hover_screen_pos:
                 entity = active_sim.world_model.get_entity(hover_entity_id)
                 if entity:
                     self.hover_tooltip_lines = [
@@ -482,9 +1986,184 @@ class UIManager:
                         f"class: {entity.get('location_class', entity.get('type', 'entity'))}",
                     ]
                     self.hover_tooltip_pos = hover_screen_pos
+
+            self._rebuild_map_history_timeline(
+                active_sim=active_sim,
+                app_width=app_width,
+                app_height=app_height,
+                font=self.app_font,
+            )
+            return
+
+        if render_mode == "site_people":
+            self.person_ui_active = False
+            site = getattr(active_sim, "site_entity", {}) or {}
+            site_name = site.get("pretty_name") or site.get("name") or getattr(active_sim, "site_root_id", "Site")
+            self.scope_label = f"Site Simulation: {site_name}"
+            self.breadcrumb_label = "Authored people · pop representatives · provisional visitors"
+            self.person_dossier_lines = (
+                active_sim.get_site_summary_lines()
+                if hasattr(active_sim, "get_site_summary_lines")
+                else []
+            )
+            # A hovered/selected presence (person or vehicle) takes priority
+            # over the static site summary above -- see _draw_person_dossier_card,
+            # which already prefers person_dossier_model over person_dossier_lines.
+            self.person_dossier_model = (
+                active_sim.get_dossier_panel_model()
+                if hasattr(active_sim, "get_dossier_panel_model")
+                else None
+            )
+            self.buttons.append(
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
+            )
+            return
+
+        if render_mode == "person":
+            self.person_ui_active = True
+            person_name = active_sim.get_person_name() if hasattr(active_sim, "get_person_name") else "Person"
+            if bool(getattr(active_sim, "is_person_editor_active", lambda: False)()):
+                self.scope_label = f"Person Editor: {person_name}"
+                self.breadcrumb_label = "Genetics / outward appearance"
+                self.buttons.append(
+                    UIButton("open_repository", "Open Repository",
+                             pygame.Rect(button_x, button_y, button_width, button_height))
+                )
+                return
+            person_class = active_sim.get_person_class() if hasattr(active_sim, "get_person_class") else "person"
+            self.scope_label = f"Person: {person_name}"
+            self.breadcrumb_label = f"class: {person_class}"
+            self.person_dossier_lines = (
+                active_sim.get_dossier_panel_lines()
+                if hasattr(active_sim, "get_dossier_panel_lines")
+                else []
+            )
+            self.person_dossier_model = (
+                active_sim.get_dossier_panel_model()
+                if hasattr(active_sim, "get_dossier_panel_model")
+                else None
+            )
+
+            self.buttons.append(
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
+            )
+            self.buttons.append(
+                UIButton("open_person_inspector", "Edit Dossier",
+                         pygame.Rect(button_x, button_y + 40, button_width, button_height))
+            )
+            control_mode = getattr(active_sim, "control_mode", "autonomous")
+            self.buttons.append(
+                UIButton(
+                    "person_mode_autonomous",
+                    "Autonomous Queue",
+                    pygame.Rect(button_x, button_y + 80, button_width, button_height),
+                    enabled=control_mode != "autonomous",
+                )
+            )
+            self.buttons.append(
+                UIButton(
+                    "person_mode_direct",
+                    "Direct Control",
+                    pygame.Rect(button_x, button_y + 120, button_width, button_height),
+                    enabled=control_mode != "direct",
+                )
+            )
+            self.buttons.append(
+                UIButton("person_view_editor", "Person Editor",
+                         pygame.Rect(button_x, button_y + 160, button_width, button_height))
+            )
+
+            icon_size = 46
+            icon_x = app_width - icon_size - 20
+            icon_y = button_y + 206
+            self.person_panel_icons = [
+                {
+                    "id": "needs",
+                    "label": "Needs",
+                    "rect": pygame.Rect(icon_x, icon_y, icon_size, icon_size),
+                },
+                {
+                    "id": "personality",
+                    "label": "Personality",
+                    "rect": pygame.Rect(icon_x, icon_y + icon_size + 12, icon_size, icon_size),
+                },
+                {
+                    "id": "knowledge",
+                    "label": "Knowledge",
+                    "rect": pygame.Rect(icon_x, icon_y + (icon_size + 12) * 2, icon_size, icon_size),
+                },
+                {
+                    "id": "tasks",
+                    "label": "Tasks",
+                    "rect": pygame.Rect(icon_x, icon_y + (icon_size + 12) * 3, icon_size, icon_size),
+                },
+                {
+                    "id": "inventory",
+                    "label": "Items",
+                    "rect": pygame.Rect(icon_x, icon_y + (icon_size + 12) * 4, icon_size, icon_size),
+                },
+            ]
+            if self.person_panel_mode == "needs" and hasattr(active_sim, "get_needs_panel_model"):
+                self.person_panel_model = active_sim.get_needs_panel_model()
+            elif self.person_panel_mode == "personality" and hasattr(active_sim, "get_personality_panel_model"):
+                self.person_panel_model = active_sim.get_personality_panel_model()
+            elif self.person_panel_mode == "knowledge" and hasattr(active_sim, "get_knowledge_panel_model"):
+                self.person_panel_model = active_sim.get_knowledge_panel_model()
+            elif self.person_panel_mode == "tasks" and hasattr(active_sim, "get_task_panel_model"):
+                self.person_panel_model = active_sim.get_task_panel_model()
+            elif self.person_panel_mode == "inventory" and hasattr(active_sim, "get_inventory_panel_model"):
+                self.person_panel_model = active_sim.get_inventory_panel_model()
+
+            if self.person_panel_model is not None:
+                # Fill essentially the whole screen (up to the icon column
+                # and a small margin) rather than the old fixed 760x610 cap,
+                # which clipped panel content -- e.g. a longer Wishes/Goals
+                # list -- on ordinary window sizes.
+                panel_w = max(520, icon_x - 40)
+                panel_h = max(430, app_height - 90)
+                panel_x = max(20, icon_x - panel_w - 18)
+                panel_y = max(52, (app_height - panel_h) // 2)
+                self.person_panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+                self.person_panel_close_rect = pygame.Rect(
+                    self.person_panel_rect.right - 40,
+                    self.person_panel_rect.y + 12,
+                    26,
+                    26,
+                )
+
+            self._rebuild_map_history_timeline(
+                active_sim=active_sim,
+                app_width=app_width,
+                app_height=app_height,
+                font=self.app_font,
+            )
+            return
+
+        if render_mode == "pop":
+            self.person_ui_active = False
+            self.pop_ui_active = True
+            self.pop_panel_model = (
+                active_sim.get_population_panel_model()
+                if hasattr(active_sim, "get_population_panel_model")
+                else None
+            )
+            pop_name = (self.pop_panel_model or {}).get("pop_name", "Pop")
+            self.scope_label = f"Pop: {pop_name}"
+            self.breadcrumb_label = (self.pop_panel_model or {}).get("pop_type", "")
+            self.buttons.append(
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
+            )
             return
 
         if render_mode == "space":
+            if hasattr(active_sim, "get_scope_label"):
+                self.scope_label = f"Space: {active_sim.get_scope_label()}"
+            if hasattr(active_sim, "get_scope_breadcrumb"):
+                self.breadcrumb_label = active_sim.get_scope_breadcrumb()
+
             self.buttons.append(
                 UIButton("open_repository", "Open Repository",
                          pygame.Rect(button_x, button_y, button_width, button_height))
@@ -493,11 +2172,6 @@ class UIManager:
             selected_body_entity = active_sim.get_selected_body_entity() if hasattr(active_sim,
                                                                                     "get_selected_body_entity") else None
             if selected_body_entity:
-                body_name = selected_body_entity.get("name", selected_body_entity.get("id"))
-                body_class = selected_body_entity.get("body_class", "body")
-                self.scope_label = f"Selected: {body_name}"
-                self.breadcrumb_label = f"class: {body_class}"
-
                 self.buttons.append(
                     UIButton("open_space_body_map", "Open Map",
                              pygame.Rect(button_x, button_y + 40, button_width, button_height))
@@ -516,23 +2190,105 @@ class UIManager:
                     self.hover_tooltip_pos = hover_screen_pos
             return
 
+        if render_mode == "world_gen":
+            if bool(getattr(active_sim, "is_fullscreen_editor_active", lambda: False)()):
+                self.time_lines = []
+                self.timeline_fraction = 0.0
+                self.mouse_world_label = None
+                self.scope_label = None
+                self.breadcrumb_label = None
+                self.buttons = []
+                return
+
+            if hasattr(active_sim, "get_scope_label"):
+                self.scope_label = f"World Gen: {active_sim.get_scope_label()}"
+            if hasattr(active_sim, "get_scope_breadcrumb"):
+                self.breadcrumb_label = active_sim.get_scope_breadcrumb()
+
+            self.buttons.append(
+                UIButton("open_repository", "Open Repository",
+                         pygame.Rect(button_x, button_y, button_width, button_height))
+            )
+
+            return
+
         if render_mode == "bioregion":
-            self.scope_label = "Scope: Bioregion Test Map | 10 km x 10 km"
+            scope_label = (
+                active_sim.get_scope_label()
+                if hasattr(active_sim, "get_scope_label")
+                else "Bioregion Test Map | 10 km x 10 km"
+            )
+            self.scope_label = f"Scope: {scope_label}"
 
             avg_surface = active_sim.get_average_surface_water()
             avg_top = active_sim.get_average_top_moisture()
             avg_deep = active_sim.get_average_deep_moisture()
 
             rain_text = "Rain: active" if getattr(active_sim, "is_raining", False) else "Rain: dry"
+            species_count = (
+                active_sim.get_selected_species_count()
+                if hasattr(active_sim, "get_selected_species_count")
+                else 0
+            )
             self.breadcrumb_label = (
                 f"{rain_text} | Avg surf: {avg_surface:.3f} | "
-                f"Avg top: {avg_top:.3f} | Avg deep: {avg_deep:.3f}"
+                f"Avg top: {avg_top:.3f} | Avg deep: {avg_deep:.3f} | "
+                f"Species: {species_count}"
             )
+            if hasattr(active_sim, "get_scope_breadcrumb"):
+                breadcrumb = active_sim.get_scope_breadcrumb()
+                if breadcrumb:
+                    self.breadcrumb_label = f"{breadcrumb} | {self.breadcrumb_label}"
 
             self.buttons.append(
                 UIButton("open_repository", "Open Repository",
                          pygame.Rect(button_x, button_y, button_width, button_height))
             )
+            next_button_y = button_y + 40
+            for entry in getattr(active_sim, "get_species_catalog_entries", lambda: [])():
+                species_id = str(entry.get("id") or "")
+                if not species_id:
+                    continue
+                label = entry.get("label") or species_id
+                suitability = entry.get("suitability")
+                if isinstance(suitability, (int, float)):
+                    label = f"{label} {int(max(0.0, min(1.0, suitability)) * 100)}%"
+                prefix = "[x] " if entry.get("selected") else "[ ] "
+                self.buttons.append(
+                    UIButton(
+                        f"biosphere_toggle_species:{species_id}",
+                        self._short_button_label(prefix + label, max_chars=28),
+                        pygame.Rect(button_x, next_button_y, button_width, button_height),
+                    )
+                )
+                next_button_y += 40
+
+        if render_mode == "species":
+            self.scope_label = f"Scope: {active_sim.get_scope_label()}"
+            summary = active_sim.get_growth_summary()
+            self.breadcrumb_label = (
+                f"Age: {active_sim.age_days:.1f} d | "
+                f"Maturity: {float(summary.get('maturity', 0.0)) * 100:.0f}% | "
+                f"Modules: {summary.get('placement_count', 0)} | "
+                f"Branches: {summary.get('branch_count', 0)} | "
+                f"Leaf clusters: {summary.get('leaf_cluster_count', 0)} | "
+                f"Est. leaves: {summary.get('estimated_leaf_count', 0)} | "
+                f"LOD: {active_sim.lod}"
+            )
+            diagnostic_view = getattr(active_sim, "diagnostic_view", "individual")
+            if diagnostic_view == "individual":
+                self.buttons.extend([
+                    UIButton("species_sim_age_down", "Younger", pygame.Rect(button_x, button_y, button_width, button_height)),
+                    UIButton("species_sim_age_up", "Older", pygame.Rect(button_x, button_y + 40, button_width, button_height)),
+                    UIButton("species_sim_lod", "Cycle Detail", pygame.Rect(button_x, button_y + 80, button_width, button_height)),
+                ])
+                repository_y = button_y + 120
+            else:
+                repository_y = button_y
+            self.buttons.append(
+                UIButton("open_repository", "Open Repository", pygame.Rect(button_x, repository_y, button_width, button_height))
+            )
+            self._rebuild_species_diagnostic_panel(active_sim, app_width, app_height)
 
     def rebuild_for_state(
             self,
@@ -542,11 +2298,23 @@ class UIManager:
             tab_manager=None,
             camera=None,
             menu_active=False,
+            system_menu_active=False,
+            system_settings_active=False,
+            repository_return_confirm_active=False,
             world_model=None,
-            repository_scope_entity_id=None
+            repository_scope_entity_id=None,
+            parent_assignment_request=None
     ):
         self._reset_shared_state()
         self.menu_active = menu_active
+        self.system_menu_active = system_menu_active
+        self.system_settings_active = system_settings_active
+        self.repository_return_confirm_active = repository_return_confirm_active
+        self._rebuild_system_menu(app_width, app_height)
+        self._rebuild_repository_return_confirm(app_width, app_height)
+
+        self._rebuild_selection_inspector(active_sim, app_width, app_height)
+        self._rebuild_floating_card(active_sim, world_model, app_width, app_height)
 
         if tab_manager is not None:
             self.tab_labels = [tab.name for tab in tab_manager.tabs]
@@ -559,17 +2327,306 @@ class UIManager:
                 world_model=world_model,
                 repository_scope_entity_id=repository_scope_entity_id,
                 font=self.app_font,
+                parent_assignment_request=parent_assignment_request,
             )
             return
 
+        regional_loading = getattr(
+            active_sim,
+            "get_regional_loading_state",
+            lambda: {"active": False},
+        )()
+        self.regional_loading_active = bool(regional_loading.get("active"))
+        if self.regional_loading_active:
+            return
+
+        vehicle_pixel_editor = getattr(active_sim, "pixel_art_editor_ui", None)
+        if bool(getattr(active_sim, "is_vehicle_pixel_editor_active", lambda: False)()):
+            self.vehicle_pixel_editor_ui = vehicle_pixel_editor
+            return
+
         self._rebuild_active_simulation_ui(active_sim, app_width, app_height, camera)
+
+    def _rebuild_repository_return_confirm(self, app_width, app_height):
+        self.repository_return_confirm_rect = None
+        self.repository_return_confirm_buttons = []
+
+        if not self.repository_return_confirm_active:
+            return
+
+        panel_w = 420
+        panel_h = 156
+        panel_x = (app_width - panel_w) // 2
+        panel_y = (app_height - panel_h) // 2
+        self.repository_return_confirm_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+        button_w = 156
+        button_h = 34
+        button_y = panel_y + panel_h - button_h - 20
+        self.repository_return_confirm_buttons = [
+            UIButton(
+                "confirm_open_repository",
+                "Return",
+                pygame.Rect(panel_x + 52, button_y, button_w, button_h),
+            ),
+            UIButton(
+                "cancel_repository_return",
+                "Stay",
+                pygame.Rect(panel_x + panel_w - button_w - 52, button_y, button_w, button_h),
+            ),
+        ]
+
+    def _rebuild_system_menu(self, app_width, app_height):
+        self.system_menu_buttons = []
+        self.system_menu_rect = None
+
+        if not self.system_menu_active:
+            return
+
+        panel_w = 320
+        panel_h = 476 if self.system_settings_active else 236
+        panel_x = (app_width - panel_w) // 2
+        panel_y = (app_height - panel_h) // 2
+        self.system_menu_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+        button_w = 220
+        button_h = 34
+        button_x = panel_x + (panel_w - button_w) // 2
+        button_y = panel_y + 78
+        gap = 14
+
+        if self.system_settings_active:
+            clade_count = getattr(self.knowledge_ui, "phylogeny_clade_member_count", 3)
+            species_count = getattr(self.knowledge_ui, "phylogeny_species_relative_count", 4)
+            debug_enabled = bool(getattr(self.knowledge_ui, "performance_debug_enabled", False))
+            checkpoint_confirm = bool(getattr(self.knowledge_ui, "ontology_checkpoint_confirm", False))
+            half_w = (button_w - gap) // 2
+            self.system_menu_buttons.extend([
+                UIButton("system_toggle_grid", "Toggle Grid", pygame.Rect(button_x, button_y, button_w, button_h)),
+                UIButton("system_toggle_fps", "Toggle FPS", pygame.Rect(button_x, button_y + (button_h + gap), button_w, button_h)),
+                UIButton("phylogeny_clade_members_dec", f"Clade - ({clade_count})", pygame.Rect(button_x, button_y + (button_h + gap) * 2, half_w, button_h)),
+                UIButton("phylogeny_clade_members_inc", "Clade +", pygame.Rect(button_x + half_w + gap, button_y + (button_h + gap) * 2, half_w, button_h)),
+                UIButton("phylogeny_species_relatives_dec", f"Species - ({species_count})", pygame.Rect(button_x, button_y + (button_h + gap) * 3, half_w, button_h)),
+                UIButton("phylogeny_species_relatives_inc", "Species +", pygame.Rect(button_x + half_w + gap, button_y + (button_h + gap) * 3, half_w, button_h)),
+                UIButton("system_toggle_debug", f"Performance Debug: {'On' if debug_enabled else 'Off'}", pygame.Rect(button_x, button_y + (button_h + gap) * 4, button_w, button_h)),
+                UIButton("system_save_ontology", "Confirm Save Ontology" if checkpoint_confirm else "Save Ontology", pygame.Rect(button_x, button_y + (button_h + gap) * 5, button_w, button_h)),
+                UIButton("system_menu_back", "Back", pygame.Rect(button_x, button_y + (button_h + gap) * 6, button_w, button_h)),
+            ])
+            return
+
+        self.system_menu_buttons.extend([
+            UIButton("system_menu_continue", "Continue", pygame.Rect(button_x, button_y, button_w, button_h)),
+            UIButton("system_menu_settings", "Settings", pygame.Rect(button_x, button_y + (button_h + gap), button_w, button_h)),
+            UIButton("system_menu_quit", "Quit", pygame.Rect(button_x, button_y + (button_h + gap) * 2, button_w, button_h)),
+        ])
+
+    def _rebuild_selection_inspector(self, active_sim, app_width, app_height):
+        if active_sim is not None and hasattr(active_sim, "consume_pending_inspector_target"):
+            target = active_sim.consume_pending_inspector_target()
+            if target:
+                target_kind = target.get("kind")
+                target_id = target.get("id")
+                record = None
+
+                if target_kind == "spatial_feature" and hasattr(active_sim, "get_spatial_feature"):
+                    record = active_sim.get_spatial_feature(target_id)
+                elif target_kind == "location" and hasattr(active_sim, "get_location"):
+                    record = active_sim.get_location(target_id)
+                elif target_kind == "person" and hasattr(active_sim, "get_person"):
+                    record = active_sim.get_person(target_id)
+
+                if record is not None:
+                    self._clear_map_history_reanchor_target()
+                    self.selection_inspector.open(
+                        target_kind=target_kind,
+                        target_id=target_id,
+                        record=record,
+                    )
+
+        self.selection_inspector.rebuild(app_width, app_height)
+
+    FLOATING_CARD_WIDTH = 440
+    FLOATING_CARD_HEIGHT = 420
+    FLOATING_CARD_FAMILIARITY_LOW = 0.2
+    FLOATING_CARD_FAMILIARITY_HIGH = 0.6
+
+    @staticmethod
+    def _redact_entity_for_familiarity(entity, familiarity):
+        """Build a display-only copy of entity with fields trimmed to what the
+        protagonist plausibly knows. Returning a copy (never the real entity
+        dict) is a deliberate second layer of safety on top of disabling the
+        edit/delete hitboxes -- see _rebuild_floating_card.
+        """
+        entity_id = entity.get("id")
+        dataset_name = entity.get("_dataset") or entity.get("type") or "entity"
+        entity_type = entity.get("type", dataset_name)
+
+        if familiarity < UIManager.FLOATING_CARD_FAMILIARITY_LOW:
+            return {
+                "id": entity_id,
+                "_dataset": dataset_name,
+                "type": entity_type,
+                "name": "Unknown",
+                "pretty_name": "Unknown",
+                "wiki_entry": "Not yet encountered.",
+            }
+
+        if familiarity < UIManager.FLOATING_CARD_FAMILIARITY_HIGH:
+            allowed_keys = {"id", "_dataset", "type", "name", "pretty_name", "three_word_description", "tags"}
+            redacted = {
+                key: value for key, value in entity.items()
+                if key in allowed_keys or str(key).endswith("_class")
+            }
+            redacted.setdefault("id", entity_id)
+            redacted.setdefault("_dataset", dataset_name)
+            redacted.setdefault("type", entity_type)
+            return redacted
+
+        return dict(entity)
+
+    def _rebuild_floating_card(self, active_sim, world_model, app_width, app_height):
+        consume = getattr(active_sim, "consume_pending_floating_card_target", None)
+        if callable(consume):
+            target = consume()
+            if target:
+                self._open_floating_card(target, world_model, app_width, app_height)
+
+        if self.floating_card_rect is None:
+            return
+
+        self.floating_knowledge_ui._relayout_cards()
+        self.scrub_floating_card_hitboxes()
+
+    def scrub_floating_card_hitboxes(self):
+        """Strip edit/delete hitboxes while the floating card is in
+        read-only inspect mode, so a familiarity-redacted card can never be
+        mutated through it -- drag and resize stay live in every mode (the
+        floating card is meant to have full repo-browser-card functionality,
+        just data-mutation is what inspect mode must forbid).
+
+        Several click-dispatch branches inside KnowledgeCanvasController call
+        _relayout_cards()/layout_card again as a side effect of handling that
+        same click (e.g. toggling edit mode re-lays-out immediately), which
+        re-populates every hitbox from scratch -- including the ones this
+        scrub just cleared a moment earlier. So this must run again after
+        *every* dispatched click, not just once per frame, or a single click
+        sequence can silently undo the inspect-mode safety guarantee.
+        """
+        if self.floating_card_rect is None or self.floating_card_mode != "inspect":
+            return
+        for card in self.floating_knowledge_ui.cards:
+            card["edit_toggle_rect"] = None
+            card["delete_rect"] = None
+            card["lock_toggle_rect"] = None
+
+    def _open_floating_card(self, target, world_model, app_width, app_height):
+        if world_model is None:
+            return
+        entity_id = target.get("id")
+        entity = world_model.get_entity(entity_id) if entity_id else None
+        if not isinstance(entity, dict):
+            return
+        mode = target.get("mode", "edit")
+
+        floating_ui = self.floating_knowledge_ui
+        if floating_ui.layout is None:
+            floating_ui.layout = floating_ui._build_layout(app_width, app_height)
+        floating_ui.world_model = world_model
+        floating_ui._bind_world_schema_loader(world_model)
+        floating_ui.font_for_layout = self.app_font
+
+        if mode == "inspect":
+            entity_for_card = self._redact_entity_for_familiarity(entity, float(target.get("familiarity") or 0.0))
+            # _ensure_card dedups by entity id and, for a *new* card, would
+            # also merge in any unsaved draft for that id via
+            # _apply_cached_draft_to_card. Either path could hand an
+            # inspect-mode request the real (or draft) full entity instead
+            # of the familiarity-redacted copy -- e.g. if this entity is
+            # already open in an edit-mode card elsewhere, or the player has
+            # an unsaved draft for it from their own authoring session. Drop
+            # any existing card for this id first so inspect mode always
+            # builds fresh from the redacted copy.
+            floating_ui.cards = [
+                existing for existing in floating_ui.cards
+                if existing.get("entity_id") != entity_id
+            ]
+        else:
+            entity_for_card = entity
+
+        width, height = self.FLOATING_CARD_WIDTH, self.FLOATING_CARD_HEIGHT
+        x = max(20, min(app_width - width - 20, (app_width - width) // 2))
+        y = max(60, min(app_height - height - 20, (app_height - height) // 2))
+        floating_rect = pygame.Rect(x, y, width, height)
+
+        floating_ui.layout["right_rect"] = floating_rect
+        floating_ui.canvas_offset_x = 0.0
+        floating_ui.canvas_offset_y = 0.0
+        floating_ui.canvas_zoom = 1.0
+
+        card = floating_ui._ensure_card(entity_for_card)
+        if card is None:
+            return
+        card["canvas_x"] = 0
+        card["canvas_y"] = 0
+        card["canvas_w"] = width
+        card["canvas_h"] = height
+        card["auto_canvas_h"] = False
+        if mode == "inspect":
+            # _build_card_from_entity may have merged in the player's own
+            # unsaved draft for this entity id via _apply_cached_draft_to_card,
+            # which mutates the entity dict *in place* (entity.clear() +
+            # entity.update(draft)) -- that draft could easily carry full,
+            # un-redacted field values unrelated to what this protagonist
+            # actually knows. Recompute the redaction fresh against the real
+            # entity and force it back, so drafts can never leak past the
+            # familiarity gate.
+            fresh_redacted = self._redact_entity_for_familiarity(entity, float(target.get("familiarity") or 0.0))
+            card["card_view"].entity.clear()
+            card["card_view"].entity.update(fresh_redacted)
+            card["is_edit_mode"] = False
+            card["has_unsaved_draft"] = False
+            card["is_draft_entity"] = False
+            card["draft_edit_buffers"] = {}
+
+        self.floating_card_rect = floating_rect
+        self.floating_card_mode = mode
+
+    def draw_floating_card(self, screen, font):
+        if self.floating_card_rect is None:
+            return
+        self.floating_knowledge_ui._draw_card_canvas(screen, font, self.floating_card_rect)
+
+    def draw_system_menu_overlay(self, screen, font):
+        """Draw the ESC/system menu on top of everything else, including the
+        floating in-sim card. Must be called after draw_floating_card() --
+        app.py calls draw_floating_card() after draw(), which is where the
+        system menu used to be drawn, leaving it underneath the floating
+        card. Self-gated (no-op when the menu isn't open), safe to call
+        unconditionally every frame."""
+        self._draw_system_menu(screen, font)
+
+    def close_floating_card(self):
+        if self.floating_card_rect is None:
+            return
+        self.floating_knowledge_ui.cards = []
+        self.floating_card_rect = None
+        self.floating_card_mode = None
 
     def _draw_simulation_bar(self, screen, font):
         if self.simulation_bar_rect is None:
             return
 
-        pygame.draw.rect(screen, (22, 24, 30), self.simulation_bar_rect)
-        pygame.draw.rect(screen, (200, 200, 200), self.simulation_bar_rect, 1)
+        vehicle_titles = {"Vehicle Design", "Vehicle Specification", "Hull Studio", "Structural Detail Studio", "Livery Studio"}
+        vehicle_style = self.simulation_bar_title in vehicle_titles
+        pygame.draw.rect(screen, (16, 24, 33) if vehicle_style else (22, 24, 30), self.simulation_bar_rect, border_radius=7 if vehicle_style else 0)
+        pygame.draw.rect(screen, (61, 96, 116) if vehicle_style else (200, 200, 200), self.simulation_bar_rect, 1, border_radius=7 if vehicle_style else 0)
+        if vehicle_style:
+            pygame.draw.line(
+                screen, (91, 198, 222),
+                (self.simulation_bar_rect.x + 14, self.simulation_bar_rect.y + 1),
+                (self.simulation_bar_rect.x + min(210, self.simulation_bar_rect.width - 14), self.simulation_bar_rect.y + 1),
+                2,
+            )
 
         if self.simulation_bar_resize_hitbox is not None:
             line_y = self.simulation_bar_rect.y
@@ -582,7 +2639,7 @@ class UIManager:
             )
 
         if self.simulation_bar_title:
-            title_surface = font.render(self.simulation_bar_title, True, (240, 240, 240))
+            title_surface = self._render_text(font, self.simulation_bar_title, (240, 240, 240))
             screen.blit(title_surface, (self.simulation_bar_rect.x + 12, self.simulation_bar_rect.y + 10))
 
         self._draw_simulation_panel_tabs(screen, font)
@@ -590,16 +2647,18 @@ class UIManager:
         if self.simulation_panel_active_tab_id == "catalog" and self.simulation_bar_catalog_entries:
             self._draw_simulation_bar_catalog(screen, font)
         elif self.simulation_panel_active_tab_id == "selection":
-            self._draw_simulation_panel_placeholder(screen, font, "Selection panel placeholder")
+            self._draw_simulation_panel_lines(screen, font, self.simulation_bar_panel_lines)
         elif self.simulation_panel_active_tab_id == "layout":
-            self._draw_simulation_panel_placeholder(screen, font, "Layout panel placeholder")
+            self._draw_simulation_panel_lines(screen, font, self.simulation_bar_panel_lines)
+        elif self.simulation_bar_panel_lines:
+            self._draw_simulation_panel_lines(screen, font, self.simulation_bar_panel_lines)
         elif self.simulation_bar_catalog_entries:
             self._draw_simulation_bar_catalog(screen, font)
 
         hint_x = self.simulation_bar_rect.x + int(self.simulation_bar_rect.width * 0.66)
         hint_y = self.simulation_bar_rect.y + 42
         for line in self.simulation_bar_hint_lines:
-            text_surface = font.render(line, True, (185, 185, 185))
+            text_surface = self._render_text(font, line, (185, 185, 185))
             screen.blit(text_surface, (hint_x, hint_y))
             hint_y += 18
 
@@ -619,7 +2678,7 @@ class UIManager:
                 continue
 
             label = tab.get("label", tab_id or "tab")
-            text_surface = font.render(label, True, (240, 240, 240))
+            text_surface = self._render_text(font, label, (240, 240, 240))
             active = tab_id == self.simulation_panel_active_tab_id
 
             fill = (70, 70, 90) if active else (36, 40, 48)
@@ -632,15 +2691,23 @@ class UIManager:
                 (rect.x + 10, rect.y + (rect.height - text_surface.get_height()) // 2),
             )
 
-    def _draw_simulation_panel_placeholder(self, screen, font, text):
+    def _draw_simulation_panel_lines(self, screen, font, lines):
         if self.simulation_bar_rect is None:
             return
 
-        text_surface = font.render(text, True, (210, 210, 210))
-        screen.blit(
-            text_surface,
-            (self.simulation_bar_rect.x + 14, self.simulation_bar_rect.y + 70),
-        )
+        if not lines:
+            return
+
+        x = self.simulation_bar_rect.x + 14
+        y = self.simulation_bar_rect.y + 68
+        max_width = max(80, int(self.simulation_bar_rect.width * 0.62) - 20)
+
+        for index, line in enumerate(lines):
+            color = (238, 242, 248) if index == 0 else (186, 194, 208)
+            text = self._ellipsize_text(str(line), font, max_width)
+            text_surface = self._render_text(font, text, color)
+            screen.blit(text_surface, (x, y))
+            y += 22 if index == 0 else 18
 
     def _draw_simulation_bar_catalog(self, screen, font):
         mouse_pos = pygame.mouse.get_pos()
@@ -661,7 +2728,7 @@ class UIManager:
             if kind == "section":
                 pygame.draw.rect(screen, (40, 44, 54), hitbox)
                 pygame.draw.rect(screen, (130, 130, 140), hitbox, 1)
-                text_surface = font.render(row.get("label", "Section"), True, (220, 220, 220))
+                text_surface = self._render_text(font, row.get("label", "Section"), (220, 220, 220))
                 screen.blit(text_surface, (hitbox.x + 6, hitbox.y + 2))
                 continue
 
@@ -691,36 +2758,137 @@ class UIManager:
             line_2 = row.get("entry_type", "component")
             line_3 = f"{dims.get('x', '?')} x {dims.get('y', '?')}"
 
-            text_surface_1 = font.render(line_1, True, (240, 240, 240))
-            text_surface_2 = font.render(line_2, True, (185, 185, 195))
-            text_surface_3 = font.render(line_3, True, (165, 165, 175))
+            text_surface_1 = self._render_text(font, line_1, (240, 240, 240))
+            text_surface_2 = self._render_text(font, line_2, (185, 185, 195))
+            text_surface_3 = self._render_text(font, line_3, (165, 165, 175))
 
             text_y = hitbox.bottom - 34
             screen.blit(text_surface_1, (hitbox.x + 6, text_y))
             screen.blit(text_surface_2, (hitbox.x + 6, text_y + 14))
             screen.blit(text_surface_3, (hitbox.x + 6, text_y + 28))
 
+    def _ellipsize_text(self, text, font, max_width):
+        text = str(text or "")
+        if max_width <= 0 or font.size(text)[0] <= max_width:
+            return text
+
+        ellipsis = "..."
+        ellipsis_width = font.size(ellipsis)[0]
+        if ellipsis_width >= max_width:
+            return ""
+
+        low = 0
+        high = len(text)
+        while low < high:
+            mid = (low + high + 1) // 2
+            candidate = text[:mid].rstrip() + ellipsis
+            if font.size(candidate)[0] <= max_width:
+                low = mid
+            else:
+                high = mid - 1
+
+        return text[:low].rstrip() + ellipsis
+
     def _draw_button(self, screen, font, button):
-        fill_color = (55, 55, 55) if button.enabled else (35, 35, 35)
-        border_color = (210, 210, 210) if button.enabled else (100, 100, 100)
-        text_color = (245, 245, 245) if button.enabled else (140, 140, 140)
+        is_map_layer_active = bool(getattr(button, "map_layer_active", False))
+        is_vehicle_control = str(getattr(button, "id", "")).startswith("vehicle_")
+        vehicle_active = (
+            is_vehicle_control
+            and not button.enabled
+            and (
+                str(button.id).startswith("vehicle_design_step_")
+                or button.id in {"vehicle_mode_design", "vehicle_mode_operational"}
+            )
+        )
+        if vehicle_active:
+            fill_color = (38, 88, 111)
+            border_color = (105, 211, 232)
+        elif is_vehicle_control and button.enabled:
+            hovered = button.rect.collidepoint(pygame.mouse.get_pos())
+            fill_color = (35, 48, 62) if not hovered else (44, 67, 83)
+            border_color = (77, 108, 129) if not hovered else (112, 194, 215)
+        elif getattr(button, "city_builder_primary", False) and button.enabled:
+            fill_color = (46, 89, 58)
+            border_color = (170, 214, 132)
+        elif is_map_layer_active and button.enabled:
+            fill_color = (68, 78, 110)
+            border_color = (232, 218, 154)
+        else:
+            fill_color = (52, 56, 66) if button.enabled else (34, 36, 42)
+            border_color = (210, 210, 210) if button.enabled else (100, 100, 100)
+        text_color = (235, 246, 250) if vehicle_active else ((245, 245, 245) if button.enabled else (140, 140, 140))
 
-        pygame.draw.rect(screen, fill_color, button.rect)
-        pygame.draw.rect(screen, border_color, button.rect, 2)
+        radius = 5 if is_vehicle_control else 0
+        pygame.draw.rect(screen, fill_color, button.rect, border_radius=radius)
+        pygame.draw.rect(screen, border_color, button.rect, 1 if is_vehicle_control else 2, border_radius=radius)
 
-        text_surface = font.render(button.label, True, text_color)
-        text_rect = text_surface.get_rect(center=button.rect.center)
-        screen.blit(text_surface, text_rect)
+        clip = screen.get_clip()
+        screen.set_clip(button.rect.clip(screen.get_rect()))
+        checkbox_width = 0
+        if getattr(button, "check_button", False):
+            checkbox_size = max(12, min(16, button.rect.height - 10))
+            checkbox_rect = pygame.Rect(
+                button.rect.x + 7,
+                button.rect.centery - checkbox_size // 2,
+                checkbox_size,
+                checkbox_size,
+            )
+            pygame.draw.rect(screen, (22, 24, 30), checkbox_rect)
+            pygame.draw.rect(screen, border_color, checkbox_rect, 1)
+            if getattr(button, "checked", False):
+                pygame.draw.line(screen, text_color, (checkbox_rect.x + 3, checkbox_rect.centery), (checkbox_rect.centerx - 1, checkbox_rect.bottom - 4), 2)
+                pygame.draw.line(screen, text_color, (checkbox_rect.centerx - 1, checkbox_rect.bottom - 4), (checkbox_rect.right - 3, checkbox_rect.y + 3), 2)
+            checkbox_width = checkbox_size + 8
 
-    def _draw_info_panel(self, screen, font, x, y, lines):
+        text_area = pygame.Rect(
+            button.rect.x + 7 + checkbox_width,
+            button.rect.y + 3,
+            max(0, button.rect.width - 14 - checkbox_width),
+            max(0, button.rect.height - 6),
+        )
+        words = str(button.label or "").split()
+        lines = [str(button.label or "")]
+        line_height = max(1, font.get_linesize())
+        if font.size(lines[0])[0] > text_area.width and text_area.height >= line_height * 2 and len(words) > 1:
+            lines = []
+            current = ""
+            for word in words:
+                candidate = f"{current} {word}".strip()
+                if current and font.size(candidate)[0] > text_area.width:
+                    lines.append(current)
+                    current = word
+                else:
+                    current = candidate
+            if current:
+                lines.append(current)
+            max_lines = max(1, text_area.height // line_height)
+            lines = lines[:max_lines]
+        lines = [self._ellipsize_text(line, font, text_area.width) for line in lines]
+        total_text_h = len(lines) * line_height
+        text_y = text_area.centery - total_text_h // 2
+        for line in lines:
+            text_surface = self._render_text(font, line, text_color)
+            text_rect = text_surface.get_rect(centerx=text_area.centerx, y=text_y)
+            screen.blit(text_surface, text_rect)
+            text_y += line_height
+        screen.set_clip(clip)
+
+    def _draw_info_panel(self, screen, font, x, y, lines, max_width=None):
         if not lines:
-            return
+            return 0
 
         padding = 8
         line_gap = 4
+        if max_width is None:
+            max_width = screen.get_width() - x - 20
+        max_width = max(120, min(int(max_width), screen.get_width() - x - 20))
 
-        rendered = [font.render(line, True, (240, 240, 240)) for line in lines]
-        panel_width = max(text.get_width() for text in rendered) + padding * 2
+        display_lines = [
+            self._ellipsize_text(str(line), font, max_width - padding * 2)
+            for line in lines
+        ]
+        rendered = [self._render_text(font, line, (240, 240, 240)) for line in display_lines]
+        panel_width = min(max_width, max(text.get_width() for text in rendered) + padding * 2)
         panel_height = (
             sum(text.get_height() for text in rendered)
             + line_gap * (len(rendered) - 1)
@@ -732,9 +2900,118 @@ class UIManager:
         pygame.draw.rect(screen, (200, 200, 200), panel_rect, 1)
 
         current_y = panel_rect.y + padding
+        clip = screen.get_clip()
+        screen.set_clip(panel_rect.clip(screen.get_rect()))
         for text_surface in rendered:
             screen.blit(text_surface, (panel_rect.x + padding, current_y))
             current_y += text_surface.get_height() + line_gap
+        screen.set_clip(clip)
+        return panel_height
+
+    def _info_panel_height(self, font, lines):
+        if not lines:
+            return 0
+        padding = 8
+        line_gap = 4
+        line_height = font.get_height()
+        return line_height * len(lines) + line_gap * (len(lines) - 1) + padding * 2
+
+    def _simulation_selection_panel_rect(self, font, x, y):
+        payload = self.simulation_selection_payload
+        if not payload:
+            return None
+
+        lines = [
+            "Selection",
+            str(payload.get("title") or "Unnamed selection"),
+            str(payload.get("kind") or "Simulation object"),
+        ]
+        lines.extend(str(line) for line in payload.get("details", []) if line not in (None, ""))
+
+        padding = 10
+        line_gap = 4
+        button_h = 28
+        button_gap = 6
+        rendered = [self._render_text(font, line, (240, 240, 240)) for line in lines]
+        actions = payload.get("actions", [])
+        content_width = min(480, max([280] + [surface.get_width() for surface in rendered]))
+        panel_width = content_width + padding * 2
+        text_height = (
+            sum(surface.get_height() for surface in rendered)
+            + line_gap * (len(rendered) - 1)
+        )
+        actions_height = len(actions) * button_h + max(0, len(actions) - 1) * button_gap
+        panel_height = padding * 2 + text_height + (10 + actions_height if actions else 0)
+        return pygame.Rect(x, y, panel_width, panel_height)
+
+    def _simulation_selection_layout_rect(self, font):
+        info_lines = []
+        if self.scope_label:
+            info_lines.append(self.scope_label)
+        if self.breadcrumb_label:
+            info_lines.append(self.breadcrumb_label)
+
+        current_info_y = 170
+        if info_lines:
+            current_info_y += self._info_panel_height(font, info_lines) + 12
+
+        if self.vehicle_requirement_lines:
+            requirement_lines = ["Requirements"] + self.vehicle_requirement_lines
+            current_info_y += self._info_panel_height(font, requirement_lines) + 12
+
+        return self._simulation_selection_panel_rect(font, 20, current_info_y)
+
+    def _draw_simulation_selection_inspector(self, screen, font, x, y):
+        payload = self.simulation_selection_payload
+        if not payload:
+            self.simulation_selection_buttons = []
+            self.simulation_selection_rect = None
+            return 0
+
+        lines = [
+            "Selection",
+            str(payload.get("title") or "Unnamed selection"),
+            str(payload.get("kind") or "Simulation object"),
+        ]
+        lines.extend(str(line) for line in payload.get("details", []) if line not in (None, ""))
+
+        padding = 10
+        line_gap = 4
+        button_h = 28
+        button_gap = 6
+        rendered = [self._render_text(font, line, (240, 240, 240)) for line in lines]
+        actions = payload.get("actions", [])
+        panel_rect = self._simulation_selection_panel_rect(font, x, y)
+        self.simulation_selection_rect = panel_rect
+        content_width = panel_rect.width - padding * 2
+
+        pygame.draw.rect(screen, (24, 28, 36), panel_rect)
+        pygame.draw.rect(screen, (154, 174, 208), panel_rect, 1)
+
+        current_y = panel_rect.y + padding
+        for index, text_surface in enumerate(rendered):
+            text_color = (245, 245, 245) if index < 2 else (185, 194, 210)
+            display_line = self._ellipsize_text(lines[index], font, content_width)
+            if text_color != (240, 240, 240) or display_line != lines[index]:
+                text_surface = self._render_text(font, display_line, text_color)
+            screen.blit(text_surface, (panel_rect.x + padding, current_y))
+            current_y += text_surface.get_height() + line_gap
+
+        self.simulation_selection_buttons = []
+        if actions:
+            current_y += 6
+            for action in actions:
+                button = UIButton(
+                    action.get("id"),
+                    action.get("label", action.get("id", "Action")),
+                    pygame.Rect(panel_rect.x + padding, current_y, content_width, button_h),
+                    enabled=bool(action.get("id")) and action.get("enabled", True),
+                )
+                self.simulation_selection_buttons.append(button)
+                self._draw_button(screen, font, button)
+                current_y += button_h + button_gap
+
+        return panel_rect.height
 
     def _draw_hover_tooltip(self, screen, font):
         if not self.hover_tooltip_lines or not self.hover_tooltip_pos:
@@ -742,7 +3019,7 @@ class UIManager:
 
         padding = 8
         line_gap = 4
-        rendered = [font.render(line, True, (240, 240, 240)) for line in self.hover_tooltip_lines]
+        rendered = [self._render_text(font, line, (240, 240, 240)) for line in self.hover_tooltip_lines]
         panel_width = max(text.get_width() for text in rendered) + padding * 2
         panel_height = (
             sum(text.get_height() for text in rendered)
@@ -779,31 +3056,61 @@ class UIManager:
     def _draw_tab_strip(self, screen, font):
         x_offset = 20
         y_offset = 5
-        padding = 10
+        padding = 8
+        gap = 5
+        max_right = screen.get_width() - 20
 
         self.tab_hitboxes = []
 
         for i, label in enumerate(self.tab_labels):
-            text_surface = font.render(label, True, (255, 255, 255))
-            text_rect = text_surface.get_rect()
+            remaining_tabs = max(1, len(self.tab_labels) - i)
+            remaining_width = max_right - x_offset
+            if remaining_width <= 42:
+                break
+
+            if remaining_tabs > 1:
+                max_tab_width = max(92, min(220, int((remaining_width - 48) / remaining_tabs) - gap))
+            else:
+                max_tab_width = min(260, remaining_width)
+
+            text_label = self._ellipsize_text(label, font, max_tab_width - padding * 2)
+            text_surface = self._render_text(font, text_label, (255, 255, 255))
 
             rect = pygame.Rect(
                 x_offset,
                 y_offset,
-                text_rect.width + padding * 2,
-                text_rect.height + padding
+                min(max_tab_width, text_surface.get_width() + padding * 2),
+                text_surface.get_height() + padding
             )
 
+            if rect.right > max_right:
+                hidden_count = len(self.tab_labels) - i
+                more_label = f"+{hidden_count}"
+                more_surface = self._render_text(font, more_label, (198, 204, 216))
+                more_rect = pygame.Rect(
+                    x_offset,
+                    y_offset,
+                    more_surface.get_width() + padding * 2,
+                    more_surface.get_height() + padding,
+                )
+                pygame.draw.rect(screen, (32, 34, 42), more_rect)
+                pygame.draw.rect(screen, (138, 146, 164), more_rect, 1)
+                screen.blit(more_surface, (more_rect.x + padding, more_rect.y + padding // 2))
+                break
+
             if i == self.active_tab_index:
-                pygame.draw.rect(screen, (80, 80, 120), rect)
+                pygame.draw.rect(screen, (78, 88, 122), rect)
             else:
-                pygame.draw.rect(screen, (40, 40, 40), rect)
+                pygame.draw.rect(screen, (36, 38, 46), rect)
 
             pygame.draw.rect(screen, (200, 200, 200), rect, 1)
+            clip = screen.get_clip()
+            screen.set_clip(rect.clip(screen.get_rect()))
             screen.blit(text_surface, (rect.x + padding, rect.y + padding // 2))
+            screen.set_clip(clip)
 
             self.tab_hitboxes.append((i, rect))
-            x_offset += rect.width + 5
+            x_offset += rect.width + gap
 
     def _draw_time_panel(self, screen, font):
         lines = list(self.time_lines)
@@ -815,6 +3122,591 @@ class UIManager:
             return
 
         self._draw_info_panel(screen, font, 20, 40, lines)
+
+    def _draw_person_time_strip(self, screen, font):
+        info = self.time_info or {}
+        if not info:
+            return
+
+        x = 20
+        y = 40
+        width = min(960, max(520, screen.get_width() - 250))
+        height = 54
+        rect = pygame.Rect(x, y, width, height)
+
+        shadow = rect.move(4, 5)
+        pygame.draw.rect(screen, (5, 7, 10), shadow, border_radius=8)
+        pygame.draw.rect(screen, (17, 22, 29), rect, border_radius=8)
+        pygame.draw.rect(screen, (76, 91, 108), rect, 1, border_radius=8)
+        pygame.draw.rect(screen, (100, 181, 199), (rect.x, rect.y, 4, rect.height), border_radius=3)
+
+        year = int(info.get("year", 0))
+        day = int(info.get("day_of_year", 1))
+        clock = f"{int(info.get('hours', 0)):02d}:{int(info.get('minutes', 0)):02d}"
+        scale = self.time_lines[2].replace("Time Scale ", "") if len(self.time_lines) > 2 else "x1.00"
+
+        title_font = pygame.font.SysFont("consolas", max(17, font.get_height() + 1), bold=True)
+        screen.blit(self._render_text(title_font, f"YEAR {year}", (230, 234, 238)), (rect.x + 16, rect.y + 10))
+        day_text = self._render_text(font, f"DAY {day:03d} / 365", (154, 201, 207))
+        screen.blit(day_text, (rect.x + 132, rect.y + 13))
+        clock_text = self._render_text(font, f"{clock}  {scale}", (170, 180, 192))
+        screen.blit(clock_text, (rect.x + 310, rect.y + 13))
+        mode = str((self.person_dossier_model or {}).get("mode") or "Autonomous").upper()
+        mode_text = self._render_text(title_font, mode, (225, 201, 116))
+        screen.blit(mode_text, (rect.right - mode_text.get_width() - 16, rect.y + 10))
+
+        line_x = rect.x + 17
+        line_y = rect.y + 43
+        line_w = rect.width - 34
+        year_fraction = max(0.0, min(1.0, float(info.get("year_fraction", 0.0) or 0.0)))
+        pygame.draw.line(screen, (48, 58, 70), (line_x, line_y), (line_x + line_w, line_y), 4)
+        filled = int(round(line_w * year_fraction))
+        if filled:
+            pygame.draw.line(screen, (91, 173, 191), (line_x, line_y), (line_x + filled, line_y), 4)
+        marker_x = line_x + filled
+        pygame.draw.circle(screen, (225, 201, 116), (marker_x, line_y), 5)
+        pygame.draw.circle(screen, (238, 232, 202), (marker_x, line_y), 2)
+
+    def _draw_person_dossier_card(self, screen, font):
+        model = self.person_dossier_model or {}
+        if not model:
+            return
+
+        width = min(390, max(320, screen.get_width() - 870))
+        height = 198
+        bottom_margin = 20
+        if self.map_history_timeline_visible and self.map_history_timeline_rect is not None:
+            bottom_margin = max(bottom_margin, screen.get_height() - self.map_history_timeline_rect.y + 12)
+        rect = pygame.Rect(20, screen.get_height() - bottom_margin - height, width, height)
+
+        shadow = rect.move(5, 6)
+        pygame.draw.rect(screen, (4, 6, 9), shadow, border_radius=10)
+        pygame.draw.rect(screen, (18, 23, 30), rect, border_radius=10)
+        pygame.draw.rect(screen, (80, 93, 110), rect, 1, border_radius=10)
+        pygame.draw.rect(screen, (213, 188, 111), (rect.x, rect.y, 5, rect.height), border_radius=3)
+
+        title_font = pygame.font.SysFont("consolas", max(18, font.get_height() + 2), bold=True)
+        name = self._ellipsize_text(model.get("name", "Person"), title_font, rect.width - 145)
+        screen.blit(self._render_text(title_font, name, (239, 239, 235)), (rect.x + 17, rect.y + 12))
+
+        mode = str(model.get("mode") or "Autonomous").upper()
+        mode_surface = self._render_text(font, mode, (177, 213, 189))
+        mode_rect = pygame.Rect(rect.right - mode_surface.get_width() - 27, rect.y + 11, mode_surface.get_width() + 14, 24)
+        pygame.draw.rect(screen, (34, 55, 48), mode_rect, border_radius=12)
+        pygame.draw.rect(screen, (80, 133, 107), mode_rect, 1, border_radius=12)
+        screen.blit(mode_surface, mode_surface.get_rect(center=mode_rect.center))
+
+        subtitle = f"{model.get('person_class', 'person')}  |  {model.get('anchor', 'not anchored')}"
+        subtitle = self._ellipsize_text(subtitle, font, rect.width - 34)
+        screen.blit(self._render_text(font, subtitle, (126, 143, 160)), (rect.x + 17, rect.y + 40))
+
+        task_rect = pygame.Rect(rect.x + 15, rect.y + 65, rect.width - 30, 39)
+        pygame.draw.rect(screen, (25, 31, 40), task_rect, border_radius=6)
+        pygame.draw.rect(screen, (62, 75, 91), task_rect, 1, border_radius=6)
+        phase = str(model.get("active_phase") or "idle").replace("_", " ")
+        queue = int(model.get("queue_count", 0) or 0)
+        task_meta = self._render_text(font, f"{phase}  ·  {queue} queued", (120, 155, 177))
+        screen.blit(task_meta, (task_rect.right - task_meta.get_width() - 10, task_rect.y + 6))
+        task_label_w = max(70, task_rect.width - task_meta.get_width() - 34)
+        task_label = self._ellipsize_text(
+            model.get("active_action") or model.get("active_task", "No active task"),
+            font,
+            task_label_w,
+        )
+        screen.blit(self._render_text(font, task_label, (220, 225, 229)), (task_rect.x + 10, task_rect.y + 6))
+
+        needs = list(model.get("needs") or [])[:3]
+        gap = 10
+        need_w = max(70, (rect.width - 30 - gap * 2) // 3)
+        for index, need in enumerate(needs):
+            nx = rect.x + 15 + index * (need_w + gap)
+            value = max(0.0, min(100.0, float(need.get("value", 0.0) or 0.0)))
+            label = self._render_text(font, f"{need.get('label', 'Need')} {value:.0f}", (174, 184, 193))
+            screen.blit(label, (nx, rect.y + 116))
+            bar = pygame.Rect(nx, rect.y + 138, need_w, 5)
+            pygame.draw.rect(screen, (44, 52, 63), bar, border_radius=3)
+            color = (194, 104, 91) if value < 30 else (207, 169, 91) if value < 60 else (91, 163, 137)
+            pygame.draw.rect(screen, color, (bar.x, bar.y, int(bar.width * value / 100.0), bar.height), border_radius=3)
+
+        affiliations = list(model.get("affiliations") or [])
+        chip_x = rect.x + 15
+        chip_y = rect.y + 153
+        for affiliation in affiliations[:2]:
+            chip_text = f"{affiliation.get('kind', '')}: {affiliation.get('label', '')}"
+            chip_text = self._ellipsize_text(chip_text, font, max(90, (rect.width - 42) // 2))
+            rendered = self._render_text(font, chip_text, (142, 165, 185))
+            chip = pygame.Rect(chip_x, chip_y, rendered.get_width() + 13, 22)
+            if chip.right > rect.right - 15:
+                break
+            pygame.draw.rect(screen, (29, 38, 48), chip, border_radius=11)
+            pygame.draw.rect(screen, (56, 76, 94), chip, 1, border_radius=11)
+            screen.blit(rendered, rendered.get_rect(center=chip.center))
+            chip_x = chip.right + 7
+
+        status = self._ellipsize_text(model.get("status", ""), font, rect.width - 30)
+        screen.blit(self._render_text(font, status, (108, 124, 139)), (rect.x + 15, rect.bottom - 18))
+
+    def _draw_map_empty_state(self, screen, font):
+        if not self.map_empty_state_lines:
+            return
+
+        padding = 18
+        line_gap = 7
+        max_panel_w = min(660, max(360, screen.get_width() - 680))
+        rendered = []
+        for index, line in enumerate(self.map_empty_state_lines):
+            color = (242, 244, 250) if index == 0 else (188, 198, 214)
+            display_line = self._ellipsize_text(str(line), font, max_panel_w - padding * 2)
+            rendered.append(self._render_text(font, display_line, color))
+
+        panel_rect = self.map_empty_state_rect
+        if panel_rect is None:
+            self._layout_map_empty_state(screen.get_width(), screen.get_height(), font)
+            panel_rect = self.map_empty_state_rect
+        if panel_rect is None:
+            return
+
+        pygame.draw.rect(screen, (18, 22, 30), panel_rect)
+        pygame.draw.rect(screen, (112, 130, 164), panel_rect, 1)
+        accent_rect = pygame.Rect(panel_rect.x, panel_rect.y, 4, panel_rect.height)
+        pygame.draw.rect(screen, (218, 185, 90), accent_rect)
+
+        y = panel_rect.y + padding
+        for surface in rendered:
+            screen.blit(surface, (panel_rect.x + padding, y))
+            y += surface.get_height() + line_gap
+
+        for button in self.map_empty_state_buttons:
+            self._draw_button(screen, font, button)
+
+    def _draw_map_layer_selector(self, screen, font):
+        if self.map_layer_selector_rect is None:
+            return
+
+        title = self._render_text(font, "Layer View", (176, 184, 202))
+        screen.blit(title, (self.map_layer_selector_rect.x, self.map_layer_selector_rect.y))
+
+        for item in self.map_layer_selector_items:
+            rect = item.get("rect")
+            if rect is None:
+                continue
+            active = bool(item.get("active"))
+            fill = (54, 60, 76) if active else (30, 35, 46)
+            border = (240, 218, 112) if active else (104, 118, 146)
+            pygame.draw.rect(screen, fill, rect, border_radius=2)
+            pygame.draw.rect(screen, border, rect, 1, border_radius=2)
+
+            swatch = pygame.Rect(rect.x + 8, rect.y + 8, 12, 12)
+            pygame.draw.rect(screen, item.get("color", (120, 130, 150)), swatch)
+            pygame.draw.rect(screen, (210, 216, 228), swatch, 1)
+
+            label = self._short_button_label(item.get("label"), max_chars=11)
+            text = self._render_text(font, label, (242, 244, 250) if active else (204, 210, 222))
+            screen.blit(text, (rect.x + 26, rect.y + 6))
+
+    def _draw_map_location_browser(self, screen, font, x, y):
+        if not self.map_location_browser_items:
+            return 0
+
+        row_h = max(20, font.get_height() + 6)
+        if self.map_location_browser_rect is None:
+            self._layout_map_location_browser(x, y, font)
+        rect = self.map_location_browser_rect
+        if rect is None:
+            return 0
+        pygame.draw.rect(screen, (14, 18, 28), rect)
+        pygame.draw.rect(screen, (92, 108, 136), rect, 1)
+
+        title = self._render_text(font, "Map Locations", (238, 242, 250))
+        screen.blit(title, (rect.x + 10, rect.y + 10))
+
+        row_y = rect.y + 34
+        hitboxes_by_id = {entity_id: hitbox for entity_id, hitbox in self.map_location_browser_hitboxes}
+        for item in self.map_location_browser_items[:len(self.map_location_browser_hitboxes)]:
+            entity_id = str(item.get("id") or "")
+            if not entity_id:
+                continue
+            depth = max(0, int(item.get("depth", 0) or 0))
+            row_rect = hitboxes_by_id.get(entity_id, pygame.Rect(rect.x + 8, row_y, rect.width - 16, row_h))
+            if item.get("active"):
+                pygame.draw.rect(screen, (58, 66, 94), row_rect)
+                pygame.draw.rect(screen, (218, 204, 134), row_rect, 1)
+            else:
+                pygame.draw.rect(screen, (24, 28, 38), row_rect)
+                pygame.draw.rect(screen, (70, 78, 96), row_rect, 1)
+
+            label_prefix = ""
+            if item.get("role") == "parent":
+                label_prefix = "Parent: "
+            elif item.get("role") == "root":
+                label_prefix = "Root: "
+            label = self._ellipsize_text(
+                label_prefix + str(item.get("label") or entity_id),
+                font,
+                row_rect.width - 18 - depth * 16,
+            )
+            text_color = (246, 246, 246) if item.get("active") else (204, 212, 226)
+            text = self._render_text(font, label, text_color)
+            screen.blit(text, (row_rect.x + 8 + depth * 16, row_rect.y + 3))
+            row_y += row_h
+
+        return rect.height
+
+    def _draw_map_legend(self, screen, font, x, y):
+        if not self.map_legend_items:
+            self.map_legend_rect = None
+            return 0
+        row_h = max(19, font.get_height() + 3)
+        width = min(330, max(270, screen.get_width() // 5))
+        height = 34 + row_h * len(self.map_legend_items) + 8
+        rect = pygame.Rect(x, y, width, height)
+        self.map_legend_rect = rect
+        pygame.draw.rect(screen, (14, 18, 28), rect)
+        pygame.draw.rect(screen, (92, 108, 136), rect, 1)
+        screen.blit(self._render_text(font, "Map Legend", (238, 242, 250)), (rect.x + 10, rect.y + 9))
+        row_y = rect.y + 33
+        for item in self.map_legend_items:
+            swatch = pygame.Rect(rect.x + 10, row_y + 3, 13, 13)
+            pygame.draw.rect(screen, item.get("color", (140, 145, 150)), swatch)
+            pygame.draw.rect(screen, (214, 220, 230), swatch, 1)
+            label = self._ellipsize_text(str(item.get("label") or "Legend item"), font, rect.width - 42)
+            screen.blit(self._render_text(font, label, (202, 212, 226)), (rect.x + 31, row_y + 1))
+            row_y += row_h
+        return rect.height
+
+    def _draw_biosphere_stat(self, screen, font, rect, label, value):
+        pygame.draw.rect(screen, (24, 31, 29), rect, border_radius=4)
+        pygame.draw.rect(screen, (67, 88, 73), rect, 1, border_radius=4)
+        screen.blit(self._render_text(font, str(label).upper(), (136, 156, 145)), (rect.x + 10, rect.y + 7))
+        screen.blit(self._render_text(font, str(value), (142, 204, 126)), (rect.x + 10, rect.y + 29))
+
+    def _draw_wrapped_lines(self, screen, font, text, rect, color, max_lines=6):
+        words = str(text or "").split()
+        lines, current = [], ""
+        for word in words:
+            candidate = f"{current} {word}".strip()
+            if current and font.size(candidate)[0] > rect.width:
+                lines.append(current)
+                current = word
+            else:
+                current = candidate
+        if current:
+            lines.append(current)
+        y = rect.y
+        for line in lines[:max_lines]:
+            screen.blit(self._render_text(font, line, color), (rect.x, y))
+            y += font.get_height() + 3
+        return y
+
+    def _biosphere_preview_surface(self, sim, species_id, size):
+        preview = sim.get_species_preview_simulation(species_id) if species_id else None
+        if preview is None:
+            return None
+        width, height = max(80, int(size[0])), max(80, int(size[1]))
+        key = (species_id, width, height, preview.blueprint.fingerprint(), round(float(preview.age_days), 2))
+        cached = self._biosphere_preview_cache.get(key)
+        if cached is not None:
+            return cached
+
+        from simulations.species.species_renderer import DiagnosticCamera, SpeciesRenderer, diagnostic_cell_bounds
+
+        if self._biosphere_species_renderer is None:
+            self._biosphere_species_renderer = SpeciesRenderer(self)
+        surface = pygame.Surface((width, height))
+        camera = DiagnosticCamera(width, height, diagnostic_cell_bounds(preview.render_snapshot))
+        self._biosphere_species_renderer._draw_individual(
+            surface, preview, camera=camera, clear=True, cache=True,
+            draw_ground_line=True, foliage_sample_cap=10,
+        )
+        self._biosphere_preview_cache[key] = surface
+        while len(self._biosphere_preview_cache) > 24:
+            self._biosphere_preview_cache.pop(next(iter(self._biosphere_preview_cache)))
+        return surface
+
+    def _draw_biosphere_builder_workspace(self, screen, font):
+        dashboard = self.biosphere_dashboard or {}
+        top = self.biosphere_top_bar_rect
+        population = self.biosphere_population_rect
+        dock = self.biosphere_tool_dock_rect
+        if top is None or population is None or dock is None:
+            return
+
+        panel_fill, panel_border = (16, 23, 22), (80, 105, 88)
+        for rect in (top, population, dock):
+            pygame.draw.rect(screen, panel_fill, rect, border_radius=5)
+            pygame.draw.rect(screen, panel_border, rect, 1, border_radius=5)
+
+        screen.blit(self._render_text(font, dashboard.get("title", "BIOSPHERE COMMAND"), (226, 236, 220)), (top.x + 14, top.y + 8))
+        stat_x, stat_gap = top.x + 200, 8
+        stat_w = max(112, (top.width - 340) // 4 - stat_gap)
+        stats = (
+            ("Living biomass", f"{float(dashboard.get('biomass_kg', 0.0)):.1f} kg"),
+            ("Colonised area", f"{float(dashboard.get('footprint_m2', 0.0)):.1f} m²"),
+            ("Soil organic matter", f"{float(dashboard.get('soil_organic_matter_kg_m2', 0.0)):.3f} kg/m²"),
+            ("Available nitrogen", f"{float(dashboard.get('available_nitrogen_g_m2', 0.0)):.3f} g/m²"),
+            ("Available phosphorus", f"{float(dashboard.get('available_phosphorus_g_m2', 0.0)):.3f} g/m²"),
+            ("Populations", str(int(dashboard.get("species_count", 0)))),
+        )
+        for index, (label, value) in enumerate(stats):
+            self._draw_biosphere_stat(
+                screen, font, pygame.Rect(stat_x + index * (stat_w + stat_gap), top.y + 10, stat_w, 55), label, value
+            )
+
+        screen.blit(self._render_text(font, "BUILD ECOLOGY", (209, 226, 205)), (population.x + 12, population.y + 12))
+        selected = dashboard.get("selected_species") or "None"
+        screen.blit(self._render_text(font, f"Active placement: {selected}", (159, 180, 164)), (population.x + 12, population.y + 92))
+        stage = str(dashboard.get("soil_stage") or "barren mineral substrate").title()
+        unlock = f"{stage} · succession tier {int(dashboard.get('supported_succession_tier', 0))}"
+        screen.blit(self._render_text(font, unlock, (184, 171, 112)), (population.x + 12, population.y + 114))
+        screen.blit(self._render_text(font, "POPULATION REPRESENTATIVES", (125, 153, 132)), (population.x + 12, population.y + 126))
+
+        screen.blit(self._render_text(font, "BUILD TOOL", (125, 153, 132)), (dock.x + 14, dock.y + 7))
+        time_state = dashboard.get("time") or {}
+        clock = f"YEAR {time_state.get('year', 1)}  ·  {str(time_state.get('season', 'Spring')).upper()}  DAY {time_state.get('day', 1)}"
+        clock_surface = self._render_text(font, clock, (213, 222, 205))
+        screen.blit(clock_surface, (dock.right - clock_surface.get_width() - 14, dock.y + 7))
+        progress_x = dock.x + min(355, dock.width // 3 + 25)
+        progress_rect = pygame.Rect(progress_x, dock.y + 64, max(80, dock.right - progress_x - 294), 5)
+        pygame.draw.rect(screen, (34, 45, 40), progress_rect)
+        fill = progress_rect.copy()
+        fill.width = int(progress_rect.width * float(time_state.get("progress", 0.0) or 0.0))
+        pygame.draw.rect(screen, (100, 173, 103), fill)
+
+        for button in self.buttons:
+            if button.visible and not getattr(button, "biosphere_modal", False):
+                self._draw_button(screen, font, button)
+
+        if self.biosphere_picker_open and self.biosphere_picker_rect is not None:
+            self._draw_biosphere_picker(screen, font)
+
+    def _draw_biosphere_picker(self, screen, font):
+        shade = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        shade.fill((3, 8, 7, 218))
+        screen.blit(shade, (0, 0))
+        modal = self.biosphere_picker_rect
+        pygame.draw.rect(screen, (18, 25, 24), modal, border_radius=7)
+        pygame.draw.rect(screen, (119, 153, 124), modal, 2, border_radius=7)
+        screen.blit(self._render_text(font, "SPECIES CATALOGUE", (231, 239, 225)), (modal.x + 20, modal.y + 17))
+        screen.blit(self._render_text(font, "Inspect a SpeciesSim organism, then deploy it as a population.", (148, 170, 153)), (modal.x + 20, modal.y + 42))
+
+        list_w = min(316, max(250, modal.width // 4))
+        divider_x = modal.x + 20 + list_w + 18
+        detail_w = min(330, max(270, modal.width // 4))
+        detail_x = modal.right - detail_w - 20
+        preview_rect = pygame.Rect(divider_x + 12, modal.y + 82, max(100, detail_x - divider_x - 28), modal.height - 164)
+        detail_rect = pygame.Rect(detail_x, modal.y + 78, detail_w, modal.height - 152)
+        pygame.draw.rect(screen, (12, 18, 17), preview_rect, border_radius=4)
+        pygame.draw.rect(screen, (52, 75, 60), preview_rect, 1, border_radius=4)
+        pygame.draw.rect(screen, (23, 31, 29), detail_rect, border_radius=4)
+        pygame.draw.rect(screen, (65, 86, 71), detail_rect, 1, border_radius=4)
+
+        focused = (self.biosphere_picker_model or {}).get("focused") or {}
+        preview_surface = self._biosphere_preview_surface(self.biosphere_active_sim, focused.get("id"), preview_rect.size)
+        if preview_surface is not None:
+            screen.blit(preview_surface, preview_rect)
+
+        tx, ty = detail_rect.x + 16, detail_rect.y + 15
+        screen.blit(self._render_text(font, focused.get("label", "Select a species"), (231, 237, 226)), (tx, ty))
+        ty += 24
+        screen.blit(self._render_text(font, focused.get("scientific_name", ""), (149, 173, 154)), (tx, ty))
+        ty += 28
+        badge_color = (116, 188, 112) if focused.get("enabled") else (190, 151, 82)
+        screen.blit(self._render_text(font, focused.get("unlock_label", ""), badge_color), (tx, ty))
+        ty += 29
+        ty = self._draw_wrapped_lines(
+            screen, font, focused.get("description", ""), pygame.Rect(tx, ty, detail_rect.width - 32, 96),
+            (194, 205, 194), max_lines=4,
+        ) + 12
+        screen.blit(self._render_text(font, "ECOLOGICAL TRAITS", (128, 158, 135)), (tx, ty))
+        ty += 25
+        for line in focused.get("trait_lines", []):
+            if ty + font.get_height() > detail_rect.bottom - 8:
+                break
+            screen.blit(self._render_text(font, line, (204, 215, 202)), (tx, ty))
+            ty += 21
+
+        page = int((self.biosphere_picker_model or {}).get("page", 0)) + 1
+        page_count = int((self.biosphere_picker_model or {}).get("page_count", 1))
+        page_label = self._render_text(font, f"PAGE {page} / {page_count}", (145, 164, 149))
+        screen.blit(page_label, (modal.x + 20 + (list_w - page_label.get_width()) // 2, modal.bottom - 48))
+        for button in self.buttons:
+            if not button.visible or not getattr(button, "biosphere_modal", False):
+                continue
+            self._draw_button(screen, font, button)
+            item = getattr(button, "catalog_species_item", None)
+            if item:
+                swatch = pygame.Rect(button.rect.x + 8, button.rect.centery - 6, 12, 12)
+                pygame.draw.rect(screen, item.get("color", (100, 140, 100)), swatch)
+                if not item.get("enabled"):
+                    locked = self._render_text(font, "LOCKED", (195, 154, 88))
+                    screen.blit(locked, (button.rect.right - locked.get_width() - 8, button.rect.bottom - locked.get_height() - 4))
+
+    def _draw_map_workspace(self, screen, font):
+        if self.biosphere_ui_active:
+            self._draw_biosphere_builder_workspace(screen, font)
+            self.selection_inspector.draw(screen, font)
+            self._draw_system_menu(screen, font)
+            self._draw_repository_return_confirm(screen, font)
+            return
+        if self.biosphere_ui_active:
+            self._draw_biosphere_builder_workspace(screen, font)
+            self.selection_inspector.draw(screen, font)
+            self._draw_system_menu(screen, font)
+            self._draw_repository_return_confirm(screen, font)
+            return
+        context_lines = list(self.map_context_lines)
+        if self.map_status_lines:
+            if context_lines:
+                context_lines.append("")
+            context_lines.extend(self.map_status_lines)
+
+        current_y = 44
+        if context_lines:
+            map_context_w = min(380, max(300, screen.get_width() // 4))
+            self.map_context_rect = pygame.Rect(
+                20,
+                current_y,
+                map_context_w,
+                self._info_panel_height(font, context_lines),
+            )
+            current_y += self._draw_info_panel(
+                screen,
+                font,
+                20,
+                current_y,
+                context_lines,
+                max_width=map_context_w,
+            ) + 12
+        else:
+            self.map_context_rect = None
+
+        selection_height = self._draw_simulation_selection_inspector(
+            screen,
+            font,
+            20,
+            current_y,
+        )
+        if selection_height:
+            current_y += selection_height + 12
+
+        if self.map_location_browser_items:
+            current_y += self._draw_map_location_browser(screen, font, 20, current_y) + 12
+
+        if self.map_legend_items:
+            current_y += self._draw_map_legend(screen, font, 20, current_y) + 12
+
+        self._draw_map_empty_state(screen, font)
+
+        if self.map_sidebar_rect is not None:
+            pygame.draw.rect(screen, (18, 22, 30), self.map_sidebar_rect)
+            pygame.draw.rect(screen, (104, 118, 146), self.map_sidebar_rect, 1)
+            title = self._render_text(font, "Map Tools", (242, 244, 250))
+            screen.blit(title, (self.map_sidebar_rect.x + 12, self.map_sidebar_rect.y + 10))
+            self._draw_map_layer_selector(screen, font)
+            for section in self.map_sidebar_sections:
+                rect = section.get("rect")
+                if rect is None:
+                    continue
+                pygame.draw.line(screen, (70, 82, 104), (rect.x, rect.centery), (rect.right, rect.centery), 1)
+                label = self._render_text(font, section.get("label", ""), (150, 166, 194))
+                label_bg = pygame.Rect(rect.x + 8, rect.y, label.get_width() + 12, rect.height)
+                pygame.draw.rect(screen, (18, 22, 30), label_bg)
+                screen.blit(label, (label_bg.x + 6, rect.y + 1))
+
+        for button in self.buttons:
+            if not button.visible:
+                continue
+            self._draw_button(screen, font, button)
+
+        if self.map_history_timeline_visible:
+            self.map_history_timeline.draw(screen, font)
+
+        self.selection_inspector.draw(screen, font)
+        self._draw_hover_tooltip(screen, font)
+        self._draw_system_menu(screen, font)
+        self._draw_repository_return_confirm(screen, font)
+
+    def _draw_system_menu(self, screen, font):
+        if not self.system_menu_active or self.system_menu_rect is None:
+            return
+
+        overlay = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        screen.blit(overlay, (0, 0))
+
+        pygame.draw.rect(screen, (24, 26, 32), self.system_menu_rect)
+        pygame.draw.rect(screen, (210, 210, 210), self.system_menu_rect, 1)
+
+        title = "Settings" if self.system_settings_active else "Menu"
+        if self.system_settings_active:
+            subtitle = getattr(self.knowledge_ui, "ontology_checkpoint_status", "") or "Display / phylogeny / ontology options"
+        else:
+            subtitle = "Simulation paused"
+        title_surface = self._render_text(font, title, (245, 245, 245))
+        subtitle_surface = self._render_text(font, subtitle, (175, 175, 180))
+        screen.blit(title_surface, (self.system_menu_rect.x + 22, self.system_menu_rect.y + 20))
+        screen.blit(subtitle_surface, (self.system_menu_rect.x + 22, self.system_menu_rect.y + 42))
+
+        if self.system_settings_active:
+            checkpoint_progress = getattr(self.knowledge_ui, "ontology_checkpoint_progress", None)
+            if checkpoint_progress is not None:
+                checkpoint_progress = max(0.0, min(1.0, float(checkpoint_progress)))
+                bar_rect = pygame.Rect(
+                    self.system_menu_rect.x + 22,
+                    self.system_menu_rect.y + 64,
+                    self.system_menu_rect.width - 84,
+                    8,
+                )
+                fill_rect = pygame.Rect(
+                    bar_rect.x + 1,
+                    bar_rect.y + 1,
+                    int(round((bar_rect.width - 2) * checkpoint_progress)),
+                    bar_rect.height - 2,
+                )
+                pygame.draw.rect(screen, (38, 42, 52), bar_rect)
+                pygame.draw.rect(screen, (105, 116, 136), bar_rect, 1)
+                if fill_rect.width > 0:
+                    fill_color = (104, 190, 132) if checkpoint_progress >= 1.0 else (112, 166, 218)
+                    pygame.draw.rect(screen, fill_color, fill_rect)
+                percent_surface = self._render_text(
+                    font,
+                    f"{int(round(checkpoint_progress * 100))}%",
+                    (192, 204, 220),
+                )
+                screen.blit(
+                    percent_surface,
+                    percent_surface.get_rect(midleft=(bar_rect.right + 8, bar_rect.centery)),
+                )
+
+        for button in self.system_menu_buttons:
+            self._draw_button(screen, font, button)
+
+    def _draw_repository_return_confirm(self, screen, font):
+        if (
+            not self.repository_return_confirm_active
+            or self.repository_return_confirm_rect is None
+        ):
+            return
+
+        overlay = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 145))
+        screen.blit(overlay, (0, 0))
+
+        rect = self.repository_return_confirm_rect
+        pygame.draw.rect(screen, (24, 26, 32), rect)
+        pygame.draw.rect(screen, (220, 220, 220), rect, 1)
+
+        title_surface = self._render_text(font, "Return to Repository?", (245, 245, 245))
+        detail_surface = self._render_text(
+            font,
+            "Press Esc again to confirm, or choose Stay.",
+            (180, 184, 194),
+        )
+        screen.blit(title_surface, (rect.x + 22, rect.y + 22))
+        screen.blit(detail_surface, (rect.x + 22, rect.y + 50))
+
+        for button in self.repository_return_confirm_buttons:
+            self._draw_button(screen, font, button)
 
     def _draw_timeline_bar(self, screen, x, y, w, h):
         pygame.draw.rect(screen, (30, 30, 34), (x, y, w, h))
@@ -835,7 +3727,7 @@ class UIManager:
         for i, label in enumerate(labels):
             frac = i / 4
             lx = x + int(round(w * frac))
-            text_surface = font.render(label, True, (220, 220, 220))
+            text_surface = self._render_text(font, label, (220, 220, 220))
 
             if i == 0:
                 draw_x = lx
@@ -846,17 +3738,598 @@ class UIManager:
 
             screen.blit(text_surface, (draw_x, y))
 
+    def _draw_person_panel_icons(self, screen, font):
+        for item in self.person_panel_icons:
+            rect = item["rect"]
+            active = item["id"] == self.person_panel_mode
+            fill = (54, 62, 78) if active else (28, 32, 40)
+            border = (230, 207, 126) if active else (142, 153, 173)
+            pygame.draw.rect(screen, fill, rect, border_radius=5)
+            pygame.draw.rect(screen, border, rect, 2, border_radius=5)
+
+            cx, cy = rect.center
+            if item["id"] == "needs":
+                for row in range(3):
+                    width = 10 + row * 7
+                    y = cy - 11 + row * 9
+                    pygame.draw.polygon(
+                        screen,
+                        (203, 184, 119),
+                        [(cx - width // 2, y + 6), (cx + width // 2, y + 6), (cx, y)],
+                    )
+            elif item["id"] == "personality":
+                points = []
+                for index in range(5):
+                    angle = -math.pi / 2 + index * math.tau / 5
+                    points.append((cx + math.cos(angle) * 14, cy + math.sin(angle) * 14))
+                pygame.draw.polygon(screen, (111, 157, 188), points, 2)
+                pygame.draw.circle(screen, (184, 211, 225), (cx, cy), 3)
+            elif item["id"] == "knowledge":
+                book_color = (132, 177, 202)
+                pygame.draw.line(screen, book_color, (cx, cy - 12), (cx, cy + 13), 2)
+                pygame.draw.lines(
+                    screen, book_color, False,
+                    [(cx - 2, cy - 10), (cx - 15, cy - 13), (cx - 15, cy + 9), (cx - 2, cy + 12)], 2,
+                )
+                pygame.draw.lines(
+                    screen, book_color, False,
+                    [(cx + 2, cy - 10), (cx + 15, cy - 13), (cx + 15, cy + 9), (cx + 2, cy + 12)], 2,
+                )
+                pygame.draw.circle(screen, (218, 194, 113), (cx + 12, cy - 10), 3)
+            elif item["id"] == "tasks":
+                task_color = (127, 183, 145)
+                for row in range(3):
+                    row_y = cy - 11 + row * 11
+                    pygame.draw.rect(screen, task_color, (cx - 15, row_y, 6, 6), 1)
+                    pygame.draw.line(screen, task_color, (cx - 5, row_y + 3), (cx + 15, row_y + 3), 2)
+            else:
+                item_color = (191, 158, 105)
+                pygame.draw.rect(screen, item_color, (cx - 15, cy - 11, 30, 24), 2, border_radius=3)
+                pygame.draw.line(screen, item_color, (cx - 15, cy - 3), (cx + 15, cy - 3), 2)
+                pygame.draw.line(screen, item_color, (cx, cy - 11), (cx, cy - 3), 2)
+                pygame.draw.circle(screen, (224, 206, 157), (cx, cy + 5), 3)
+
+            if self.person_panel_mode is None:
+                label = self._render_text(font, item["label"], (220, 225, 232))
+                label_x = rect.x - label.get_width() - 8
+                screen.blit(label, (label_x, rect.centery - label.get_height() // 2))
+
+    def _draw_panel_heading(self, screen, font, text, x, y, color=(231, 232, 235)):
+        heading_font = pygame.font.SysFont("consolas", max(17, font.get_height() + 2), bold=True)
+        screen.blit(self._render_text(heading_font, text, color), (x, y))
+
+    def _draw_person_needs_panel(self, screen, font, rect, model):
+        content = rect.inflate(-28, -64)
+        content.y += 34
+        content.height -= 34
+        left_w = max(250, int(content.width * 0.53))
+        pyramid_rect = pygame.Rect(content.x, content.y + 20, left_w, content.height - 34)
+        right_rect = pygame.Rect(
+            pyramid_rect.right + 22,
+            content.y,
+            max(170, content.right - pyramid_rect.right - 22),
+            content.height,
+        )
+
+        tiers = list(model.get("tiers") or [])[:5]
+        if tiers:
+            apex_y = pyramid_rect.y + 22
+            base_y = pyramid_rect.bottom - 18
+            total_h = max(100, base_y - apex_y)
+            tier_h = total_h / len(tiers)
+            center_x = pyramid_rect.centerx
+            max_half = max(90, pyramid_rect.width * 0.47)
+            for tier_index, tier in enumerate(tiers):
+                top_y = base_y - (tier_index + 1) * tier_h
+                bottom_y = base_y - tier_index * tier_h
+                top_half = max_half * ((top_y - apex_y) / total_h)
+                bottom_half = max_half * ((bottom_y - apex_y) / total_h)
+                score = max(0.0, min(1.0, float(tier.get("score", 0.0) or 0.0)))
+                deprived = (164, 88, 80)
+                satisfied = (78, 145, 132)
+                fill = tuple(
+                    int(deprived[channel] + (satisfied[channel] - deprived[channel]) * score)
+                    for channel in range(3)
+                )
+                polygon = [
+                    (int(center_x - top_half), int(top_y)),
+                    (int(center_x + top_half), int(top_y)),
+                    (int(center_x + bottom_half), int(bottom_y)),
+                    (int(center_x - bottom_half), int(bottom_y)),
+                ]
+                pygame.draw.polygon(screen, fill, polygon)
+                pygame.draw.polygon(screen, (196, 199, 202), polygon, 1)
+                label = f"{tier.get('label', 'Need')}  {score * 100:.0f}"
+                label_surface = self._render_text(font, label, (246, 246, 240))
+                label_y = int((top_y + bottom_y) / 2 - label_surface.get_height() / 2)
+                if label_surface.get_width() < bottom_half * 1.75:
+                    screen.blit(
+                        label_surface,
+                        (center_x - label_surface.get_width() // 2, label_y),
+                    )
+                else:
+                    compact_label = tier.get("label", "Need").replace("Self-actualization", "Self-actual.")
+                    compact = self._render_text(font, f"{compact_label} {score * 100:.0f}", (220, 224, 226))
+                    compact_x = pyramid_rect.x + 2
+                    screen.blit(compact, (compact_x, label_y))
+                    line_start = (compact_x + compact.get_width() + 5, int((top_y + bottom_y) / 2))
+                    line_end = (int(center_x - (top_half + bottom_half) / 2 - 4), line_start[1])
+                    if line_end[0] > line_start[0]:
+                        pygame.draw.line(screen, (134, 145, 157), line_start, line_end, 1)
+
+            note = self._render_text(
+                font,
+                "Current fulfillment (0 deprived - 100 fulfilled)",
+                (153, 163, 177),
+            )
+            screen.blit(note, (pyramid_rect.centerx - note.get_width() // 2, pyramid_rect.bottom - 4))
+
+        section_y = right_rect.y
+        for title, key, accent in (
+            ("Wishes", "wishes", (191, 151, 105)),
+            ("Goals", "goals", (112, 164, 130)),
+        ):
+            section_h = max(150, (right_rect.height - 16) // 2)
+            section_rect = pygame.Rect(right_rect.x, section_y, right_rect.width, section_h)
+            pygame.draw.rect(screen, (24, 28, 36), section_rect, border_radius=6)
+            pygame.draw.rect(screen, (83, 92, 108), section_rect, 1, border_radius=6)
+            pygame.draw.rect(screen, accent, (section_rect.x, section_rect.y, 5, section_rect.height), border_radius=3)
+            self._draw_panel_heading(screen, font, title, section_rect.x + 14, section_rect.y + 10, accent)
+            row_y = section_rect.y + 42
+            rows = list(model.get(key) or [])
+            if not rows:
+                rows = [{"label": "None currently recorded", "source": ""}]
+            for item in rows[:5]:
+                label = self._ellipsize_text(item.get("label", ""), font, section_rect.width - 32)
+                screen.blit(self._render_text(font, f"- {label}", (223, 226, 231)), (section_rect.x + 14, row_y))
+                source = str(item.get("source") or "").strip()
+                if source:
+                    source_text = self._ellipsize_text(source, font, section_rect.width - 42)
+                    screen.blit(self._render_text(font, source_text, (130, 141, 157)), (section_rect.x + 28, row_y + 19))
+                    row_y += 42
+                else:
+                    row_y += 25
+                if row_y > section_rect.bottom - 24:
+                    break
+            section_y += section_h + 16
+
+    def _draw_personality_panel(self, screen, font, rect, model):
+        axes = list(model.get("axes") or [])[:5]
+        chart_center = (rect.x + int(rect.width * 0.36), rect.y + int(rect.height * 0.53))
+        radius = min(165, int(rect.height * 0.29), int(rect.width * 0.25))
+        angles = [-math.pi / 2 + index * math.tau / 5 for index in range(5)]
+
+        for fraction in (0.25, 0.5, 0.75, 1.0):
+            ring = [
+                (
+                    chart_center[0] + math.cos(angle) * radius * fraction,
+                    chart_center[1] + math.sin(angle) * radius * fraction,
+                )
+                for angle in angles
+            ]
+            pygame.draw.polygon(screen, (67, 76, 91), ring, 1)
+        for angle in angles:
+            endpoint = (
+                chart_center[0] + math.cos(angle) * radius,
+                chart_center[1] + math.sin(angle) * radius,
+            )
+            pygame.draw.line(screen, (67, 76, 91), chart_center, endpoint, 1)
+
+        if len(axes) == 5:
+            value_points = []
+            for axis, angle in zip(axes, angles):
+                value = max(0.0, min(1.0, float(axis.get("value", 0.5) or 0.0)))
+                value_points.append(
+                    (
+                        chart_center[0] + math.cos(angle) * radius * value,
+                        chart_center[1] + math.sin(angle) * radius * value,
+                    )
+                )
+            fill_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+            pygame.draw.polygon(fill_surface, (76, 144, 179, 82), value_points)
+            screen.blit(fill_surface, (0, 0))
+            pygame.draw.polygon(screen, (132, 194, 221), value_points, 3)
+            for axis, point in zip(axes, value_points):
+                pygame.draw.circle(
+                    screen,
+                    (204, 225, 232) if axis.get("authored") else (116, 122, 134),
+                    (int(point[0]), int(point[1])),
+                    5,
+                    0 if axis.get("authored") else 2,
+                )
+
+        list_x = rect.x + int(rect.width * 0.69)
+        for index, (axis, angle) in enumerate(zip(axes, angles)):
+            label_radius = radius + 34
+            x = chart_center[0] + math.cos(angle) * label_radius
+            y = chart_center[1] + math.sin(angle) * label_radius
+            label = self._render_text(font, axis.get("label", "Axis"), (218, 222, 229))
+            if math.cos(angle) < -0.2:
+                x -= label.get_width()
+            elif abs(math.cos(angle)) <= 0.2:
+                x -= label.get_width() // 2
+            if math.sin(angle) < -0.2:
+                y -= label.get_height()
+            x = min(x, list_x - label.get_width() - 16)
+            screen.blit(label, (int(x), int(y)))
+
+        list_y = rect.y + 86
+        for axis in axes:
+            value = float(axis.get("value", 0.5) or 0.0)
+            authored = bool(axis.get("authored"))
+            name = axis.get("label", "Axis")
+            screen.blit(self._render_text(font, name, (224, 226, 232)), (list_x, list_y))
+            bar_rect = pygame.Rect(list_x, list_y + 22, max(90, rect.right - list_x - 34), 10)
+            pygame.draw.rect(screen, (45, 50, 60), bar_rect, border_radius=4)
+            pygame.draw.rect(
+                screen,
+                (105, 166, 190) if authored else (92, 96, 106),
+                (bar_rect.x, bar_rect.y, int(bar_rect.width * value), bar_rect.height),
+                border_radius=4,
+            )
+            score_text = f"{value * 100:.0f}" if authored else "50 preview - not authored"
+            screen.blit(self._render_text(font, score_text, (145, 155, 170)), (list_x, list_y + 36))
+            list_y += 69
+
+        markers = list(model.get("adjective_markers") or [])
+        footer = "Markers: " + (", ".join(markers[:5]) if markers else "none authored")
+        footer = self._ellipsize_text(footer, font, rect.width - 50)
+        screen.blit(self._render_text(font, footer, (153, 162, 176)), (rect.x + 24, rect.bottom - 36))
+
+    def _draw_person_knowledge_panel(self, screen, font, rect, model):
+        content = pygame.Rect(rect.x + 20, rect.y + 76, rect.width - 40, rect.height - 96)
+        categories = list(model.get("categories") or [])
+        gap = 14
+        column_w = (content.width - gap) // 2
+        cursors = [content.y, content.y]
+        accents = (
+            (116, 166, 194), (137, 177, 139), (190, 154, 103),
+            (163, 132, 190), (181, 125, 116), (113, 174, 174),
+        )
+        for index, category in enumerate(categories[:8]):
+            column = index % 2
+            entries = list(category.get("entries") or [])[:4]
+            card_h = 48 + len(entries) * 57
+            if cursors[column] + card_h > content.bottom:
+                continue
+            card = pygame.Rect(content.x + column * (column_w + gap), cursors[column], column_w, card_h)
+            accent = accents[index % len(accents)]
+            pygame.draw.rect(screen, (24, 29, 37), card, border_radius=7)
+            pygame.draw.rect(screen, (72, 82, 98), card, 1, border_radius=7)
+            pygame.draw.rect(screen, accent, (card.x, card.y, 5, card.height), border_radius=3)
+            heading = f"{category.get('label', 'Knowledge')}  {len(category.get('entries') or [])}"
+            self._draw_panel_heading(screen, font, heading, card.x + 14, card.y + 9, accent)
+            y = card.y + 42
+            for entry in entries:
+                interest = max(0.0, min(1.0, float(entry.get("interest", 0.0) or 0.0)))
+                label = self._ellipsize_text(entry.get("label", "Unknown"), font, card.width - 76)
+                screen.blit(self._render_text(font, label, (227, 230, 235)), (card.x + 15, y))
+                score = self._render_text(font, f"{interest * 100:.0f}", accent)
+                screen.blit(score, (card.right - score.get_width() - 14, y))
+                bar = pygame.Rect(card.x + 15, y + 22, card.width - 30, 7)
+                pygame.draw.rect(screen, (43, 49, 59), bar, border_radius=3)
+                pygame.draw.rect(screen, accent, (bar.x, bar.y, int(bar.width * interest), bar.height), border_radius=3)
+                wayfinding = str(entry.get("navigation_knowledge") or "").strip()
+                detail = (
+                    f"{wayfinding} knowledge"
+                    if wayfinding
+                    else str(entry.get("stance") or entry.get("source") or entry.get("entity_type") or "known")
+                )
+                conviction = float(entry.get("conviction", 0.0) or 0.0)
+                if conviction > 0:
+                    detail += f"  |  conviction {conviction * 100:.0f}"
+                detail = self._ellipsize_text(detail, font, card.width - 30)
+                screen.blit(self._render_text(font, detail, (133, 145, 160)), (card.x + 15, y + 33))
+                y += 57
+            cursors[column] = card.bottom + gap
+
+    def _draw_person_tasks_panel(self, screen, font, rect, model):
+        content = pygame.Rect(rect.x + 20, rect.y + 76, rect.width - 40, rect.height - 96)
+        left = pygame.Rect(content.x, content.y, int(content.width * 0.55), content.height)
+        right = pygame.Rect(left.right + 14, content.y, content.right - left.right - 14, content.height)
+        active = model.get("active")
+        active_rect = pygame.Rect(left.x, left.y, left.width, 190)
+        pygame.draw.rect(screen, (27, 32, 41), active_rect, border_radius=7)
+        pygame.draw.rect(screen, (95, 111, 132), active_rect, 1, border_radius=7)
+        self._draw_panel_heading(screen, font, "Current decision", active_rect.x + 14, active_rect.y + 10, (218, 194, 113))
+        if active:
+            score = float(active.get("decision_score", 0.0) or 0.0)
+            title = self._ellipsize_text(active.get("label", "Task"), font, active_rect.width - 92)
+            screen.blit(self._render_text(font, title, (234, 235, 238)), (active_rect.x + 14, active_rect.y + 43))
+            score_text = self._render_text(font, f"{score:.0f}", (218, 194, 113))
+            screen.blit(score_text, (active_rect.right - score_text.get_width() - 14, active_rect.y + 43))
+            source = active.get("issuer_label") or active.get("allocation_kind") or active.get("source", "internal")
+            screen.blit(self._render_text(font, f"Source: {source}", (139, 153, 170)), (active_rect.x + 14, active_rect.y + 67))
+            lifecycle = str(active.get("lifecycle_state") or active.get("phase") or "proposed").replace("_", " ")
+            action = str(active.get("action_label") or active.get("label") or "Task")
+            action = self._ellipsize_text(action, font, active_rect.width - 132)
+            screen.blit(
+                self._render_text(font, f"{lifecycle.upper()}  |  {action}", (137, 187, 174)),
+                (active_rect.x + 14, active_rect.y + 87),
+            )
+            navigation = model.get("navigation") or {}
+            navigation_mode = str(navigation.get("mode") or "idle").replace("_", " ")
+            explanation_y = active_rect.y + 112
+            explanation_limit = 4
+            if navigation_mode != "idle":
+                nav_text = self._ellipsize_text(
+                    f"Wayfinding: {navigation_mode} · {model.get('status', '')}",
+                    font,
+                    active_rect.width - 28,
+                )
+                screen.blit(self._render_text(font, nav_text, (139, 176, 201)), (active_rect.x + 14, active_rect.y + 109))
+                explanation_y = active_rect.y + 132
+                explanation_limit = 3
+            explanation = str(active.get("decision_explanation") or "No explanation recorded")
+            words = explanation.split()
+            lines = []
+            current = ""
+            for word in words:
+                candidate = f"{current} {word}".strip()
+                if font.size(candidate)[0] > active_rect.width - 28 and current:
+                    lines.append(current)
+                    current = word
+                else:
+                    current = candidate
+            if current:
+                lines.append(current)
+            for line_index, line in enumerate(lines[:explanation_limit]):
+                screen.blit(self._render_text(font, line, (186, 194, 205)), (active_rect.x + 14, explanation_y + line_index * 18))
+        else:
+            screen.blit(self._render_text(font, "No active task", (145, 155, 168)), (active_rect.x + 14, active_rect.y + 50))
+
+        self._draw_panel_heading(screen, font, "Competing pressures", left.x, active_rect.bottom + 18, (126, 174, 149))
+        y = active_rect.bottom + 48
+        for task in list(model.get("comparisons") or [])[:6]:
+            row = pygame.Rect(left.x, y, left.width, 48)
+            pygame.draw.rect(screen, (23, 27, 34), row, border_radius=4)
+            label = self._ellipsize_text(task.get("label", "Task"), font, row.width - 100)
+            screen.blit(self._render_text(font, label, (218, 222, 228)), (row.x + 10, row.y + 6))
+            score = float(task.get("decision_score", 0.0) or 0.0)
+            color = (179, 112, 106) if score < 0 else (119, 175, 143)
+            score_surface = self._render_text(font, f"{score:+.0f}", color)
+            screen.blit(score_surface, (row.right - score_surface.get_width() - 10, row.y + 6))
+            response = self._ellipsize_text(task.get("likely_response", task.get("source", "")), font, row.width - 20)
+            screen.blit(self._render_text(font, response, (132, 144, 159)), (row.x + 10, row.y + 26))
+            y += 54
+            if y > left.bottom - 42:
+                break
+
+        pygame.draw.rect(screen, (24, 29, 37), right, border_radius=7)
+        pygame.draw.rect(screen, (72, 82, 98), right, 1, border_radius=7)
+        self._draw_panel_heading(screen, font, "Allocation & history", right.x + 14, right.y + 10, (137, 166, 198))
+        counts = f"External {model.get('external_count', 0)}  |  Internal {model.get('internal_count', 0)}"
+        screen.blit(self._render_text(font, counts, (151, 164, 181)), (right.x + 14, right.y + 42))
+        y = right.y + 76
+        for entry in list(model.get("history") or [])[:5]:
+            event = str(entry.get("event") or "decision").upper()
+            screen.blit(self._render_text(font, event, (218, 194, 113)), (right.x + 14, y))
+            label = self._ellipsize_text(entry.get("label", "Task"), font, right.width - 28)
+            screen.blit(self._render_text(font, label, (225, 228, 232)), (right.x + 14, y + 20))
+            explanation = self._ellipsize_text(entry.get("explanation", ""), font, right.width - 28)
+            screen.blit(self._render_text(font, explanation, (126, 139, 155)), (right.x + 14, y + 40))
+            y += 77
+            if y > right.bottom - 58:
+                break
+        status = self._ellipsize_text(model.get("status", ""), font, right.width - 28)
+        screen.blit(self._render_text(font, status, (143, 181, 153)), (right.x + 14, right.bottom - 31))
+
+    def _draw_person_inventory_panel(self, screen, font, rect, model):
+        content = pygame.Rect(rect.x + 20, rect.y + 78, rect.width - 40, rect.height - 98)
+        left = pygame.Rect(content.x, content.y, int(content.width * 0.55), content.height)
+        right = pygame.Rect(left.right + 14, content.y, content.right - left.right - 14, content.height)
+
+        self._draw_panel_heading(screen, font, "Carried items", left.x, left.y, (220, 190, 130))
+        count_text = (
+            f"{model.get('held_stack_count', 0)} stacks  |  "
+            f"{model.get('held_unit_count', 0)} units"
+        )
+        screen.blit(self._render_text(font, count_text, (137, 150, 166)), (left.x, left.y + 28))
+        y = left.y + 58
+        held = list(model.get("held_items") or [])
+        if not held:
+            empty = pygame.Rect(left.x, y, left.width, 66)
+            pygame.draw.rect(screen, (24, 29, 37), empty, border_radius=6)
+            pygame.draw.rect(screen, (69, 79, 94), empty, 1, border_radius=6)
+            screen.blit(self._render_text(font, "No items carried", (143, 154, 168)), (empty.x + 14, empty.y + 22))
+        for entry in held[:7]:
+            card = pygame.Rect(left.x, y, left.width, 64)
+            pygame.draw.rect(screen, (25, 31, 39), card, border_radius=6)
+            pygame.draw.rect(screen, (83, 92, 105), card, 1, border_radius=6)
+            label = self._ellipsize_text(entry.get("label", "Item"), font, card.width - 110)
+            screen.blit(self._render_text(font, label, (229, 230, 226)), (card.x + 13, card.y + 9))
+            quantity = f"x{entry.get('quantity', 0)}"
+            quantity_surface = self._render_text(font, quantity, (224, 195, 130))
+            screen.blit(quantity_surface, (card.right - quantity_surface.get_width() - 13, card.y + 9))
+            detail = str(entry.get("category_label") or "item")
+            if entry.get("consumable"):
+                detail += f"  |  food +{entry.get('food_satiation', 0)}"
+            detail = self._ellipsize_text(detail, font, card.width - 26)
+            screen.blit(self._render_text(font, detail, (132, 148, 163)), (card.x + 13, card.y + 35))
+            y += 72
+            if y > left.bottom - 60:
+                break
+
+        pygame.draw.rect(screen, (23, 28, 36), right, border_radius=7)
+        pygame.draw.rect(screen, (72, 83, 98), right, 1, border_radius=7)
+        self._draw_panel_heading(screen, font, "Nearby storage", right.x + 14, right.y + 12, (143, 184, 190))
+        y = right.y + 48
+        nearby = list(model.get("nearby_items") or [])
+        if not nearby:
+            screen.blit(self._render_text(font, "No accessible stock listed", (137, 148, 162)), (right.x + 14, y))
+            y += 34
+        for entry in nearby[:4]:
+            label = self._ellipsize_text(entry.get("label", "Item"), font, right.width - 85)
+            screen.blit(self._render_text(font, label, (220, 224, 226)), (right.x + 14, y))
+            qty = self._render_text(font, f"x{entry.get('quantity', 0)}", (220, 190, 126))
+            screen.blit(qty, (right.right - qty.get_width() - 14, y))
+            holder = self._ellipsize_text(entry.get("holder_label", "storage"), font, right.width - 28)
+            screen.blit(self._render_text(font, holder, (127, 148, 159)), (right.x + 14, y + 21))
+            y += 52
+
+        self._draw_panel_heading(screen, font, "Recent item movements", right.x + 14, y + 8, (156, 175, 201))
+        y += 42
+        history = list(model.get("history") or [])
+        if not history:
+            screen.blit(self._render_text(font, "No transfers yet", (135, 146, 159)), (right.x + 14, y))
+        for entry in history[:5]:
+            delta = float(entry.get("delta", 0) or 0)
+            color = (123, 190, 151) if delta > 0 else (199, 133, 117)
+            delta_surface = self._render_text(font, f"{delta:+g}", color)
+            screen.blit(delta_surface, (right.x + 14, y))
+            label = self._ellipsize_text(entry.get("label", "Item"), font, right.width - 75)
+            screen.blit(self._render_text(font, label, (221, 224, 228)), (right.x + 58, y))
+            reason = self._ellipsize_text(entry.get("reason", ""), font, right.width - 28)
+            screen.blit(self._render_text(font, reason, (125, 139, 154)), (right.x + 14, y + 20))
+            y += 51
+            if y > right.bottom - 28:
+                break
+
+    def _draw_person_panel(self, screen, font):
+        rect = self.person_panel_rect
+        model = self.person_panel_model
+        if rect is None or model is None or self.person_panel_mode not in {"needs", "personality", "knowledge", "tasks", "inventory"}:
+            return
+
+        shadow = rect.move(7, 8)
+        pygame.draw.rect(screen, (4, 5, 8), shadow, border_radius=8)
+        pygame.draw.rect(screen, (18, 22, 29), rect, border_radius=8)
+        pygame.draw.rect(screen, (151, 161, 178), rect, 2, border_radius=8)
+        title = {
+            "needs": "Needs, wishes & goals",
+            "personality": "Personality - Big Five",
+            "knowledge": "Knowledge & interests",
+            "tasks": "Task allocation & decisions",
+            "inventory": "Items & inventory",
+        }[self.person_panel_mode]
+        self._draw_panel_heading(screen, font, title, rect.x + 20, rect.y + 16)
+        subtitle = self._ellipsize_text(model.get("person_name", "Person"), font, rect.width - 100)
+        screen.blit(self._render_text(font, subtitle, (137, 149, 166)), (rect.x + 21, rect.y + 44))
+        if self.person_panel_close_rect is not None:
+            pygame.draw.rect(screen, (39, 44, 54), self.person_panel_close_rect, border_radius=4)
+            pygame.draw.rect(screen, (119, 130, 146), self.person_panel_close_rect, 1, border_radius=4)
+            close = self._render_text(font, "x", (225, 228, 232))
+            screen.blit(close, close.get_rect(center=self.person_panel_close_rect.center))
+
+        if self.person_panel_mode == "needs":
+            self._draw_person_needs_panel(screen, font, rect, model)
+        elif self.person_panel_mode == "personality":
+            self._draw_personality_panel(screen, font, rect, model)
+        elif self.person_panel_mode == "knowledge":
+            self._draw_person_knowledge_panel(screen, font, rect, model)
+        elif self.person_panel_mode == "tasks":
+            self._draw_person_tasks_panel(screen, font, rect, model)
+        else:
+            self._draw_person_inventory_panel(screen, font, rect, model)
+
+    def _draw_pop_composition(self, screen, font, top_y):
+        model = self.pop_panel_model
+        if not model:
+            return
+
+        rect = pygame.Rect(20, top_y, 620, 520)
+        shadow = rect.move(7, 8)
+        pygame.draw.rect(screen, (4, 5, 8), shadow, border_radius=8)
+        pygame.draw.rect(screen, (18, 22, 29), rect, border_radius=8)
+        pygame.draw.rect(screen, (151, 161, 178), rect, 2, border_radius=8)
+
+        self._draw_panel_heading(screen, font, "Population composition", rect.x + 20, rect.y + 16)
+        total = model.get("total_population", 0)
+        derived_note = " (derived)" if model.get("is_derived_count") else ""
+        subtitle = f"{model.get('pop_type', 'unspecified')} pop · {total} people{derived_note}"
+        screen.blit(self._render_text(font, subtitle, (137, 149, 166)), (rect.x + 21, rect.y + 44))
+
+        y = rect.y + 74
+        if model.get("employer_label"):
+            screen.blit(
+                self._render_text(font, f"Employer: {model['employer_label']}", (170, 178, 190)),
+                (rect.x + 21, y),
+            )
+            y += 22
+        parent_pop = model.get("parent_pop")
+        if parent_pop:
+            screen.blit(
+                self._render_text(font, f"Category: {parent_pop.get('label')}", (170, 178, 190)),
+                (rect.x + 21, y),
+            )
+            y += 22
+        sex_ratio = model.get("sex_ratio")
+        if sex_ratio is not None:
+            screen.blit(
+                self._render_text(font, f"Sex ratio (female): {float(sex_ratio) * 100:.0f}%", (170, 178, 190)),
+                (rect.x + 21, y),
+            )
+            y += 22
+        y += 8
+
+        composition = model.get("composition") or []
+        if composition:
+            screen.blit(self._render_text(font, "Recruited from", (210, 214, 222)), (rect.x + 21, y))
+            y += 24
+            bar_x = rect.x + 21
+            bar_w = rect.width - 42
+            for row in composition:
+                fraction = max(0.0, min(1.0, float(row.get("fraction") or 0.0)))
+                bar_rect = pygame.Rect(bar_x, y, bar_w, 18)
+                pygame.draw.rect(screen, (30, 36, 46), bar_rect, border_radius=3)
+                fill_rect = pygame.Rect(bar_x, y, int(bar_w * fraction), 18)
+                pygame.draw.rect(screen, (96, 148, 176), fill_rect, border_radius=3)
+                label = f"{row.get('label')} — {row.get('count')} ({fraction * 100:.0f}%)"
+                screen.blit(self._render_text(font, label, (225, 228, 232)), (bar_x + 8, y + 1))
+                y += 24
+            y += 10
+
+        age_buckets = model.get("age_buckets") or []
+        if age_buckets:
+            screen.blit(self._render_text(font, "Age distribution", (210, 214, 222)), (rect.x + 21, y))
+            y += 20
+            chart_h = 90
+            bucket_w = (rect.width - 42) / max(1, len(age_buckets))
+            max_fraction = max((bucket.get("fraction") or 0.0) for bucket in age_buckets) or 1.0
+            for index, bucket in enumerate(age_buckets):
+                fraction = float(bucket.get("fraction") or 0.0)
+                bar_h = int(chart_h * (fraction / max_fraction))
+                bx = int(rect.x + 21 + index * bucket_w)
+                bar_rect = pygame.Rect(bx, y + (chart_h - bar_h), int(bucket_w) - 4, bar_h)
+                pygame.draw.rect(screen, (139, 122, 168), bar_rect, border_radius=2)
+                age_label = self._render_text(font, bucket.get("range_label", ""), (150, 156, 168))
+                screen.blit(age_label, (bx, y + chart_h + 4))
+            y += chart_h + 26
+
+        nested_children = model.get("nested_children") or []
+        if nested_children:
+            screen.blit(self._render_text(font, "Nested employment pops", (210, 214, 222)), (rect.x + 21, y))
+            y += 22
+            for child in nested_children:
+                line = f"{child.get('label')} — {child.get('total_population')} people"
+                screen.blit(self._render_text(font, line, (200, 204, 214)), (rect.x + 30, y))
+                y += 20
+
     def draw(self, screen, font):
         self.app_font = font
+        if self.regional_loading_active:
+            return
+        if self.vehicle_pixel_editor_ui is not None:
+            self.vehicle_pixel_editor_ui.draw(screen, font)
+            return
         self._draw_tab_strip(screen, font)
 
         if self.menu_active:
             self.knowledge_ui.draw(screen, font, self._draw_button)
+            self._draw_system_menu(screen, font)
             return
 
-        self._draw_time_panel(screen, font)
+        if self.map_ui_active:
+            self._draw_map_workspace(screen, font)
+            return
 
-        if self.time_lines:
+        if not self.species_diagnostic_active:
+            if self.person_ui_active:
+                self._draw_person_time_strip(screen, font)
+            else:
+                self._draw_time_panel(screen, font)
+
+        if self.time_lines and not self.person_ui_active and not self.species_diagnostic_active:
             timeline_x = 20
             timeline_y = 135
             timeline_w = 320
@@ -868,38 +4341,403 @@ class UIManager:
             if not button.visible:
                 continue
             self._draw_button(screen, font, button)
+        self._draw_person_panel_icons(screen, font)
 
         info_lines = []
-        if self.scope_label:
-            info_lines.append(self.scope_label)
-        if self.breadcrumb_label:
-            info_lines.append(self.breadcrumb_label)
+        if not self.person_ui_active and not self.species_diagnostic_active:
+            if self.scope_label:
+                info_lines.append(self.scope_label)
+            if self.breadcrumb_label:
+                info_lines.append(self.breadcrumb_label)
 
         current_info_y = 170
         if info_lines:
-            self._draw_info_panel(screen, font, 20, current_info_y, info_lines)
-
-            padding = 8
-            line_gap = 4
-            rendered = [font.render(line, True, (240, 240, 240)) for line in info_lines]
-            panel_height = (
-                sum(text.get_height() for text in rendered)
-                + line_gap * (len(rendered) - 1)
-                + padding * 2
-            )
-            current_info_y += panel_height + 12
+            current_info_y += self._draw_info_panel(screen, font, 20, current_info_y, info_lines) + 12
 
         if self.vehicle_requirement_lines:
             requirement_lines = ["Requirements"] + self.vehicle_requirement_lines
-            self._draw_info_panel(screen, font, 20, current_info_y, requirement_lines)
+            current_info_y += self._draw_info_panel(screen, font, 20, current_info_y, requirement_lines) + 12
+
+        selection_height = self._draw_simulation_selection_inspector(
+            screen,
+            font,
+            20,
+            current_info_y,
+        )
+        if selection_height:
+            current_info_y += selection_height + 12
+
+        if self.person_ui_active:
+            self._draw_person_dossier_card(screen, font)
+        elif self.person_dossier_lines:
+            dossier_lines = ["Dossier"] + self.person_dossier_lines
+            self._draw_info_panel(screen, font, 20, current_info_y, dossier_lines)
+
+        if self.map_history_timeline_visible:
+            self.map_history_timeline.draw(screen, font)
 
         self._draw_simulation_bar(screen, font)
+        self.selection_inspector.draw(screen, font)
         self._draw_hover_tooltip(screen, font)
+        self._draw_person_panel(screen, font)
+        if self.pop_ui_active:
+            self._draw_pop_composition(screen, font, current_info_y)
+        self._draw_repository_return_confirm(screen, font)
+        # The ESC/system menu is drawn separately, by draw_system_menu_overlay(),
+        # called from app.py *after* draw_floating_card() -- see that method's
+        # docstring for why: it must render on top of the floating card, not
+        # underneath it.
 
+    def _reset_map_history_timeline_drag(self):
+        self.map_history_timeline_drag_mode = None
+        self.map_history_timeline_drag_start_pos = None
+        self.map_history_timeline_drag_last_x = None
+
+    def _set_map_history_reanchor_target(self, action):
+        target_kind = action.get("target_kind")
+        target_id = action.get("target_id")
+        if target_kind not in {"spatial_feature", "location", "person"} or not target_id:
+            return False
+
+        self.map_history_timeline_reanchor_target = {
+            "target_kind": target_kind,
+            "target_id": target_id,
+        }
+        self.selection_inspector.set_time_anchor_active(
+            True,
+            target_kind=target_kind,
+            target_id=target_id,
+        )
+        self.map_history_timeline.set_picker_target(
+            "map entity anchor",
+            preview_year=action.get("preview_year"),
+        )
+        return True
+
+    def _clear_map_history_reanchor_target(self):
+        if self.map_history_timeline_reanchor_target is None:
+            return False
+
+        self.map_history_timeline_reanchor_target = None
+        self.selection_inspector.set_time_anchor_active(False)
+        self.map_history_timeline.clear_picker_target()
+        return True
+
+    def _map_history_year_action(self, timeline_action):
+        if timeline_action is None:
+            return "__ui_consumed__"
+
+        if timeline_action.get("kind") == "selected_year_changed":
+            if self.map_history_timeline_reanchor_target is not None:
+                target = dict(self.map_history_timeline_reanchor_target)
+                self._clear_map_history_reanchor_target()
+                return {
+                    "id": "selection_inspector_reanchor_time",
+                    "target_kind": target.get("target_kind"),
+                    "target_id": target.get("target_id"),
+                    "year": timeline_action.get("year"),
+                }
+
+            self.map_history_selected_year = timeline_action.get("year")
+            return {
+                "id": "map_history_year_select",
+                "year": timeline_action.get("year"),
+            }
+
+        return "__ui_consumed__"
+
+    def _handle_map_history_timeline_event(self, event):
+        if not self.map_history_timeline_visible or self.map_history_timeline_rect is None:
+            self._reset_map_history_timeline_drag()
+            return None
+
+        if event.type == pygame.MOUSEWHEEL:
+            mouse_pos = pygame.mouse.get_pos()
+            if self.map_history_timeline_rect.collidepoint(mouse_pos):
+                self.map_history_timeline.handle_event(event)
+                return "__ui_consumed__"
+
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            drag_mode = self.map_history_timeline_drag_mode
+            self._reset_map_history_timeline_drag()
+
+            if drag_mode == "pending":
+                return self._map_history_year_action(
+                    self.map_history_timeline.select_year_from_pos(event.pos)
+                )
+
+            if drag_mode is not None:
+                return "__ui_consumed__"
+
+            return None
+
+        if event.type == pygame.MOUSEMOTION:
+            drag_mode = self.map_history_timeline_drag_mode
+            if drag_mode is None:
+                return None
+
+            if drag_mode == "pending":
+                start_x, start_y = self.map_history_timeline_drag_start_pos
+                dx = event.pos[0] - start_x
+                dy = event.pos[1] - start_y
+                if abs(dx) < 5 and abs(dy) < 5:
+                    return "__ui_consumed__"
+
+                self.map_history_timeline_drag_mode = "panning"
+                self.map_history_timeline_drag_last_x = event.pos[0]
+                if dx:
+                    self.map_history_timeline.pan_by_pixels(-dx)
+                return "__ui_consumed__"
+
+            if drag_mode == "scrubbing":
+                return self._map_history_year_action(
+                    self.map_history_timeline.select_year_from_drag_pos(event.pos)
+                )
+
+            if drag_mode == "panning":
+                if self.map_history_timeline_drag_last_x is None:
+                    self.map_history_timeline_drag_last_x = event.pos[0]
+                    return "__ui_consumed__"
+
+                dx = event.pos[0] - self.map_history_timeline_drag_last_x
+                self.map_history_timeline_drag_last_x = event.pos[0]
+                if dx:
+                    self.map_history_timeline.pan_by_pixels(-dx)
+
+            return "__ui_consumed__"
+
+        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
+            return None
+
+        mouse_pos = event.pos
+        if not self.map_history_timeline_rect.collidepoint(mouse_pos):
+            return None
+
+        filter_action = self.map_history_timeline.handle_filter_click(mouse_pos)
+        if filter_action is not None:
+            return "__ui_consumed__"
+
+        if self.map_history_timeline.is_selected_year_marker_hit(mouse_pos):
+            self.map_history_timeline_drag_mode = "scrubbing"
+            self.map_history_timeline_drag_start_pos = mouse_pos
+            self.map_history_timeline_drag_last_x = mouse_pos[0]
+            return self._map_history_year_action(
+                self.map_history_timeline.select_year_from_drag_pos(mouse_pos)
+            )
+
+        self.map_history_timeline_drag_mode = "pending"
+        self.map_history_timeline_drag_start_pos = mouse_pos
+        self.map_history_timeline_drag_last_x = mouse_pos[0]
+        return "__ui_consumed__"
+
+    def _map_layer_button_action(self, button_id):
+        button_id = str(button_id or "")
+        if button_id == "map_layer_menu_root":
+            self.map_layer_menu_mode = "root"
+            return "__ui_consumed__"
+        if button_id.startswith("map_set_layer:"):
+            layer_kind = button_id.split(":", 1)[1]
+            self.map_layer_menu_mode = "root"
+            return {
+                "id": "set_map_layer",
+                "layer_kind": layer_kind,
+            }
+        if button_id.startswith("map_open_layer_menu:"):
+            mode = button_id.split(":", 1)[1]
+            if mode == "materials":
+                self.map_layer_menu_mode = "materials"
+                return {
+                    "id": "set_map_layer",
+                    "layer_kind": "material_heatmaps",
+                }
+            if mode == "locations":
+                self.map_layer_menu_mode = "locations"
+                return {
+                    "id": "set_map_layer",
+                    "layer_kind": "locations",
+                }
+            self.map_layer_menu_mode = "root"
+            return "__ui_consumed__"
+        if button_id.startswith("map_select_material:"):
+            material_id = button_id.split(":", 1)[1]
+            self.map_layer_menu_mode = "materials"
+            return {
+                "id": "set_map_material_distribution_item",
+                "material_id": material_id,
+            }
+        if button_id.startswith("map_select_climate:"):
+            climate_id = button_id.split(":", 1)[1]
+            self.map_layer_menu_mode = "root"
+            return {
+                "id": "set_map_climate_display_item",
+                "climate_id": climate_id,
+            }
+        if button_id.startswith("map_select_location:"):
+            location_id = button_id.split(":", 1)[1]
+            self.map_layer_menu_mode = "locations"
+            return {
+                "id": "select_map_location",
+                "entity_id": location_id,
+            }
+        return None
 
     def handle_event(self, event):
+        if self.repository_return_confirm_active:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mouse_pos = event.pos
+
+                for button in self.repository_return_confirm_buttons:
+                    if not button.visible or not button.enabled:
+                        continue
+                    if button.rect.collidepoint(mouse_pos):
+                        return button.id
+
+                return "__ui_consumed__"
+
+            if event.type in (pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL, pygame.KEYDOWN):
+                return "__ui_consumed__"
+
+        if self.system_menu_active:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mouse_pos = event.pos
+
+                for button in self.system_menu_buttons:
+                    if not button.visible or not button.enabled:
+                        continue
+
+                    if button.rect.collidepoint(mouse_pos):
+                        return button.id
+
+                return "__ui_consumed__"
+
+            if event.type in (pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL, pygame.KEYDOWN):
+                return "__ui_consumed__"
+
         if self.menu_active:
             return self.knowledge_ui.handle_event(event)
+
+        editor = self.vehicle_pixel_editor_ui
+        if editor is not None:
+            state = editor.state
+            if event.type == pygame.KEYDOWN:
+                editor.handle_keydown(event)
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if isinstance(state, dict):
+                    state["pressure"] = max(0.05, min(1.0, float(getattr(event, "pressure", 1.0))))
+                editor.handle_click(event.pos)
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
+                editor.begin_pan(event.pos)
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+                editor.begin_temporary_eraser(event.pos)
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEBUTTONUP:
+                editor.finish_stroke()
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEMOTION:
+                editor.handle_motion(event.pos, getattr(event, "pressure", None))
+                return "__ui_consumed__"
+            if event.type == pygame.MOUSEWHEEL:
+                editor.handle_wheel(event.y, pygame.mouse.get_pos())
+                return "__ui_consumed__"
+            if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
+                surface = pygame.display.get_surface()
+                if event.type == pygame.FINGERUP:
+                    editor.finish_stroke()
+                elif surface is not None:
+                    pos = (round(event.x * surface.get_width()), round(event.y * surface.get_height()))
+                    if event.type == pygame.FINGERDOWN:
+                        editor.handle_click(pos)
+                    else:
+                        editor.handle_motion(pos, getattr(event, "pressure", None))
+                return "__ui_consumed__"
+
+        if self.biosphere_picker_open:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                for button in self.buttons:
+                    if (
+                        getattr(button, "biosphere_modal", False)
+                        and button.visible
+                        and button.enabled
+                        and button.rect.collidepoint(event.pos)
+                    ):
+                        return button.id
+                return "__ui_consumed__"
+            if event.type in (pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL, pygame.KEYDOWN):
+                return "__ui_consumed__"
+
+        if (
+            event.type == pygame.KEYDOWN
+            and event.key == pygame.K_ESCAPE
+            and self.person_panel_mode is not None
+        ):
+            self.person_panel_mode = None
+            self.person_panel_model = None
+            self.person_panel_rect = None
+            self.person_panel_close_rect = None
+            return "__ui_consumed__"
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_pos = event.pos
+            for item in self.person_panel_icons:
+                if item["rect"].collidepoint(mouse_pos):
+                    mode = item["id"]
+                    self.person_panel_mode = None if self.person_panel_mode == mode else mode
+                    self.person_panel_model = None
+                    self.person_panel_rect = None
+                    self.person_panel_close_rect = None
+                    return "__ui_consumed__"
+
+            if self.person_panel_mode is not None:
+                if self.person_panel_close_rect and self.person_panel_close_rect.collidepoint(mouse_pos):
+                    self.person_panel_mode = None
+                    self.person_panel_model = None
+                    self.person_panel_rect = None
+                    self.person_panel_close_rect = None
+                    return "__ui_consumed__"
+                if self.person_panel_rect is None or not self.person_panel_rect.collidepoint(mouse_pos):
+                    self.person_panel_mode = None
+                    self.person_panel_model = None
+                    self.person_panel_rect = None
+                    self.person_panel_close_rect = None
+                return "__ui_consumed__"
+
+        if self.person_panel_rect is not None and event.type in (
+            pygame.MOUSEBUTTONUP,
+            pygame.MOUSEMOTION,
+            pygame.MOUSEWHEEL,
+        ):
+            event_pos = getattr(event, "pos", pygame.mouse.get_pos())
+            if self.person_panel_rect.collidepoint(event_pos):
+                return "__ui_consumed__"
+
+        if (
+            event.type == pygame.KEYDOWN
+            and event.key == pygame.K_ESCAPE
+            and self.map_history_timeline_reanchor_target is not None
+        ):
+            self._clear_map_history_reanchor_target()
+            return "__ui_consumed__"
+
+        inspector_action = self.selection_inspector.handle_event(event)
+        if inspector_action is not None:
+            if isinstance(inspector_action, dict):
+                if inspector_action.get("id") == "selection_inspector_reanchor_time_start":
+                    self._set_map_history_reanchor_target(inspector_action)
+                    return "__ui_consumed__"
+
+                if not self.selection_inspector.is_open:
+                    self._clear_map_history_reanchor_target()
+            elif not self.selection_inspector.is_open:
+                self._clear_map_history_reanchor_target()
+
+            return inspector_action
+
+        map_history_action = self._handle_map_history_timeline_event(event)
+        if map_history_action is not None:
+            return map_history_action
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mouse_pos = event.pos
@@ -933,12 +4771,55 @@ class UIManager:
                         "tab_index": tab_index,
                     }
 
+            for item in self.map_layer_selector_items:
+                rect = item.get("rect")
+                if rect is not None and rect.collidepoint(mouse_pos):
+                    if item.get("action_id"):
+                        return {"id": item.get("action_id")}
+                    layer_kind = item.get("layer_kind")
+                    if layer_kind == "material_heatmaps":
+                        self.map_layer_menu_mode = "materials"
+                    else:
+                        self.map_layer_menu_mode = "root"
+                    return {
+                        "id": "set_map_layer",
+                        "layer_kind": layer_kind,
+                    }
+
             for button in self.buttons:
                 if not button.visible or not button.enabled:
                     continue
 
                 if button.rect.collidepoint(mouse_pos):
+                    map_layer_action = self._map_layer_button_action(button.id)
+                    if map_layer_action is not None:
+                        return map_layer_action
                     return button.id
+
+            for button in self.simulation_selection_buttons:
+                if button.visible and button.enabled and button.rect.collidepoint(mouse_pos):
+                    return button.id
+
+            for button in self.map_empty_state_buttons:
+                if button.visible and button.enabled and button.rect.collidepoint(mouse_pos):
+                    return button.id
+
+            for entity_id, hitbox in self.map_location_browser_hitboxes:
+                if hitbox.collidepoint(mouse_pos):
+                    return {
+                        "id": "select_map_location",
+                        "entity_id": entity_id,
+                    }
+
+            if self.biosphere_ui_active and any(
+                rect is not None and rect.collidepoint(mouse_pos)
+                for rect in (
+                    self.biosphere_top_bar_rect,
+                    self.biosphere_population_rect,
+                    self.biosphere_tool_dock_rect,
+                )
+            ):
+                return "__ui_consumed__"
 
             return None
 
