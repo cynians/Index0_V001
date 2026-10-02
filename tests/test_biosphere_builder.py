@@ -280,3 +280,16 @@ def test_map_sprite_click_selects_runtime_representative():
 
     assert sim.selected_representative_id == representative_id
     assert sim.get_selection_inspector_payload()["actions"][0]["id"] == "biosphere_launch_representative"
+
+
+def test_right_click_on_region_does_not_open_its_card():
+    sim = BiosphereSimulation.reference_site()
+    camera = IdentityCamera()
+    screen_pos = (500, 350)
+    world_x, world_y = sim._screen_to_world(camera, screen_pos)
+    picked = sim._pick_layer_at_world(world_x, world_y, camera, screen_pos)
+    assert picked and picked.get("entity_id") == sim.context.root_entity_id
+
+    sim.handle_pointer_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 3}), camera, screen_pos)
+
+    assert sim.consume_pending_floating_card_target() is None

@@ -7889,6 +7889,12 @@ class MapSimulation:
         self.hover_spatial_feature_id = picked_layer.get("spatial_feature_id")
         self.hover_screen_pos = screen_pos
 
+    def _handle_secondary_click(self, picked_layer, screen_pos, world_x, world_y):
+        """Right-click outside drafting: open the picked entity's card."""
+        entity_id = picked_layer.get("entity_id") if picked_layer else None
+        if entity_id:
+            self.open_entity_card(entity_id, mode="edit")
+
     def handle_pointer_event(self, event, camera, screen_pos):
         """
         Handle pointer input for the map simulation.
@@ -7926,9 +7932,7 @@ class MapSimulation:
         picked_layer = self._pick_layer_at_world(world_x, world_y, camera, screen_pos)
 
         if event.type == self.MOUSEBUTTONDOWN_EVENT_TYPE and button == 3:
-            entity_id = picked_layer.get("entity_id") if picked_layer else None
-            if entity_id:
-                self.open_entity_card(entity_id, mode="edit")
+            self._handle_secondary_click(picked_layer, screen_pos, world_x, world_y)
             return
 
         if event.type == self.MOUSEBUTTONDOWN_EVENT_TYPE and button == 1:

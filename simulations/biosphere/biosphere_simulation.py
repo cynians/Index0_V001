@@ -628,6 +628,11 @@ class BiosphereSimulation(MapSimulation):
                 return
         super().handle_pointer_event(event, camera, screen_pos)
 
+    def _handle_secondary_click(self, picked_layer, screen_pos, world_x, world_y):
+        # Right-click is reserved for a biosphere-specific action; unlike the
+        # plain map it must not open the region card.
+        return
+
     def update(self, dt):
         super().update(dt)
         if self.builder_paused:
