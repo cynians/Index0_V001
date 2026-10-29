@@ -43,11 +43,9 @@ from simulations.world_gen.material_lod import (
     COVER_CLASS_IDS,
     MATERIAL_LOD_MODEL_VERSION,
     UNIT_PURITY_BY_LEVEL,
-    _overlay_occurrences,
     derive_child_material_product,
     derive_lod0_material_product,
     province_table,
-    rasterize_occurrences,
 )
 from simulations.world_gen.material_optics import material_optical_surface_profile
 from simulations.world_gen import natural_materials
@@ -468,14 +466,11 @@ def generate_material_heatmap_model(
             water_cycle=water_cycle,
             surface_evolution=surface_evolution,
             atmosphere=atmosphere,
+            occurrences=occurrences if detail_level > 0 else None,
+            circumference_m=circumference_m,
         )
         if detail_level > 0:
             lineage = "direct_classification_parent_material_unavailable"
-            occurrence_layers, occurrence_roles = rasterize_occurrences(product["context"], occurrences, circumference_m)
-            product["visible_ids"], product["visible"] = _overlay_occurrences(
-                product["visible_ids"], product["visible"], occurrence_layers,
-            )
-            product["occurrence_roles"] = occurrence_roles
     else:
         product = derive_child_material_product(
             planet, natural_material_model, heightmap,
@@ -509,6 +504,10 @@ def generate_material_heatmap_model(
 
     order = sorted(range(len(visible_ids)), key=lambda index: (-float(visible[index].mean()), visible_ids[index]))
     order = order[: max(1, int(max_layers or DEFAULT_MATERIAL_LAYER_LIMIT))]
+    # Element minerals (copper's hosts and weathering minerals) stay listed
+    # whatever their mean share: rock map and true colour read them here.
+    element_minerals = set(product.get("element_minerals") or [])
+    order += [index for index, material_id in enumerate(visible_ids) if material_id in element_minerals and index not in order]
     bundle_layers = [{
         "id": "composite",
         "role": "composite",
@@ -541,6 +540,9 @@ def generate_material_heatmap_model(
             "distribution_role": role,
             "display_semantics": FRACTION_SEMANTICS,
             "fraction_semantics": FRACTION_SEMANTICS,
+            # A mineral layer of its own is its visible share; one that adds to
+            # a cover (goethite of a ferric coating) keeps the cover's mixing.
+            "visible_fraction": material_id in set(product.get("element_minerals_new") or []),
             "visual_role": FRACTION_SEMANTICS,
             "formation_category": candidate.get("formation_category"),
             "spatial_representation": candidate.get("spatial_representation"),
@@ -668,6 +670,8 @@ def generate_material_heatmap_model(
         model["surface_routing"] = dict(product["surface_routing_summary"])
     if product.get("fault_traces"):
         model["fault_traces"] = list(product["fault_traces"])
+    if product.get("element_mineral_summary"):
+        model["element_mineral_summary"] = dict(product["element_mineral_summary"])
     if product.get("memberships") is not None:
         model["setting_layers"] = {
             "setting_ids": list(SETTING_IDS),

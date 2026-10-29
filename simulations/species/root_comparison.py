@@ -3,6 +3,7 @@ import math
 from pathlib import Path
 
 import pygame
+from ui.fonts import get_font
 
 from world.plant_catalogue import PlantCatalogue
 
@@ -34,9 +35,9 @@ def draw_root_comparison(renderer, screen, cases, page=0, common_scale=False):
     from simulations.species.species_renderer import DiagnosticCamera, root_diagnostic_bounds
     w, h = screen.get_size()
     screen.fill((15, 22, 19))
-    font = pygame.font.SysFont('consolas', 15)
-    title = pygame.font.SysFont('consolas', 23)
-    small = pygame.font.SysFont('consolas', 13)
+    font = get_font(15)
+    title = get_font(23)
+    small = get_font(13)
     def text(value, xy, f=font, color=(214, 222, 201)):
         screen.blit(f.render(value, True, color), xy)
     pages = max(1, math.ceil(len(cases)/6))

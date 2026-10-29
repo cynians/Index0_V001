@@ -2,6 +2,7 @@
 import math
 import random
 import pygame
+from ui.fonts import get_font
 from simulations.species.forest_ecology import light_at
 
 
@@ -24,9 +25,9 @@ def _draw_forest_light_map(renderer, screen, sim):
     plan,cases = sim.get_forest_experiment()
     width,height = screen.get_size()
     screen.fill((15,22,19))
-    font = pygame.font.SysFont("consolas",16)
-    small = pygame.font.SysFont("consolas",13)
-    title = pygame.font.SysFont("consolas",22)
+    font = get_font(16)
+    small = get_font(13)
+    title = get_font(22)
     def label(text,x,y,color=(207,222,205),f=font):
         screen.blit(f.render(text,True,color),(x,y))
     label("Forest | "+sim.blueprint.display_name,18,34,f=title)
@@ -98,9 +99,9 @@ def _draw_forest_isometric(renderer, screen, sim):
     plan, cases = sim.get_forest_experiment()
     width, height = screen.get_size()
     screen.fill((15, 22, 19))
-    font = pygame.font.SysFont("consolas", 16)
-    small = pygame.font.SysFont("consolas", 13)
-    title = pygame.font.SysFont("consolas", 22)
+    font = get_font(16)
+    small = get_font(13)
+    title = get_font(22)
 
     def label(text, x, y, color=(207, 222, 205), f=font):
         screen.blit(f.render(text, True, color), (x, y))

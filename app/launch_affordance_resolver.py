@@ -10,8 +10,9 @@ MAP_SURFACE_FIELDS = (
     "material_heatmap_model",
 )
 
-from simulations.species.plant_assets import is_plant_species_entity
+from simulations.species.plant_assets import is_plant_species_entity, is_fungal_growth_species_entity
 from simulations.clothing.clothing_design import is_clothing_item
+from world.place_tree import is_place
 
 ORBITAL_LOCATION_CLASSES = {
     "star",
@@ -28,6 +29,9 @@ ORBITAL_LOCATION_CLASSES = {
     "system_spacecraft",
     "interstellar_spacecraft",
 }
+
+# Places in the place tree that are still no place to be born: whole systems.
+NOT_BIRTHPLACES = frozenset({"star_system", "system", "cluster"})
 
 
 def _entity_id(entity):
@@ -97,6 +101,15 @@ class LaunchAffordanceResolver:
     """
 
     def options_for_entity(self, entity, plant_catalogue=None, world_model=None):
+        options = self._options_for_entity(entity, plant_catalogue, world_model)
+        if _is_location(entity) and is_place(entity) and str(entity.get("location_class") or "") not in NOT_BIRTHPLACES:
+            options.append(_option(
+                "person_create", "New person born here",
+                "Open the Person Editor on a new person born at this place.", 40, _entity_id(entity),
+            ))
+        return options
+
+    def _options_for_entity(self, entity, plant_catalogue=None, world_model=None):
         if not isinstance(entity, dict):
             return []
 
@@ -226,8 +239,10 @@ class LaunchAffordanceResolver:
         if dataset_name in {"cladistics", "species"} or entity.get("type") in {"cladistics", "species"}:
             if dataset_name == "species" or entity.get("type") == "species":
                 options = [_option("phylogeny", "Phylogeny", "Open the phylogeny simulation.", 100, entity_id)]
-                if is_plant_species_entity(entity, plant_catalogue) or entity.get("species_simulation_enabled"):
-                    options.insert(0, _option("species", "Species Sim", "Open the modular plant growth lab.", 110, entity_id))
+                entities = getattr(getattr(world_model, "loader", None), "entities", {})
+                if (is_plant_species_entity(entity, plant_catalogue) or entity.get("species_simulation_enabled")
+                        or is_fungal_growth_species_entity(entity, entities)):
+                    options.insert(0, _option("species", "Species Sim", "Open the species growth lab.", 110, entity_id))
                 return options
             return [_option("phylogeny", "Phylogeny", "Open the phylogeny simulation.", 100, entity_id)]
 

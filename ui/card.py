@@ -36,7 +36,10 @@ from world.species_inheritance import (
     is_inheritable_species_field,
     resolve_species_field,
 )
+from world.need_tags import need_summary
+from world.tag_rows import GENERAL_FIELD, TagRow, class_names, row_values, tag_class_index, tag_rows
 from world.year_utils import parse_year
+from engine import asset_files
 from simulations.space.stellar import STELLAR_CLASS_HELP, is_valid_stellar_class
 
 try:
@@ -179,19 +182,20 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     ]
 
     SUBTAB_H = 22
-    TAB_ORDER = ["general", "overview", "temporal", "location", "relations", "simulation", "media"]
+    TAB_ORDER = ["general", "tags", "overview", "temporal", "location", "relations", "simulation", "media"]
     DATASET_TAB_ORDER = {
-        "ideas": ["general", "overview", "temporal", "location", "relations", "media"],
-        "cladistics": ["general", "overview", "phylogeny", "relations", "temporal", "location", "media"],
-        "species": ["general", "overview", "phylogeny", "relations", "temporal", "location", "simulation", "media"],
-        "components": ["general", "overview", "temporal", "location", "relations", "operational", "simulation", "media"],
-        "categories": ["general", "overview", "relations", "media"],
-        "producers": ["general", "overview", "production", "temporal", "location", "relations", "media"],
-        "jobs": ["general", "overview", "temporal", "location", "relations", "media"],
-        "employments": ["general", "overview", "temporal", "location", "relations", "media"],
+        "ideas": ["general", "tags", "overview", "temporal", "location", "relations", "media"],
+        "cladistics": ["general", "tags", "overview", "phylogeny", "relations", "temporal", "location", "media"],
+        "species": ["general", "tags", "overview", "phylogeny", "relations", "temporal", "location", "simulation", "media"],
+        "components": ["general", "tags", "overview", "temporal", "location", "relations", "operational", "simulation", "media"],
+        "categories": ["general", "tags", "overview", "relations", "media"],
+        "producers": ["general", "tags", "overview", "production", "temporal", "location", "relations", "media"],
+        "jobs": ["general", "tags", "overview", "temporal", "location", "relations", "media"],
+        "employments": ["general", "tags", "overview", "temporal", "location", "relations", "media"],
     }
     TAB_LABELS = {
         "general": "General",
+        "tags": "Tags",
         "overview": "Overview",
         "production": "Production",
         "site": "Site",
@@ -248,6 +252,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     }
     TAB_SECTIONS = {
         "general": [],
+        "tags": [],
         "overview": ["Identity", "Classification", "Dimensions / Scale", "Metadata"],
         "production": [],
         "temporal": ["Temporal"],
@@ -477,14 +482,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     "label": "Species Editor",
                     "description": "Paste a temporary plant photo and tune live fields against mature side/top previews.",
                     "action_id": "launch_species_editor",
-                    "requires": "plant_species",
+                    "requires": "growth_species",
                 },
                 {
                     "id": "species_sim_lab",
                     "label": "Species Sim Lab",
                     "description": "Open the individual, growth gallery, and forest diagnostic views.",
                     "action_id": "launch_species_sim",
-                    "requires": "plant_species",
+                    "requires": "growth_species",
                 },
                 {
                     "id": "plant_asset_leaf",
@@ -525,6 +530,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     "label": "Create Flower Sprite",
                     "description": "Create or reopen this species' reusable flower module.",
                     "requires": "plant_species",
+                },
+                {
+                    "id": "plant_asset_calyx",
+                    "kind": "plant_asset_creator",
+                    "asset_role": "calyx",
+                    "label": "Create Calyx Sprite",
+                    "description": "Create or reopen the persistent sepals around this species' fruit.",
+                    "requires": "persistent_calyx_species",
                 },
                 {
                     "id": "plant_asset_fruit",
@@ -587,25 +600,84 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
     def _header_description_text(self):
         return str(self.entity.get("three_word_description") or "").strip()
 
-    def _tag_values(self):
-        values = []
-        for value in self.entity.get("tags") or []:
-            text = str(value or "").strip()
-            if text and text not in values:
-                values.append(text)
-        return values
+    def _tag_values(self, row=None):
+        """The strings of a tag row; without a row, every general tag."""
+        if row is None:
+            row = TagRow(GENERAL_FIELD, "General", GENERAL_FIELD)
+            return row_values(row, self.entity, [row], {})
+        return row_values(row, self.entity, self._tag_rows(), self._tag_class_index())
 
-    def _known_tag_values(self):
+    def _tag_class_index(self):
+        revision = getattr(self.world_model, "repository_revision", 0)
+        cached = getattr(self, "_tag_class_index_cache", None)
+        if cached is None or cached[0] != revision:
+            cached = (revision, tag_class_index(self.world_model))
+            self._tag_class_index_cache = cached
+        return cached[1]
+
+    def _tag_rows(self):
+        """The rows of the Tags tab for this card's schema and entity (world/tag_rows.py)."""
+        return tag_rows(self.entity, self._resolve_schema() or {}, self.world_model, self._tag_class_index())
+
+    def _tag_row_for_key(self, key):
+        row = next((row for row in self._tag_rows() if row.key == key), None)
+        return row or TagRow(GENERAL_FIELD, "General", GENERAL_FIELD)
+
+    def _is_tag_edit_field(self, field_key):
+        return field_key == GENERAL_FIELD or (
+            bool(field_key) and any(row.key == field_key and not row.read_only for row in self._tag_rows())
+        )
+
+    def _active_tag_row(self, card):
+        return self._tag_row_for_key((card or {}).get("active_edit_field") or GENERAL_FIELD)
+
+    def _layout_tag_rows(self, card, x, y, width, editable_field_hitboxes):
+        editing = card.get("is_edit_mode", False)
+        layouts = []
+        for row in self._tag_rows() + self._derived_tag_rows():
+            active = editing and card.get("active_edit_field") == row.key
+            rect = pygame.Rect(x, y, width, 92 if active else 34)
+            layouts.append({"row": row, "rect": rect})
+            if editing and not row.read_only:
+                editable_field_hitboxes.append((row.key, rect))
+            y = rect.bottom + 6
+        card["tag_row_layouts"] = layouts
+        return y
+
+    def _measure_tag_rows_height(self, card):
+        editing = card.get("is_edit_mode", False)
+        rows = self._tag_rows() + self._derived_tag_rows()
+        return sum((92 if editing and card.get("active_edit_field") == row.key else 34) + 6 for row in rows)
+
+    def _derived_tag_rows(self):
+        return [TagRow("serves_needs", "Serves", "", read_only=True)] if self._need_summary() else []
+
+    def _need_summary(self):
+        """Needs this entity has to do with, resolved from need tags; shown read-only after the tags."""
+        if self.world_model is None:
+            return []
+        key = (
+            self.entity.get("id"),
+            getattr(self.world_model, "repository_revision", 0),
+            tuple(self._tag_values()),
+        )
+        cached = getattr(self, "_need_summary_cache", None)
+        if cached is None or cached[0] != key:
+            cached = (key, need_summary(self.entity, self.world_model))
+            self._need_summary_cache = cached
+        return cached[1]
+
+    def _known_tag_values(self, field=GENERAL_FIELD):
         tags = set()
         entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) if self.world_model is not None else {}
         for entity in entities.values():
             if not isinstance(entity, dict):
                 continue
-            for value in entity.get("tags") or []:
+            for value in entity.get(field) or []:
                 text = str(value or "").strip()
                 if text:
                     tags.add(text)
-            if entity.get("_dataset") == "tags" or entity.get("type") == "tag":
+            if field == GENERAL_FIELD and (entity.get("_dataset") == "tags" or entity.get("type") == "tag"):
                 label = str(entity.get("name") or entity.get("pretty_name") or entity.get("id") or "").strip()
                 if label:
                     tags.add(label)
@@ -645,12 +717,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         text = self._readable_text_color(fill)
         return fill, border, text
 
-    def _tag_suggestions(self, query, limit=6):
+    def _tag_suggestions(self, query, limit=6, row=None):
         query = str(query or "").strip().lower()
         query_terms = [term for term in query.split() if term]
-        current_tags = {tag.lower() for tag in self._tag_values()}
+        row = row or TagRow(GENERAL_FIELD, "General", GENERAL_FIELD)
+        current_tags = {tag.lower() for tag in self._tag_values(row)}
         suggestions = []
-        for tag in self._known_tag_values():
+        known = class_names(row.tag_class, self.world_model) if row.tag_class else self._known_tag_values(row.field)
+        for tag in known:
             tag_l = tag.lower()
             if tag_l in current_tags:
                 continue
@@ -666,22 +740,23 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
     def _tag_search_matches(self, card, limit=6):
         query = self._tag_search_query(card)
-        return self._tag_suggestions(query, limit=limit)
+        return self._tag_suggestions(query, limit=limit, row=self._active_tag_row(card))
 
     def _add_tag_value(self, card, tag_value):
         tag_value = str(tag_value or "").strip()
         if not tag_value:
             return False
-        tags = self._tag_values()
-        if tag_value.lower() not in {tag.lower() for tag in tags}:
-            tags.append(tag_value)
-            self.entity["tags"] = tags
+        row = self._active_tag_row(card)
+        stored = [str(value) for value in (self.entity.get(row.field) or []) if str(value or "").strip()]
+        if tag_value.lower() not in {tag.lower() for tag in stored}:
+            stored.append(tag_value)
+            self.entity[row.field] = stored
         card["edit_buffer"] = ""
         card["edit_cursor"] = 0
         card["tag_selected_index"] = 0
         card["tag_keyboard_selection_active"] = False
         card["last_edit_action"] = "commit"
-        card["last_committed_field"] = "tags"
+        card["last_committed_field"] = row.field
         return True
 
     def confirm_tag_search(self, card):
@@ -710,10 +785,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         tag_value = str(tag_value or "").strip()
         if not tag_value:
             return False
-        tags = [tag for tag in self._tag_values() if tag.lower() != tag_value.lower()]
-        self.entity["tags"] = tags
+        row = self._active_tag_row(card)
+        self.entity[row.field] = [
+            str(value) for value in (self.entity.get(row.field) or [])
+            if str(value or "").strip() and str(value).strip().lower() != tag_value.lower()
+        ]
         card["last_edit_action"] = "commit"
-        card["last_committed_field"] = "tags"
+        card["last_committed_field"] = row.field
         return True
 
     def _tab_order(self):
@@ -762,7 +840,11 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         return self.active_tab == "temporal"
 
     def _is_general_mode(self):
-        return self.active_tab == "general"
+        # General and Tags both lay out freely, without the section table or image block.
+        return self.active_tab in ("general", "tags")
+
+    def _is_tags_mode(self):
+        return self.active_tab == "tags"
 
     def _is_extant_mode(self):
         return self.active_tab == "extant" and self._is_period_card()
@@ -1211,9 +1293,21 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             )
             return not any(bool(self.entity.get(field)) for field in map_fields)
 
+        if requirement == "growth_species":
+            from simulations.species.plant_assets import is_plant_species_entity, is_surface_species_entity, is_fungal_growth_species_entity
+            return (is_plant_species_entity(self.entity,getattr(self.world_model,"plant_catalogue",None))
+                    or is_surface_species_entity(self.entity,getattr(getattr(self.world_model,"loader",None),"entities",{}))
+                    or is_fungal_growth_species_entity(self.entity,getattr(getattr(self.world_model,"loader",None),"entities",{})))
         if requirement == "plant_species":
             from simulations.species.plant_assets import is_plant_species_entity
             return is_plant_species_entity(self.entity, getattr(self.world_model,"plant_catalogue",None))
+        if requirement == "persistent_calyx_species":
+            from simulations.species.plant_assets import is_plant_species_entity
+            from simulations.species.persistent_calyces import persistent_calyx_profile
+            profile = self.entity.get("plant_reproductive_profile") or {}
+            return (is_plant_species_entity(self.entity, getattr(self.world_model,"plant_catalogue",None))
+                    and bool(self.entity.get("plant_calyx_module_ref")
+                             or persistent_calyx_profile(profile.get("persistent_calyx_display"))))
 
         return True
 
@@ -2868,7 +2962,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         return str(value)
 
     def _initial_edit_buffer(self, field_key, value):
-        if field_key == "tags":
+        if self._is_tag_edit_field(field_key):
             return ""
         if self._is_species_measurement_dict_field(field_key):
             if isinstance(value, dict) and value:
@@ -3223,7 +3317,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["choice_picker_open"] = self._is_controlled_choice_field(field_key)
         card["choice_picker_hitboxes"] = []
         card["choice_picker_value"] = value if self._is_controlled_choice_field(field_key) else None
-        if field_key == "tags":
+        if self._is_tag_edit_field(field_key):
             card["tag_selected_index"] = 0
         self._clear_edit_preferred_column(card)
         if field_key == self.TIMELINE_SNAPSHOT_FIELD:
@@ -3274,7 +3368,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             card["last_edit_action"] = None
             return True
 
-        if field_key == "tags":
+        if self._is_tag_edit_field(field_key):
             draft_buffers = card.get("draft_edit_buffers")
             if isinstance(draft_buffers, dict):
                 draft_buffers.pop(field_key, None)
@@ -3287,7 +3381,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             card["tag_selected_index"] = 0
             self._clear_edit_preferred_column(card)
             card["last_edit_action"] = "commit"
-            card["last_committed_field"] = "tags"
+            card["last_committed_field"] = self._tag_row_for_key(field_key).field
             return True
 
         if field_key == self.TIMELINE_SNAPSHOT_FIELD:
@@ -3465,7 +3559,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 card["last_edit_action"] = "draft"
                 return True
 
-        if active_field == "tags":
+        if self._is_tag_edit_field(active_field):
             matches = self._tag_search_matches(card, limit=6)
             if event.key == pygame.K_UP and matches:
                 card["tag_selected_index"] = max(0, int(card.get("tag_selected_index", 0) or 0) - 1)
@@ -3533,7 +3627,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 self._delete_word_before_cursor(card)
             else:
                 self._delete_before_cursor(card)
-            if active_field == "tags":
+            if self._is_tag_edit_field(active_field):
                 card["tag_selected_index"] = 0
                 card["tag_keyboard_selection_active"] = False
             card["last_edit_action"] = "draft"
@@ -3545,7 +3639,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 self._delete_word_after_cursor(card)
             else:
                 self._delete_after_cursor(card)
-            if active_field == "tags":
+            if self._is_tag_edit_field(active_field):
                 card["tag_selected_index"] = 0
                 card["tag_keyboard_selection_active"] = False
             card["last_edit_action"] = "draft"
@@ -3555,7 +3649,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         if text and text.isprintable():
             self._clear_edit_preferred_column(card)
             self._insert_edit_text(card, text)
-            if active_field == "tags":
+            if self._is_tag_edit_field(active_field):
                 card["tag_selected_index"] = 0
                 card["tag_keyboard_selection_active"] = False
             card["last_edit_action"] = "draft"
@@ -3750,17 +3844,15 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             candidate_paths.append(os.path.normpath(os.path.join(self.PROJECT_ROOT, normalized_path)))
 
         for candidate in candidate_paths:
-            if not os.path.exists(candidate):
-                continue
             cache_path = os.path.abspath(candidate)
-            try:
-                cache_key = (cache_path, os.path.getmtime(cache_path))
-            except OSError:
+            revision = asset_files.revision(cache_path)
+            if revision is None:
                 continue
+            cache_key = (cache_path, revision)
             if cache_key in self.IMAGE_SURFACE_CACHE:
                 return self.IMAGE_SURFACE_CACHE[cache_key]
             try:
-                surface = pygame.image.load(candidate).convert_alpha()
+                surface = asset_files.load_image(cache_path).convert_alpha()
             except Exception:
                 return None
             if len(self.IMAGE_SURFACE_CACHE) >= self.MAX_IMAGE_CACHE_ITEMS:
@@ -4165,6 +4257,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             "plant_branch_module_ref": "branch sprite",
             "plant_leaf_module_ref": "leaf sprite",
             "plant_flower_module_ref": "flower sprite",
+            "plant_calyx_module_ref": "calyx sprite",
             "plant_fruit_module_ref": "fruit sprite",
         }
         return labels.get(field_key, str(field_key or ""))
@@ -5001,6 +5094,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         tab_gap = 6
         tab_widths = {
             "general": 70,
+            "tags": 52,
             "overview": 78,
             "production": 94,
             "site": 58,
@@ -5080,6 +5174,10 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             timeline_focus_rect = pygame.Rect(rect.right - 120, rect.y + 12, 20, 20)
             lock_toggle_rect = pygame.Rect(rect.right - 144, rect.y + 12, 20, 20)
             header_reserved_w = 192
+
+        minimize_rect = None
+        if card.get("allow_minimize", False):
+            minimize_rect = pygame.Rect(lock_toggle_rect.x - 24, rect.y + 12, 20, 20)
 
         header_icon_ref = self._resolve_card_icon_reference()
         header_icon_rect = pygame.Rect(rect.x + 10, rect.y + 8, 34, 34) if header_icon_ref else None
@@ -5204,17 +5302,14 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         key_column_w, value_column_w = self._get_table_column_widths(card["layout_font"], rect, section_map)
         value_column_x = content_left + key_column_w + self.TABLE_COLUMN_GAP
 
-        if self._is_general_mode():
+        if self._is_tags_mode():
+            image_rect = None
+            content_end_y = self._layout_tag_rows(card, content_left, top_content_y, text_width, editable_field_hitboxes)
+        elif self._is_general_mode():
             image_rect = None
             general_bottom = timeline_label_y - 10
             general_height = max(40, general_bottom - top_content_y)
-            tag_bar_h = 34
-            if card.get("is_edit_mode", False) and card.get("active_edit_field") == "tags":
-                tag_bar_h = 92
-            tag_bar_rect = pygame.Rect(content_left, top_content_y, text_width, tag_bar_h)
-            if card.get("is_edit_mode", False):
-                editable_field_hitboxes.append(("tags", tag_bar_rect))
-            wiki_top_y = tag_bar_rect.bottom + 8
+            wiki_top_y = top_content_y
             general_height = max(40, general_bottom - wiki_top_y)
             snapshot_active = self._timeline_snapshot_range(card) is not None
             snapshot_blocks = self._timeline_snapshot_display_entries(card)
@@ -6269,6 +6364,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         card["time_anchor_rect"] = time_anchor_rect
         card["delete_rect"] = delete_rect
         card["close_rect"] = close_rect
+        card["minimize_rect"] = minimize_rect
+        card["expand_rect"] = None
         card["title_edit_rect"] = title_edit_rect
         card["header_description_rect"] = header_description_rect
         card["type_label_rect"] = type_label_rect
@@ -6286,6 +6383,16 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         timeline_chip_h = self._timeline_snapshot_chip_lane_count(
             card, font, int(card.get("canvas_w", 420)),
         ) * 23
+
+        if self._is_tags_mode():
+            general_h = self._measure_tag_rows_height(card)
+            tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
+            timeline_label_y = tabs_bottom_y + 10 + general_h + 8
+            timeline_y = timeline_label_y + 18 + timeline_chip_h
+            center_y = timeline_y + 10
+            launch_top = center_y + self.TIMELINE_TO_LAUNCH_GAP
+            resize_bottom = launch_top + self.LAUNCH_H + 8 + self.RESIZE_HANDLE
+            return max(320, resize_bottom + 8)
 
         if self._is_general_mode():
             content_rect = pygame.Rect(0, 0, int(card.get("canvas_w", 420)) - 24, 0)
@@ -6308,8 +6415,6 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     content_rect.width,
                     card,
                 )
-            tag_bar_h = 92 if card.get("is_edit_mode", False) and card.get("active_edit_field") == "tags" else 34
-            general_h += tag_bar_h + 8
             tabs_bottom_y = self.HEADER_H + 6 + self.TAB_H
             timeline_label_y = tabs_bottom_y + 10 + general_h + 8
             timeline_y = timeline_label_y + 18 + timeline_chip_h
@@ -6580,6 +6685,13 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         time_anchor_rect = card.get("time_anchor_rect")
         delete_rect = card.get("delete_rect")
         close_rect = card.get("close_rect")
+        minimize_rect = card.get("minimize_rect")
+        if minimize_rect is not None:
+            pygame.draw.rect(screen, (46, 50, 60), minimize_rect)
+            pygame.draw.rect(screen, (140, 140, 150), minimize_rect, 1)
+            pygame.draw.line(screen, (230, 234, 242),
+                             (minimize_rect.x + 5, minimize_rect.centery),
+                             (minimize_rect.right - 5, minimize_rect.centery), 2)
         if idea_button_rect is not None:
             pygame.draw.rect(screen, (52, 60, 48), idea_button_rect)
             pygame.draw.rect(screen, (150, 176, 132), idea_button_rect, 1)
@@ -7714,7 +7826,9 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
         screen.set_clip(previous_clip)
 
     def _draw_general_content(self, screen, font, card):
-        self._draw_tag_bar(screen, font, card)
+        if self._is_tags_mode():
+            self._draw_tag_rows(screen, font, card)
+            return
         general_rect = card.get("general_content_rect")
         if general_rect is None:
             return
@@ -7829,24 +7943,29 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
 
         self._draw_task_checklist(screen, font, card)
 
-    def _draw_tag_bar(self, screen, font, card):
-        rect = card.get("tag_bar_rect")
-        if rect is None:
-            return
+    TAG_ROW_LABEL_W = 96
+
+    def _draw_tag_rows(self, screen, font, card):
         card["tag_chip_hitboxes"] = []
         card["tag_suggestion_hitboxes"] = []
         card["tag_remove_hitboxes"] = []
-        active = card.get("is_edit_mode", False) and card.get("active_edit_field") == "tags"
+        card["need_chip_hitboxes"] = []
+        for layout in card.get("tag_row_layouts") or []:
+            self._draw_tag_row(screen, font, card, layout["row"], layout["rect"])
+
+    def _draw_tag_row(self, screen, font, card, row, rect):
+        active = card.get("is_edit_mode", False) and card.get("active_edit_field") == row.key
         pygame.draw.rect(screen, (28, 32, 42) if not active else (36, 42, 56), rect)
         pygame.draw.rect(screen, (86, 98, 122) if not active else (174, 194, 228), rect, 1)
 
-        label_surface = font.render("Tags", True, (184, 196, 216))
-        screen.blit(label_surface, (rect.x + 8, rect.y + 8))
-        chip_x = rect.x + 52
+        label = self._ellipsize_text(row.label, font, self.TAG_ROW_LABEL_W - 14)
+        screen.blit(font.render(label, True, (184, 196, 216)), (rect.x + 8, rect.y + 8))
+        chip_x = rect.x + self.TAG_ROW_LABEL_W
         chip_y = rect.y + 6
         chip_right = rect.right - 8
-        tags = self._tag_values()
-        if not tags and not active:
+        tags = [] if row.read_only else self._tag_values(row)
+        needs = self._need_summary() if row.read_only else []
+        if not tags and not needs and not active:
             muted = font.render("none", True, (126, 136, 154))
             screen.blit(muted, (chip_x, rect.y + 8))
             return
@@ -7859,8 +7978,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                     break
                 chip_rect = pygame.Rect(chip_x, chip_y, chip_w, 22)
                 remove_rect = pygame.Rect(chip_rect.right - 20, chip_rect.y + 3, 16, 16)
-                card["tag_chip_hitboxes"].append({"tag": tag, "rect": chip_rect})
-                card["tag_remove_hitboxes"].append({"tag": tag, "rect": remove_rect})
+                card["tag_chip_hitboxes"].append({"tag": tag, "rect": chip_rect, "row_key": row.key})
+                card["tag_remove_hitboxes"].append({"tag": tag, "rect": remove_rect, "row_key": row.key})
                 fill, border, text_color = self._tag_chip_colors(tag)
                 pygame.draw.rect(screen, fill, chip_rect)
                 pygame.draw.rect(screen, border, chip_rect, 1)
@@ -7872,7 +7991,8 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 chip_x = chip_rect.right + 6
 
             input_text = self._tag_search_query(card)
-            input_rect = pygame.Rect(rect.x + 52, rect.y + 34, max(80, chip_right - rect.x - 52), 24)
+            input_x = rect.x + self.TAG_ROW_LABEL_W
+            input_rect = pygame.Rect(input_x, rect.y + 34, max(80, chip_right - input_x), 24)
             pygame.draw.rect(screen, (24, 28, 38), input_rect)
             pygame.draw.rect(screen, (116, 136, 176), input_rect, 1)
             display = self._ellipsize_text(input_text or "Search tag, Enter to add", font, input_rect.width - 12)
@@ -7887,7 +8007,7 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
                 if suggestion_x + chip_w > chip_right:
                     break
                 chip_rect = pygame.Rect(suggestion_x, suggestion_y, chip_w, 22)
-                card["tag_suggestion_hitboxes"].append({"tag": suggestion, "rect": chip_rect})
+                card["tag_suggestion_hitboxes"].append({"tag": suggestion, "rect": chip_rect, "row_key": row.key})
                 selected = index == selected_index
                 pygame.draw.rect(screen, (54, 66, 86) if selected else (42, 50, 64), chip_rect)
                 pygame.draw.rect(screen, (168, 194, 232) if selected else (112, 132, 166), chip_rect, 1)
@@ -7901,13 +8021,27 @@ class EntityCard(CardLocationMixin, CardPhylogenyMixin, CardProductionMixin, Car
             if chip_x + chip_w > chip_right:
                 overflow = font.render("+", True, (188, 198, 216))
                 screen.blit(overflow, (chip_x, chip_y + 3))
+                needs = []
                 break
             chip_rect = pygame.Rect(chip_x, chip_y, chip_w, 22)
-            card["tag_chip_hitboxes"].append({"tag": tag, "rect": chip_rect})
+            card["tag_chip_hitboxes"].append({"tag": tag, "rect": chip_rect, "row_key": row.key})
             fill, border, text_color = self._tag_chip_colors(tag)
             pygame.draw.rect(screen, fill, chip_rect)
             pygame.draw.rect(screen, border, chip_rect, 1)
             screen.blit(font.render(label, True, text_color), (chip_rect.x + 7, chip_rect.y + 3))
+            chip_x = chip_rect.right + 6
+
+        # The read-only "Serves" row: which needs the entity serves and the most direct reason.
+        for need, brief in needs:
+            label = self._ellipsize_text(f"{need.title()}: {brief}", font, 190)
+            chip_w = font.size(label)[0] + 14
+            if chip_x + chip_w > chip_right:
+                break
+            chip_rect = pygame.Rect(chip_x, chip_y, chip_w, 22)
+            card["need_chip_hitboxes"].append({"need": need, "rect": chip_rect})
+            pygame.draw.rect(screen, (32, 48, 36), chip_rect)
+            pygame.draw.rect(screen, (112, 158, 116), chip_rect, 1)
+            screen.blit(font.render(label, True, (214, 232, 214)), (chip_rect.x + 7, chip_rect.y + 3))
             chip_x = chip_rect.right + 6
 
     def _draw_wiki_link_picker(self, screen, font, card, general_rect):

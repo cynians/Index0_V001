@@ -30,7 +30,7 @@ from simulations.map.map_renderer import MapRenderer
 from simulations.map.map_simulation import MapSimulation
 from simulations.person.person_renderer import PersonRenderer
 from simulations.person.person_simulation import PersonSimulation
-from simulations.person.site_simulation import SiteSimulation
+from simulations.person.site_simulation import RuntimeWorldOverlay, SiteSimulation
 from ui.ui_manager import UIManager
 from world.world_model import WorldModel
 from world.simulation_context import SimulationContext
@@ -50,7 +50,18 @@ IMPLEMENTATION_SOURCES = (
     PROJECT_ROOT / "engine" / "simulation_manager.py",
     PROJECT_ROOT / "engine" / "camera.py",
     PROJECT_ROOT / "ui" / "ui_manager.py",
+    PROJECT_ROOT / "simulations" / "person" / "person_knowledge.py",
 )
+
+
+def _knowledge_collection(person_id, records):
+    """A fixture person's knowledge collection, shaped as tools/author_person_knowledge_model.py writes it."""
+    return {
+        "id": f"coll_knowledge_{person_id}", "type": "collection", "_dataset": "collections",
+        "collection_class": "personal_knowledge",
+        "includes": [record["member"] for record in records],
+        "member_records": [dict(record) for record in records],
+    }
 
 
 class LabWorld:
@@ -76,21 +87,22 @@ class LabWorld:
                 "big_five_agreeableness": 0.67,
                 "big_five_neuroticism": 0.29,
                 "personality_adjectives": ["curious", "dutiful", "reserved"],
-                "knowledge_records": [
-                    {"entity": "person_lab_friend", "interest": 0.88, "familiarity": 0.82},
-                    {"entity": "location_person_sim_lab", "interest": 0.61, "familiarity": 0.93},
-                    {"entity": "institution_person_sim_lab", "interest": 0.73, "familiarity": 0.69},
-                    {
-                        "entity": "idea_lab_nonviolence",
-                        "interest": 0.91,
-                        "familiarity": 0.76,
-                        "conviction": 0.96,
-                        "stance": "deeply held",
-                    },
-                    {"entity": "technology_lab_irrigation", "interest": 0.79, "familiarity": 0.57},
-                    {"entity": "recipe_simple_cooked_meal", "interest": 0.86, "familiarity": 0.81, "source": "learned recipe"},
-                ],
+                "knowledge_collection": "coll_knowledge_person_lab_worker",
             },
+            "coll_knowledge_person_lab_worker": _knowledge_collection("person_lab_worker", [
+                {"member": "person_lab_friend", "interest": 0.88, "familiarity": 0.82},
+                {"member": "location_person_sim_lab", "interest": 0.61, "familiarity": 0.93},
+                {"member": "institution_person_sim_lab", "interest": 0.73, "familiarity": 0.69},
+                {
+                    "member": "idea_lab_nonviolence",
+                    "interest": 0.91,
+                    "familiarity": 0.76,
+                    "conviction": 0.96,
+                    "stance": "deeply held",
+                },
+                {"member": "technology_lab_irrigation", "interest": 0.79, "familiarity": 0.57},
+                {"member": "recipe_simple_cooked_meal", "interest": 0.86, "familiarity": 0.81, "source": "learned recipe"},
+            ]),
             "person_lab_friend": {
                 "id": "person_lab_friend",
                 "type": "person",
@@ -143,6 +155,10 @@ class LabWorld:
                 "default_unit": "portion", "storage_modes": ["stackable"],
                 "ownership_records": ["ownership_person_test_ingredients"],
             },
+            "item_bed": {
+                "id": "item_bed", "type": "item", "_dataset": "items", "pretty_name": "Bed",
+                "rest_quality": 1.0,
+            },
             "item_cooked_meal": {
                 "id": "item_cooked_meal", "type": "item", "_dataset": "items",
                 "pretty_name": "Simple Cooked Meal", "categories": ["cat_prepared_food"],
@@ -162,6 +178,7 @@ class LabWorld:
                 "id": "location_person_test_kitchen", "type": "location", "_dataset": "locations",
                 "pretty_name": "Person Test Kitchen", "location_class": "building",
                 "ownership_records": ["ownership_person_test_kitchen"],
+                "operated_by": ["producer_person_test_kitchen"],
             },
             "location_person_test_pantry": {
                 "id": "location_person_test_pantry", "type": "location", "_dataset": "locations",
@@ -177,6 +194,7 @@ class LabWorld:
                 "employed_people": ["person_lab_worker"],
                 "production_technologies": ["tech_cooking", "tech_electric_oven"],
                 "assigned_components": ["component_kitchen_sink", "component_electric_oven"],
+                "produced_items": ["item_cooked_meal"],
                 "production_lines": [{
                     "line_id": "line_person_test_cooked_meal", "product_id": "item_cooked_meal",
                     "location_id": "location_person_test_kitchen",
@@ -254,13 +272,16 @@ class LabWorld:
             "is_employed_at": "location_person_test_kitchen",
             "associated_locations": ["location_lumber_test_site", "location_person_test_kitchen"],
         })
-        self.entities["person_lab_worker"]["knowledge_records"].extend([
-            {"entity": "location_lumber_test_barracks", "familiarity": 0.95, "navigation_knowledge": "route"},
-            {"entity": "location_person_test_kitchen", "familiarity": 1.0, "navigation_knowledge": "route"},
-            {"entity": "location_person_test_pantry", "familiarity": 0.9, "navigation_knowledge": "route"},
-            {"entity": "location_lumber_test_factory", "familiarity": 0.35, "navigation_knowledge": "direction", "direction_hint": [1, 0.35]},
-            {"entity": "location_lumber_test_woodlot", "familiarity": 0.25, "navigation_knowledge": "direction", "direction_hint": [-1, 0]},
-        ])
+        knowledge = self.entities["coll_knowledge_person_lab_worker"]
+        added = [
+            {"member": "location_lumber_test_barracks", "familiarity": 0.95, "navigation_knowledge": "route"},
+            {"member": "location_person_test_kitchen", "familiarity": 1.0, "navigation_knowledge": "route"},
+            {"member": "location_person_test_pantry", "familiarity": 0.9, "navigation_knowledge": "route"},
+            {"member": "location_lumber_test_factory", "familiarity": 0.35, "navigation_knowledge": "direction", "direction_hint": [1, 0.35]},
+            {"member": "location_lumber_test_woodlot", "familiarity": 0.25, "navigation_knowledge": "direction", "direction_hint": [-1, 0]},
+        ]
+        knowledge["member_records"].extend(added)
+        knowledge["includes"].extend(record["member"] for record in added)
         self.entities["location_person_test_kitchen"].update({
             "pretty_name": "Barracks Kitchen",
             "site_class": "kitchen",
@@ -307,6 +328,7 @@ class LabWorld:
                     {"side": "west", "center": -16, "width": 3, "opening_class": "exterior door"},
                     {"side": "south", "center": 25, "width": 3, "opening_class": "kitchen doorway"},
                 ], "map_color": "#536271",
+                "inventory_items": [{"item": "item_bed", "quantity": 4, "unit": "bed"}],
             },
             "location_lumber_test_storage": {
                 "id": "location_lumber_test_storage", "type": "location", "_dataset": "locations",
@@ -332,37 +354,40 @@ class LabWorld:
                 "is_employed_by": ["producer_lumber_test_factory"],
                 "is_employed_as": "job_lumber_site_laborer",
                 "is_employed_at": "location_lumber_test_factory",
-                "knowledge_records": [
-                    {"entity": "location_lumber_test_factory", "navigation_knowledge": "route"},
-                    {"entity": "location_lumber_test_storage", "navigation_knowledge": "route"},
-                    {"entity": "location_lumber_test_woodlot", "navigation_knowledge": "route"},
-                ],
+                "knowledge_collection": "coll_knowledge_person_lumber_laborer_elias",
             },
+            "coll_knowledge_person_lumber_laborer_elias": _knowledge_collection("person_lumber_laborer_elias", [
+                {"member": "location_lumber_test_factory", "navigation_knowledge": "route"},
+                {"member": "location_lumber_test_storage", "navigation_knowledge": "route"},
+                {"member": "location_lumber_test_woodlot", "navigation_knowledge": "route"},
+            ]),
             "person_lumber_laborer_nia": {
                 "id": "person_lumber_laborer_nia", "type": "person", "_dataset": "people",
                 "pretty_name": "Nia Vale", "sex": "female", "site_position": [17, 15],
                 "is_employed_by": ["producer_lumber_test_factory"],
                 "is_employed_as": "job_lumber_site_laborer",
                 "is_employed_at": "location_lumber_test_factory",
-                "knowledge_records": [
-                    {"entity": "location_lumber_test_factory", "navigation_knowledge": "route"},
-                    {"entity": "location_lumber_test_storage", "navigation_knowledge": "route"},
-                    {"entity": "location_lumber_test_woodlot", "navigation_knowledge": "direction", "direction_hint": [-1, 0]},
-                ],
+                "knowledge_collection": "coll_knowledge_person_lumber_laborer_nia",
             },
+            "coll_knowledge_person_lumber_laborer_nia": _knowledge_collection("person_lumber_laborer_nia", [
+                {"member": "location_lumber_test_factory", "navigation_knowledge": "route"},
+                {"member": "location_lumber_test_storage", "navigation_knowledge": "route"},
+                {"member": "location_lumber_test_woodlot", "navigation_knowledge": "direction", "direction_hint": [-1, 0]},
+            ]),
             "person_lumber_overseer_tomas": {
                 "id": "person_lumber_overseer_tomas", "type": "person", "_dataset": "people",
                 "pretty_name": "Tomas Rhee", "sex": "male", "site_position": [39, 8],
                 "is_employed_by": ["producer_lumber_test_factory"],
                 "is_employed_as": "job_lumber_site_overseer",
                 "is_employed_at": "location_lumber_test_site",
-                "knowledge_records": [
-                    {"entity": "location_lumber_test_site", "navigation_knowledge": "route"},
-                    {"entity": "location_lumber_test_factory", "navigation_knowledge": "route"},
-                    {"entity": "location_lumber_test_storage", "navigation_knowledge": "route"},
-                    {"entity": "location_lumber_test_woodlot", "navigation_knowledge": "route"},
-                ],
+                "knowledge_collection": "coll_knowledge_person_lumber_overseer_tomas",
             },
+            "coll_knowledge_person_lumber_overseer_tomas": _knowledge_collection("person_lumber_overseer_tomas", [
+                {"member": "location_lumber_test_site", "navigation_knowledge": "route"},
+                {"member": "location_lumber_test_factory", "navigation_knowledge": "route"},
+                {"member": "location_lumber_test_storage", "navigation_knowledge": "route"},
+                {"member": "location_lumber_test_woodlot", "navigation_knowledge": "route"},
+            ]),
             "job_lumber_site_cook": {
                 "id": "job_lumber_site_cook", "type": "job", "_dataset": "jobs", "pretty_name": "Site Cook",
                 "job_criticality": 0.55,
@@ -679,6 +704,87 @@ def run_lab(output_dir=DEFAULT_OUTPUT_DIR):
             }
             for layer in site_map_simulation.get_layers()
         ],
+    }
+
+    # The need-satisfaction checkpoint plays the owner's example in the void
+    # (docs/person_simulation_concept_v001.md section 5) on the authored need
+    # tags, items, fishmonger and crowberry shrub of the active ontology. Only
+    # the hungry person and their knowledge are a runtime fixture; the theft is
+    # scripted, everything else is chosen by the production loop.
+    hungry_id = "person_lab_hungry"
+    hungry_knowledge = _knowledge_collection(hungry_id, [
+        {"member": "item_vending_machine", "familiarity": 0.7, "source": "passes it daily"},
+        {"member": "person_test_fishmonger", "familiarity": 0.7, "source": "buys fish there"},
+        {"member": "spec_empetrum_nigrum", "familiarity": 0.5, "source": "picked there as a child"},
+    ])
+    need_world = RuntimeWorldOverlay(site_world, {
+        hungry_id: {
+            "id": hungry_id, "type": "person", "_dataset": "people", "pretty_name": "Hungry Walker",
+            "knowledge_collection": hungry_knowledge["id"],
+            "inventory_items": [{"item": "item_chips_bag", "quantity": 1}],
+        },
+        hungry_knowledge["id"]: hungry_knowledge,
+    })
+    need_simulation = PersonSimulation(need_world, hungry_id, year=2400)
+    need_simulation.needs.update({"food": 20.0, "rest": 100.0, "leisure": 100.0})
+    need_simulation.work_due = 0.0
+    need_simulation.place_thing("item_vending_machine", (8, 0), stock={})
+    need_simulation.place_thing("person_test_fishmonger", (60, 0), stock={"item_smoked_fish": 1})
+    need_simulation.place_thing("spec_empetrum_nigrum", (40, -30), stock={"item_crowberries": 12})
+    camera.x, camera.y = 30.0, -12.0
+    camera.zoom = 11.0
+    stolen = False
+    machine_path = output_dir / "14_need_loop_machine_empty.png"
+    for _second in range(240):
+        _advance(need_simulation, 1.0)
+        if not stolen and need_simulation._item_quantity("item_smoked_fish") > 0:
+            stolen = bool(need_simulation.lose_item("item_smoked_fish", reason="stolen as she turned from the stall"))
+        # Captured on the way to the fishmonger: the machine already found empty.
+        active_label = (need_simulation.active_task or {}).get("label", "")
+        if "Ivo Brann" in active_label and not machine_path.exists():
+            _render_with_ui(renderer, ui_manager, need_simulation, camera, machine_path, "tasks")
+    report["artifacts"]["need_loop_machine_empty"] = machine_path.name
+    fed_path = output_dir / "15_need_loop_fed.png"
+    _render_with_ui(renderer, ui_manager, need_simulation, camera, fed_path, "knowledge")
+    report["artifacts"]["need_loop_fed"] = fed_path.name
+    report["need_loop"] = {
+        "outcomes": [
+            {"event": entry["event"], "label": entry["label"], "failure_reason": entry.get("failure_reason")}
+            for entry in reversed(need_simulation.decision_history)
+            if entry["event"] in {"completed", "failed"}
+        ],
+        "choices": [
+            entry["explanation"] for entry in reversed(need_simulation.decision_history)
+            if entry["event"] == "selected"
+        ],
+        "theft": stolen,
+        "food_fulfillment": round(need_simulation.needs["food"], 3),
+        "learned_beliefs": need_simulation.learned_beliefs,
+    }
+
+    # Rest and company: Mara at the lumber site, tired and lonely, picks a bed
+    # in the barracks and the residents she lives beside through the same loop.
+    social_simulation = PersonSimulation(world_model=world, person_entity_id="person_lab_worker", year=2400)
+    social_simulation.needs.update({"food": 100.0, "rest": 25.0, "leisure": 100.0, "belonging": 25.0})
+    social_simulation.work_due = 0.0
+    camera.x, camera.y = social_simulation.get_center()
+    camera.zoom = social_simulation.get_initial_camera_zoom(*SCREEN_SIZE)
+    for _second in range(120):
+        _advance(social_simulation, 1.0)
+        if social_simulation.active_task is None and social_simulation.needs["rest"] >= 58.0                 and social_simulation.needs["belonging"] >= 55.0:
+            break
+    social_path = output_dir / "16_rest_and_company.png"
+    _render_with_ui(renderer, ui_manager, social_simulation, camera, social_path, "tasks")
+    report["artifacts"]["rest_and_company"] = social_path.name
+    report["rest_and_company"] = {
+        "outcomes": [
+            {"event": entry["event"], "label": entry["label"], "failure_reason": entry.get("failure_reason")}
+            for entry in reversed(social_simulation.decision_history)
+            if entry["event"] in {"completed", "failed"}
+        ],
+        "rest": round(social_simulation.needs["rest"], 3),
+        "belonging": round(social_simulation.needs["belonging"], 3),
+        "learned_beliefs": social_simulation.learned_beliefs,
     }
 
     report_path = output_dir / "person_sim_lab_report.json"

@@ -18,6 +18,7 @@ except ImportError:  # Keep a functional, slower path for minimal installations.
 
 from simulations.world_gen.material_heatmaps import load_raster_bundle_surface
 from simulations.world_gen.natural_materials import material_geological_map_color
+from engine import asset_files
 from simulations.world_gen.true_color import render_true_color_surface
 from simulations.world_gen.water_cycle import shade_koppen_rgb
 from simulations.world_gen.heightmap import (
@@ -61,6 +62,10 @@ class MapRenderer:
         self._image_cache = {}
         self._scaled_image_cache = {}
         self._heightmap_surface_cache = {}
+        # Rendered child refinements and their feathered copies. Kept apart
+        # from the 16-entry base cache: a city with a dozen LOD5 patches
+        # would otherwise evict its own surfaces every frame.
+        self._refined_patch_surface_cache = {}
         self._true_color_surface_cache = {}
         self._scaled_heightmap_cache = {}
         self._height_contour_surface_cache = {}
@@ -84,9 +89,16 @@ class MapRenderer:
         self._scaled_cache_limit = 8
         self._text_cache_limit = 256
         self._viewport_overscan_px = 72
+        self._height_contour_display_cache = {}
 
     @staticmethod
-    def _heightmap_contour_segments(heightmap, level):
+    def _heightmap_contour_segments(heightmap, level, values=None):
+        """Marching-squares fragments of one level.
+
+        ``values`` is the sample grid as an array. A caller tracing several
+        levels of one heightmap passes it so the nested rows are converted
+        once, not once per level.
+        """
         grid = heightmap.get("sample_grid") if isinstance(heightmap.get("sample_grid"), dict) else {}
         rows = grid.get("rows") if isinstance(grid.get("rows"), list) else []
         sample_h = min(len(rows), int(grid.get("height", len(rows)) or len(rows)))
@@ -141,10 +153,11 @@ class MapRenderer:
         segments = []
         if np is not None:
             try:
-                values = np.asarray(
-                    [row[:sample_w] for row in rows[:sample_h]],
-                    dtype=np.float64,
-                )
+                if values is None or values.shape != (sample_h, sample_w):
+                    values = np.asarray(
+                        [row[:sample_w] for row in rows[:sample_h]],
+                        dtype=np.float64,
+                    )
                 v00 = values[:-1, :-1]
                 v10 = values[:-1, 1:]
                 v01 = values[1:, :-1]
@@ -200,19 +213,25 @@ class MapRenderer:
         if not segments:
             return []
 
-        def key(point):
-            return round(float(point[0]), 6), round(float(point[1]), 6)
+        # Endpoint keys are computed once per segment; the join below looks
+        # each of them up several times.
+        keys = [
+            (
+                (round(float(first[0]), 6), round(float(first[1]), 6)),
+                (round(float(second[0]), 6), round(float(second[1]), 6)),
+            )
+            for first, second in segments
+        ]
 
         adjacency = {}
-        for index, (first, second) in enumerate(segments):
-            adjacency.setdefault(key(first), []).append((index, 0))
-            adjacency.setdefault(key(second), []).append((index, 1))
+        for index, (first_key, second_key) in enumerate(keys):
+            adjacency.setdefault(first_key, []).append((index, 0))
+            adjacency.setdefault(second_key, []).append((index, 1))
         unused = set(range(len(segments)))
         open_indices = [
             index
-            for index, (first, second) in enumerate(segments)
-            if len(adjacency.get(key(first), ())) == 1
-            or len(adjacency.get(key(second), ())) == 1
+            for index, (first_key, second_key) in enumerate(keys)
+            if len(adjacency[first_key]) == 1 or len(adjacency[second_key]) == 1
         ]
         open_cursor = 0
         polylines = []
@@ -228,12 +247,14 @@ class MapRenderer:
             else:
                 initial = next(iter(unused))
             first, second = segments[initial]
-            if len(adjacency.get(key(second), ())) == 1 and len(adjacency.get(key(first), ())) != 1:
+            first_key, second_key = keys[initial]
+            if len(adjacency[second_key]) == 1 and len(adjacency[first_key]) != 1:
                 first, second = second, first
+                first_key, second_key = second_key, first_key
             unused.remove(initial)
             polyline = [first, second]
+            start_key, endpoint_key = first_key, second_key
             while True:
-                endpoint_key = key(polyline[-1])
                 continuation = next(
                     (
                         (index, side)
@@ -246,9 +267,9 @@ class MapRenderer:
                     break
                 index, side = continuation
                 unused.remove(index)
-                segment = segments[index]
-                polyline.append(segment[1 - side])
-                if key(polyline[-1]) == key(polyline[0]):
+                polyline.append(segments[index][1 - side])
+                endpoint_key = keys[index][1 - side]
+                if endpoint_key == start_key:
                     break
             if len(polyline) >= 2:
                 polylines.append(polyline)
@@ -319,6 +340,20 @@ class MapRenderer:
 
         sea_level = heightmap.get("sea_level_m")
         level_paths = []
+        values = None
+        if np is not None and rows:
+            # Converting the nested rows dominated tracing: it used to run
+            # once per level, eighteen times per interval per heightmap.
+            try:
+                sample_h = min(len(rows), int(grid.get("height", len(rows)) or len(rows)))
+                sample_w = min(
+                    min((len(row) for row in rows[:sample_h] if isinstance(row, list)), default=0),
+                    int(grid.get("width", len(rows[0])) or 0),
+                )
+                if sample_w >= 2 and sample_h >= 2:
+                    values = np.asarray([row[:sample_w] for row in rows[:sample_h]], dtype=np.float64)
+            except (TypeError, ValueError):
+                values = None
         for level in contour_levels_for_heightmap(heightmap, interval, max_levels=18):
             # The shoreline is rendered independently from the water mask.
             # Do not also render a nearby elevation isoline underneath it.
@@ -327,7 +362,7 @@ class MapRenderer:
                 and abs(float(level) - float(sea_level)) < float(interval) * 0.45
             ):
                 continue
-            segments = self._heightmap_contour_segments(heightmap, level)
+            segments = self._heightmap_contour_segments(heightmap, level, values)
             level_paths.append((
                 float(level),
                 [
@@ -399,6 +434,12 @@ class MapRenderer:
         interval = display_contour_interval_m(heightmap, requested_interval, max_levels=18)
         requested_target_w = max(2, int((target_size or (512, 256))[0]))
         requested_target_h = max(2, int((target_size or (512, 256))[1]))
+        # Keep the returned source bounded too. Upscaling it to the full
+        # zoomed map here bypasses the viewport-only blit below and can ask
+        # SDL for gigabytes of offscreen pixels during navigation.
+        display_scale = min(1.0, 1280.0 / requested_target_w, 720.0 / requested_target_h)
+        requested_target_w = max(2, int(round(requested_target_w * display_scale)))
+        requested_target_h = max(2, int(round(requested_target_h * display_scale)))
         target_w = requested_target_w
         target_h = requested_target_h
         # Snap to a coarse bucket so continuous zoom doesn't rebuild the
@@ -421,6 +462,10 @@ class MapRenderer:
             float(heightmap.get("max_elevation_m", 0.0) or 0.0),
             heightmap.get("sea_level_m"),
         )
+        display_key = (cache_key, requested_target_w, requested_target_h)
+        display_surface = self._height_contour_display_cache.get(display_key)
+        if display_surface is not None:
+            return display_surface, interval
         cached = self._height_contour_surface_cache.get(cache_key)
         if cached is not None:
             surface = cached
@@ -428,6 +473,7 @@ class MapRenderer:
                 surface = pygame.transform.smoothscale(
                     surface, (requested_target_w, requested_target_h),
                 )
+            self._cache_put(self._height_contour_display_cache, display_key, surface, limit=18)
             return surface, interval
 
         cell_w = sample_w - 1
@@ -488,6 +534,7 @@ class MapRenderer:
             surface = pygame.transform.smoothscale(
                 surface, (requested_target_w, requested_target_h),
             )
+        self._cache_put(self._height_contour_display_cache, display_key, surface, limit=18)
         return surface, interval
 
     def _composite_refined_contours(
@@ -505,7 +552,10 @@ class MapRenderer:
             "refined_contours",
             id(base_surface),
             bool(regions_only),
-            round(float(pixels_per_map_pixel), 5),
+            # Child contours depend on zoom only through the contour
+            # interval. Keying on the raw zoom rebuilt every child surface
+            # on every wheel step.
+            height_marker_interval_m(pixels_per_map_pixel),
             tuple(
                 (
                     model.get("entity_id"),
@@ -907,7 +957,7 @@ class MapRenderer:
             return self._image_cache[cache_key]
 
         try:
-            surface = pygame.image.load(cache_key).convert_alpha()
+            surface = asset_files.load_image(cache_key).convert_alpha()
         except (OSError, pygame.error):
             surface = None
 
@@ -952,10 +1002,70 @@ class MapRenderer:
             for point in points
         ]
         overlay = pygame.Surface(clipped.size, pygame.SRCALPHA)
-        pygame.draw.polygon(overlay, fill_color, local_points)
-        if border_color is not None and border_width > 0:
-            pygame.draw.polygon(overlay, border_color, local_points, border_width)
+        # A polygon far larger than the screen (a parent region seen from a
+        # child map) is scan-filled over its whole extent before clipping:
+        # hundreds of milliseconds for a few visible pixels. Clip it to the
+        # overlay first; the visible fill is identical.
+        reach = max(clipped.width, clipped.height) * 4
+        oversized = (
+            bounds.width > reach or bounds.height > reach
+        )
+        if oversized:
+            fill_points = self._clip_polygon_to_rect(
+                local_points, (-2, -2, clipped.width + 2, clipped.height + 2),
+            )
+            if len(fill_points) >= 3:
+                pygame.draw.polygon(overlay, fill_color, fill_points)
+            if border_color is not None and border_width > 0:
+                # The clipped ring has edges along the screen border that
+                # are not part of the outline; stroke the real edges.
+                pygame.draw.lines(overlay, border_color, True, local_points, border_width)
+        else:
+            pygame.draw.polygon(overlay, fill_color, local_points)
+            if border_color is not None and border_width > 0:
+                pygame.draw.polygon(overlay, border_color, local_points, border_width)
         screen.blit(overlay, clipped.topleft)
+
+    @staticmethod
+    def _clip_polygon_to_rect(points, rect):
+        """Sutherland-Hodgman clip of a simple polygon to ``(left, top, right, bottom)``."""
+        left, top, right, bottom = rect
+
+        def clip(ring, inside, intersect):
+            result = []
+            for index, current in enumerate(ring):
+                previous = ring[index - 1]
+                if inside(current):
+                    if not inside(previous):
+                        result.append(intersect(previous, current))
+                    result.append(current)
+                elif inside(previous):
+                    result.append(intersect(previous, current))
+            return result
+
+        def at_x(x):
+            def intersect(a, b):
+                amount = (x - a[0]) / (b[0] - a[0])
+                return (x, a[1] + (b[1] - a[1]) * amount)
+            return intersect
+
+        def at_y(y):
+            def intersect(a, b):
+                amount = (y - a[1]) / (b[1] - a[1])
+                return (a[0] + (b[0] - a[0]) * amount, y)
+            return intersect
+
+        ring = [(float(x), float(y)) for x, y in points]
+        for inside, intersect in (
+            (lambda p: p[0] >= left, at_x(left)),
+            (lambda p: p[0] <= right, at_x(right)),
+            (lambda p: p[1] >= top, at_y(top)),
+            (lambda p: p[1] <= bottom, at_y(bottom)),
+        ):
+            if not ring:
+                break
+            ring = clip(ring, inside, intersect)
+        return [(int(round(x)), int(round(y))) for x, y in ring]
 
     def _source_rect_for_visible_dest(self, source_surface, dest_rect, visible_rect):
         if source_surface is None or dest_rect.width <= 0 or dest_rect.height <= 0:
@@ -1104,6 +1214,26 @@ class MapRenderer:
             pygame.draw.line(screen, (110, 125, 150), (max(0, rect.left), rect.centery), (min(viewport.right - 1, rect.right), rect.centery), 1)
         if 0 <= rect.centerx < viewport.width:
             pygame.draw.line(screen, (110, 125, 150), (rect.centerx, max(0, rect.top)), (rect.centerx, min(viewport.bottom - 1, rect.bottom)), 1)
+
+    def _draw_plant_field_layer(self, screen, layer, camera):
+        """Single plants on a map's ground, painted at the scale of the view (``city_vegetation.PlantField``)."""
+        field = layer.get("_plant_field")
+        zoom = float(getattr(camera, "zoom", 0.0) or 0.0)
+        if field is None or zoom <= 0.0:
+            return
+        world_per_m = layer["width_world"] / field.width_m
+        left = layer["x"] - layer["width_world"] / 2 - field.bounds["min_x"] * world_per_m
+        top = layer["y"] - layer["height_world"] / 2 - field.bounds["min_y"] * world_per_m
+        first = camera.screen_to_world((0, 0))
+        last = camera.screen_to_world((self.app_view.width, self.app_view.height))
+        window = ((first[0] - left) / world_per_m, (first[1] - top) / world_per_m,
+                  (last[0] - left) / world_per_m, (last[1] - top) / world_per_m)
+        for picture, start, end in field.tiles(window, zoom * world_per_m):
+            first = camera.world_to_screen((left + start[0] * world_per_m, top + start[1] * world_per_m))
+            last = camera.world_to_screen((left + end[0] * world_per_m, top + end[1] * world_per_m))
+            if first is not None and last is not None:
+                # Each picture is cut to its own piece of the screen: a translucent edge laid twice shows as a line.
+                screen.blit(picture, first, (0, 0, last[0] - first[0], last[1] - first[1]))
 
     def _draw_image_rect_layer(self, screen, layer, camera):
         image_surface = layer.get("_prepared_surface")
@@ -1590,6 +1720,7 @@ class MapRenderer:
             heightmap_surface = self._heightmap_surface_for_layer(layer, heightmap, rows)
             if heightmap_surface is not None:
                 heightmap_surface = self._composite_refined_surface(heightmap_surface, layer, "heightmap")
+                composite_width = heightmap_surface.get_width()
                 heightmap_surface = self._projected_spherical_surface(heightmap_surface, layer)
                 self._blit_scaled_layer(
                     screen,
@@ -1599,6 +1730,10 @@ class MapRenderer:
                     "heightmap",
                     smooth=True,
                 )
+                if not has_projection_focus and not layer.get("show_planet_equator"):
+                    # Flat regional maps only: a planet's surface is
+                    # reprojected, so a patch is not a screen rectangle there.
+                    self._draw_native_refined_patches(screen, layer, rect, composite_width)
         screen.set_clip(clip)
 
         self._draw_planet_equator(screen, rect, layer)
@@ -1658,9 +1793,9 @@ class MapRenderer:
                 path=(root/reference["path"]).resolve()
                 if not path.is_relative_to(root/"assets/maps/reference"):
                     raise ValueError("Orthophoto path escapes reference assets")
-                if hashlib.sha256(path.read_bytes()).hexdigest()!=reference["sha256"]:
+                if hashlib.sha256(asset_files.read_bytes(path)).hexdigest()!=reference["sha256"]:
                     raise ValueError("Orthophoto checksum mismatch")
-                surface=pygame.image.load(str(path))
+                surface=asset_files.load_image(path)
                 u0,v0,u1,v1=reference["uv_bounds"]
                 rect=pygame.Rect(round(u0*surface.get_width()),round(v0*surface.get_height()),
                     max(1,round((u1-u0)*surface.get_width())),max(1,round((v1-v0)*surface.get_height())))
@@ -1877,7 +2012,8 @@ class MapRenderer:
             self._cache_put(self._heightmap_surface_cache, atmosphere_cache_key, tinted, limit=16)
         return tinted
 
-    def _composite_refined_surface(self, base_surface, layer, surface_kind):
+    def _refined_models_for_surface(self, layer, surface_kind):
+        """Child refinements that can be drawn into this layer's surface."""
         models = layer.get("refined_region_models") if isinstance(layer.get("refined_region_models"), list) else []
         models = [model for model in models if isinstance(model, dict) and isinstance(model.get(f"{surface_kind}_model"), dict)]
         if surface_kind == "heightmap" and layer.get("render_mode") == "true_color":
@@ -1889,6 +2025,150 @@ class MapRenderer:
                 if isinstance(model.get("true_color_model"), dict)
                 and model["true_color_model"].get("model_version") == parent_version
             ]
+        return models
+
+    def _refined_child_heightmap_surface(self, layer, model):
+        """Render one child refinement with the parent layer's mode and palette."""
+        child_model = model["heightmap_model"]
+        child_grid = child_model.get("sample_grid") or {}
+        child_rows = child_grid.get("rows") or []
+        if not child_rows:
+            return None
+        # The recipe copy below is a new dict on every call, which defeats
+        # the true-colour cache keyed on its identity. The composite hides
+        # that behind its own cache; the native pass asks every frame.
+        parent_model = layer.get("heightmap_model")
+        cache_key = (
+            "refined_child", layer.get("render_mode"), model.get("entity_id"),
+            int(model.get("refinement_revision", 0) or 0), id(child_rows), id(parent_model),
+        )
+        cached = self._refined_patch_surface_cache.get(cache_key)
+        if cached is not None and cached[0] is child_rows and cached[1] is parent_model:
+            return cached[2]
+        surface = self._render_refined_child_heightmap_surface(layer, model, child_model, child_rows)
+        if surface is not None:
+            self._cache_put(
+                self._refined_patch_surface_cache, cache_key, (child_rows, parent_model, surface), limit=64,
+            )
+        return surface
+
+    def _render_refined_child_heightmap_surface(self, layer, model, child_model, child_rows):
+        child_layer = dict(layer)
+        child_layer.pop("refined_region_models", None)
+        child_layer["heightmap_model"] = child_model
+        for field in (
+            "water_cycle_model",
+            "surface_evolution_model",
+            "surface_exposure_model",
+            "surface_geomorphology_model",
+            "atmosphere_model",
+            "surface_palette",
+            "true_color_model",
+        ):
+            if model.get(field) is not None:
+                child_layer[field] = model.get(field)
+        child_heatmaps = model.get("material_heatmap_model")
+        if isinstance(child_heatmaps, dict):
+            child_material = child_heatmaps.get("composite_layer")
+            if isinstance(child_material, dict):
+                child_layer["surface_material_layer"] = child_material
+            child_layer["surface_material_layers"] = [
+                dict(material_layer)
+                for material_layer in child_heatmaps.get("layers") or []
+                if isinstance(material_layer, dict)
+            ]
+        if child_layer.get("render_mode") == "true_color":
+            child_recipe = dict(child_layer.get("true_color_model") or {})
+            child_recipe["seed"] = str(
+                child_model.get("map_seed")
+                or child_model.get("material_distribution_seed")
+                or model.get("entity_id")
+                or child_recipe.get("seed")
+                or "region"
+            )
+            child_layer["true_color_model"] = child_recipe
+        # All nested patches use the root map's absolute elevation
+        # palette.  Normalizing each child to its own local min/max
+        # turned ordinary refinement footprints into pale polygons.
+        child_layer["heightmap_color_context_override"] = self._heightmap_color_context(
+            layer.get("heightmap_model") or {}, layer,
+        )
+        return self._heightmap_surface_for_layer(child_layer, child_model, child_rows)
+
+    # Share of a patch's shorter side over which it fades in. The composite
+    # feathers a patch by up to 1/8 of its shorter side; the native pass
+    # fades over the same band so it sharpens the patch without redrawing
+    # the soft join to its parent as a hard edge.
+    NATIVE_PATCH_FEATHER_FRACTION = 0.12
+
+    def _feathered_patch_surface(self, patch_surface):
+        """Copy of a patch surface whose alpha ramps to zero at its border."""
+        if patch_surface is None:
+            return None
+        cache_key = ("refined_native_feather", id(patch_surface))
+        cached = self._refined_patch_surface_cache.get(cache_key)
+        # The source is kept beside the copy so its id cannot be reused.
+        if cached is not None and cached[0] is patch_surface:
+            return cached[1]
+        feathered = patch_surface.convert_alpha()
+        width, height = feathered.get_size()
+        feather = int(min(width, height) * self.NATIVE_PATCH_FEATHER_FRACTION)
+        if feather >= 2:
+            alpha_mask = pygame.Surface((width, height), pygame.SRCALPHA)
+            for inset in range(feather + 1):
+                mask_rect = pygame.Rect(inset, inset, width - inset * 2, height - inset * 2)
+                if mask_rect.width <= 0 or mask_rect.height <= 0:
+                    break
+                pygame.draw.rect(alpha_mask, (255, 255, 255, int(round(255 * inset / feather))), mask_rect)
+            feathered.blit(alpha_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        self._cache_put(self._refined_patch_surface_cache, cache_key, (patch_surface, feathered), limit=64)
+        return feathered
+
+    def _draw_native_refined_patches(self, screen, layer, rect, composite_width):
+        """Draw child refinements at their own resolution once zoom outruns the composite.
+
+        ``_composite_refined_surface`` fits every patch into one raster of
+        at most 2048 px for the whole map. That is right for an overview,
+        but at building zoom a 200 m patch of a 2 km city is then stretched
+        from ~200 px. Past that point each patch is drawn from its own
+        surface into its own screen rectangle, coarse levels first.
+        """
+        models = self._refined_models_for_surface(layer, "heightmap")
+        if not models or composite_width <= 0:
+            return
+        screen_rect = screen.get_rect()
+        for model in sorted(models, key=lambda item: (int(item.get("detail_level", 0) or 0), int(item.get("refinement_revision", 0) or 0))):
+            uv = model.get("uv_bounds") or {}
+            min_u, max_u = float(uv.get("min_u", 0.0)), float(uv.get("max_u", 0.0))
+            min_v, max_v = float(uv.get("min_v", 0.0)), float(uv.get("max_v", 0.0))
+            patch_rect = pygame.Rect(
+                rect.x + int(round(min_u * rect.width)),
+                rect.y + int(round(min_v * rect.height)),
+                max(1, int(round((max_u - min_u) * rect.width))),
+                max(1, int(round((max_v - min_v) * rect.height))),
+            )
+            if not patch_rect.colliderect(screen_rect):
+                continue
+            # Pixels the composite gave this patch; draw natively only when
+            # the screen asks for visibly more than that.
+            if patch_rect.width <= (max_u - min_u) * composite_width * 1.25:
+                continue
+            child_surface = self._feathered_patch_surface(
+                self._refined_child_heightmap_surface(layer, model)
+            )
+            if child_surface is None:
+                continue
+            self._blit_scaled_layer(
+                screen,
+                child_surface,
+                patch_rect,
+                self._scaled_heightmap_cache,
+                ("refined_native", model.get("entity_id"), layer.get("render_mode")),
+                smooth=True,
+            )
+
+    def _composite_refined_surface(self, base_surface, layer, surface_kind):
+        models = self._refined_models_for_surface(layer, surface_kind)
         if not models:
             return base_surface
         root_level = int((layer.get("heightmap_model") or {}).get("map_detail_level", 0) or 0)
@@ -1900,6 +2180,12 @@ class MapRenderer:
         if cached is not None:
             return cached
         composite = pygame.transform.scale(base_surface, target_size)
+        if composite.get_masks()[3] and not (composite.get_flags() & pygame.SRCALPHA):
+            # The base carries an alpha channel without the per-pixel-alpha
+            # flag. Blitting a feathered patch onto it then overwrites alpha
+            # with zero instead of compositing, and the patch later scales
+            # to screen as a transparent (black) hole.
+            composite = composite.convert_alpha()
         for model in models:
             uv = model.get("uv_bounds") or {}
             left = int(round(float(uv.get("min_u", 0.0)) * target_size[0]))
@@ -1910,50 +2196,7 @@ class MapRenderer:
             if destination.width <= 0 or destination.height <= 0:
                 continue
             if surface_kind == "heightmap":
-                child_model = model["heightmap_model"]
-                child_grid = child_model.get("sample_grid") or {}
-                child_rows = child_grid.get("rows") or []
-                child_layer = dict(layer)
-                child_layer.pop("refined_region_models", None)
-                child_layer["heightmap_model"] = child_model
-                for field in (
-                    "water_cycle_model",
-                    "surface_evolution_model",
-                    "surface_exposure_model",
-                    "surface_geomorphology_model",
-                    "atmosphere_model",
-                    "surface_palette",
-                    "true_color_model",
-                ):
-                    if model.get(field) is not None:
-                        child_layer[field] = model.get(field)
-                child_heatmaps = model.get("material_heatmap_model")
-                if isinstance(child_heatmaps, dict):
-                    child_material = child_heatmaps.get("composite_layer")
-                    if isinstance(child_material, dict):
-                        child_layer["surface_material_layer"] = child_material
-                    child_layer["surface_material_layers"] = [
-                        dict(material_layer)
-                        for material_layer in child_heatmaps.get("layers") or []
-                        if isinstance(material_layer, dict)
-                    ]
-                if child_layer.get("render_mode") == "true_color":
-                    child_recipe = dict(child_layer.get("true_color_model") or {})
-                    child_recipe["seed"] = str(
-                        child_model.get("map_seed")
-                        or child_model.get("material_distribution_seed")
-                        or model.get("entity_id")
-                        or child_recipe.get("seed")
-                        or "region"
-                    )
-                    child_layer["true_color_model"] = child_recipe
-                # All nested patches use the root map's absolute elevation
-                # palette.  Normalizing each child to its own local min/max
-                # turned ordinary refinement footprints into pale polygons.
-                child_layer["heightmap_color_context_override"] = self._heightmap_color_context(
-                    layer.get("heightmap_model") or {}, layer,
-                )
-                child_surface = self._heightmap_surface_for_layer(child_layer, child_model, child_rows) if child_rows else None
+                child_surface = self._refined_child_heightmap_surface(layer, model)
             else:
                 child_surface = self._hydrology_surface_for_layer(
                     {
@@ -3037,6 +3280,9 @@ class MapRenderer:
 
         root_map_layer = next((layer for layer in layers if layer.get("shape") == "map_rect"), None)
         static_outline_batch_drawn = False
+        # The root fills the map, so the cursor is always "over" it. Framing
+        # the whole map as hovered says nothing and flickers at its edge.
+        root_entity_id = getattr(getattr(sim, "context", None), "root_entity_id", None)
 
         for layer in layers:
             shape = layer.get("shape", "marker")
@@ -3049,7 +3295,7 @@ class MapRenderer:
             )
             is_hovered = (
                 (spatial_feature_id is not None and spatial_feature_id == hover_spatial_feature_id)
-                or (entity_id is not None and entity_id == hover_entity_id)
+                or (entity_id is not None and entity_id == hover_entity_id and entity_id != root_entity_id)
             )
 
             min_zoom = layer.get("min_zoom")
@@ -3078,6 +3324,10 @@ class MapRenderer:
                         self._draw_image_rect_layer(screen, prepared_layer, camera)
                         continue
                 self._draw_image_rect_layer(screen, layer, camera)
+                continue
+
+            if shape == "plant_field":
+                self._draw_plant_field_layer(screen, layer, camera)
                 continue
 
             if shape == "heightmap_base":

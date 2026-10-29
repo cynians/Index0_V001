@@ -6,8 +6,10 @@ import os
 import tempfile
 
 import pygame
+from ui.fonts import get_font
 
 from companion.server import get_server
+from world.asset_folders import illustration_folder
 from world.texture_sets import TextureSet, cell_key, parse_cell_key
 
 
@@ -1378,11 +1380,17 @@ class PixelArtEditorUI:
     def asset_path(self, illustration_id, view_id=None):
         safe_id = self.host._sanitize_entity_id(illustration_id) or "illustration"
         suffix = f"_{view_id}" if view_id in {"side", "top"} else ""
-        return os.path.join("assets", "illustrations", f"{safe_id}_pixel{suffix}.png").replace("\\", "/")
+        return f"{self._asset_folder(illustration_id)}/{safe_id}_pixel{suffix}.png"
 
     def document_path(self, illustration_id):
         safe_id = self.host._sanitize_entity_id(illustration_id) or "illustration"
-        return os.path.join("assets", "illustrations", f"{safe_id}_pixel.layers.json.gz").replace("\\", "/")
+        return f"{self._asset_folder(illustration_id)}/{safe_id}_pixel.layers.json.gz"
+
+    def _asset_folder(self, illustration_id):
+        """The category folder of what the illustration depicts (``world/asset_folders.py``)."""
+        world_model = getattr(self.host, "world_model", None)
+        get_entity = world_model.get_entity if world_model is not None else (lambda _entity_id: None)
+        return illustration_folder(illustration_id, get_entity)
 
     def save(self):
         editor = self.state
@@ -2149,7 +2157,7 @@ class PixelArtEditorUI:
         screen.blit(panel_surface, panel)
         pygame.draw.rect(screen, (107, 143, 174), panel, 1, border_radius=6)
         screen.blit(font.render("TEXTURE NEIGHBORHOOD", True, (213, 231, 243)), (panel.x + 10, panel.y + 8))
-        small_font = pygame.font.Font(None, 16)
+        small_font = get_font(12)
         screen.blit(small_font.render("center = base • click neighbor to activate", True, (142, 169, 188)), (panel.x + 10, panel.y + 29))
 
         grid_x, grid_y = panel.x + 12, panel.y + 50
@@ -2285,7 +2293,7 @@ class PixelArtEditorUI:
             rect = pygame.Rect(tools.x + 10, y, 52, 44)
             self._button(screen, font, rect, label, active=editor.get("tool") == tool_name)
             editor["tool_hitboxes"][tool_name] = rect
-            hint_surface = pygame.font.Font(None, 14).render(hint, True, (132, 145, 165))
+            hint_surface = get_font(10).render(hint, True, (132, 145, 165))
             screen.blit(hint_surface, hint_surface.get_rect(center=(rect.centerx, rect.bottom + 9)))
             y += 52
         y += 2
@@ -2298,7 +2306,7 @@ class PixelArtEditorUI:
         self._button(screen, font, dec, "-")
         self._button(screen, font, inc, "+")
         editor["brush_size_hitboxes"] = {-1: dec, 1: inc}
-        size_text = pygame.font.Font(None, 16).render(f"{editor.get('brush_size', 1)} px", True, (183, 197, 216))
+        size_text = get_font(12).render(f"{editor.get('brush_size', 1)} px", True, (183, 197, 216))
         screen.blit(size_text, size_text.get_rect(center=(tools.centerx, y + 40)))
 
         self._draw_editor_canvas(screen, canvas_area)
@@ -2322,7 +2330,7 @@ class PixelArtEditorUI:
         panel.center = screen_rect.center
         pygame.draw.rect(screen, (24, 29, 39), panel, border_radius=10)
         pygame.draw.rect(screen, (82, 101, 128), panel, 1, border_radius=10)
-        screen.blit(pygame.font.Font(None, 34).render("Create pixel canvas", True, (235, 241, 249)), (panel.x + 30, panel.y + 28))
+        screen.blit(get_font(24).render("Create pixel canvas", True, (235, 241, 249)), (panel.x + 30, panel.y + 28))
         screen.blit(font.render("Choose a drawing method, then enter real-world dimensions in meters.", True, (150, 166, 187)), (panel.x + 30, panel.y + 72))
         editor["setup_mode_hitboxes"] = {}
         editor["dimension_hitboxes"] = {}
@@ -2460,7 +2468,7 @@ class PixelArtEditorUI:
             if layer.get("reference_only"):
                 badge = pygame.Rect(row.right - 48, row.y + 8, 40, 20)
                 pygame.draw.rect(screen, (63, 76, 94), badge, border_radius=3)
-                badge_text = pygame.font.Font(None, 13).render("TRACE", True, (142, 198, 222))
+                badge_text = get_font(10).render("TRACE", True, (142, 198, 222))
                 screen.blit(badge_text, badge_text.get_rect(center=badge.center))
             editor["layer_hitboxes"][index] = row
             row_y += 41

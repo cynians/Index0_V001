@@ -89,7 +89,7 @@ class MaterialAffinityTests(unittest.TestCase):
             if material.get("material_subclass") not in {"atmospheric_gas", "element"}
         }
 
-        self.assertEqual(210, len(catalog_ids))
+        self.assertEqual(217, len(catalog_ids))
         self.assertEqual(catalog_ids, set(MATERIAL_AFFINITY_PROFILES))
         for material_id, profile in MATERIAL_AFFINITY_PROFILES.items():
             self.assertTrue(profile.get("profile_id"), material_id)

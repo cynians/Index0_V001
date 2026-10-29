@@ -1,4 +1,5 @@
 import pygame
+from ui.fonts import get_font
 
 
 class PersonRenderer:
@@ -317,6 +318,25 @@ class PersonRenderer:
             label = self._text(resident.get("label") or "Worker", (194, 202, 211))
             screen.blit(label, label.get_rect(midtop=(center[0], center[1] + 5)))
 
+    THING_COLORS = {
+        "people": (194, 151, 103),
+        "species": (96, 158, 92),
+        "items": (128, 150, 184),
+    }
+
+    def _draw_things(self, screen, camera, payload):
+        """Things placed into this run: a machine, a stall keeper, a berry patch."""
+        for thing in payload.get("things", []):
+            center = camera.world_to_screen(thing.get("position") or (0, 0))
+            if center is None:
+                continue
+            marker = pygame.Rect(0, 0, 14, 14)
+            marker.center = (int(center[0]), int(center[1]))
+            pygame.draw.rect(screen, self.THING_COLORS.get(thing.get("kind"), (164, 164, 164)), marker, border_radius=3)
+            pygame.draw.rect(screen, (22, 24, 30), marker, 1, border_radius=3)
+            label = self._text(thing.get("label", ""), (214, 220, 228))
+            screen.blit(label, label.get_rect(midtop=(marker.centerx, marker.bottom + 4)))
+
     def _draw_vehicle_presence(self, screen, camera, resident, center, payload):
         x, y = center
         selected = resident.get("entity_id") == payload.get("selected_presence_id")
@@ -426,126 +446,9 @@ class PersonRenderer:
         if payload.get("control_mode") == "direct":
             pygame.draw.ellipse(screen, (112, 201, 230), (center[0] - 13, center[1] - 5, 26, 10), 2)
 
-    def _draw_editor_mannequin(self, screen, center, skin_color, body_shape, clothing):
-        self._draw_spindly_figure(
-            screen, center, 390, skin_color,
-            body_shape=body_shape, clothing=clothing, face=True,
-        )
-
     def _draw_person_editor(self, screen, sim):
-        from simulations.person.person_editor import editor_appearance
-        from simulations.person.person_genetics import BODY_TRAITS, SKIN_TONES
-
-        state = sim._ensure_person_editor()
-        decoded = editor_appearance(state)
-        tone = decoded["skin_tone"]
-        width, height = screen.get_size()
-        screen.fill((11, 15, 21))
-        font = self.app_view.default_font
-        title_font = pygame.font.SysFont("consolas", 24, bold=True)
-        small = pygame.font.SysFont("consolas", 13)
-        tiny = pygame.font.SysFont("consolas", 11)
-        screen.blit(title_font.render(f"Person Editor | {sim.get_person_name()}", True, (232, 238, 246)), (22, 20))
-        screen.blit(small.render(
-            "Body proportions and skin tone decode from one DNA string; ordinary clothing items layer over the naked body.",
-            True, (157, 176, 198)), (22, 54))
-
-        workspace = pygame.Rect(20, 84, max(560, width - 270), max(430, height - 188))
-        pygame.draw.rect(screen, (17, 23, 32), workspace, border_radius=8)
-        pygame.draw.rect(screen, (58, 76, 99), workspace, 1, border_radius=8)
-        split_x = workspace.x + int(workspace.width * .56)
-        pygame.draw.line(screen, (48, 62, 80), (split_x, workspace.y + 16), (split_x, workspace.bottom - 16), 1)
-
-        mannequin_center = (workspace.x + int(workspace.width * .28), workspace.bottom - 56)
-        clothing = sim.get_person_editor_clothing()
-        self._draw_editor_mannequin(
-            screen, mannequin_center, tuple(tone["color"]), decoded["body_shape"], clothing,
-        )
-        clothing_label = (clothing or {}).get("pretty_name") or (clothing or {}).get("name") or "Naked"
-        label = font.render(f"{tone['label']} skin | {clothing_label}", True, (225, 229, 235))
-        screen.blit(label, label.get_rect(center=(mannequin_center[0], workspace.bottom - 34)))
-
-        right_x = split_x + 24
-        screen.blit(font.render("GENETIC TRAITS", True, (220, 226, 236)), (right_x, workspace.y + 24))
-        hitboxes = []
-        screen.blit(tiny.render("Skin tone", True, (151, 170, 194)), (right_x, workspace.y + 51))
-        card_w = max(104, min(150, (workspace.right - right_x - 22) // 3 - 8))
-        for index, option in enumerate(SKIN_TONES):
-            rect = pygame.Rect(right_x + index * (card_w + 10), workspace.y + 68, card_w, 50)
-            active = option["id"] == tone["id"]
-            pygame.draw.rect(screen, (38, 51, 68) if active else (24, 31, 42), rect, border_radius=5)
-            pygame.draw.rect(screen, (231, 199, 105) if active else (75, 92, 114), rect, 2 if active else 1, border_radius=5)
-            pygame.draw.circle(screen, option["color"], (rect.x + 22, rect.centery), 11)
-            text = small.render(option["label"], True, (230, 234, 240))
-            screen.blit(text, text.get_rect(midleft=(rect.x + 40, rect.centery)))
-            hitboxes.append({"kind": "skin_tone", "tone_id": option["id"], "rect": rect})
-
-        shape_y = workspace.y + 136
-        screen.blit(tiny.render("Body shape loci", True, (151, 170, 194)), (right_x, shape_y))
-        for index, trait in enumerate(BODY_TRAITS):
-            row_y = shape_y + 20 + index * 27
-            value = decoded["body_shape"][trait["id"]]
-            screen.blit(tiny.render(trait["label"], True, (210, 219, 231)), (right_x, row_y + 5))
-            minus = pygame.Rect(right_x + 118, row_y, 24, 22)
-            track = pygame.Rect(minus.right + 6, row_y + 9, max(60, workspace.right - minus.right - 70), 5)
-            plus = pygame.Rect(track.right + 7, row_y, 24, 22)
-            for rect, text_value, delta in ((minus, "−", -.05), (plus, "+", .05)):
-                pygame.draw.rect(screen, (35, 47, 62), rect, border_radius=3)
-                pygame.draw.rect(screen, (77, 99, 125), rect, 1, border_radius=3)
-                screen.blit(small.render(text_value, True, (229, 234, 241)), small.render(text_value, True, (229, 234, 241)).get_rect(center=rect.center))
-                hitboxes.append({"kind": "body_trait", "trait_id": trait["id"], "delta": delta, "rect": rect})
-            pygame.draw.line(screen, (66, 79, 96), track.midleft, track.midright, 3)
-            knob_x = round(track.x + value * track.width)
-            pygame.draw.circle(screen, (224, 194, 102), (knob_x, track.centery), 5)
-
-        clothing_y = shape_y + 190
-        screen.blit(tiny.render("Clothing items (not DNA)", True, (151, 170, 194)), (right_x, clothing_y))
-        clothing_options = [(None, "Naked")]
-        for clothing_id in ("item_test_toga", "item_test_suit"):
-            entity = sim.get_person(clothing_id) or {}
-            clothing_options.append((clothing_id, entity.get("pretty_name") or entity.get("name") or clothing_id))
-        clothing_w = max(92, (workspace.right - right_x - 22) // 3 - 6)
-        for index, (clothing_id, clothing_name) in enumerate(clothing_options):
-            rect = pygame.Rect(right_x + index * (clothing_w + 8), clothing_y + 19, clothing_w, 38)
-            active = state.get("working_clothing_id") == clothing_id
-            pygame.draw.rect(screen, (49, 61, 78) if active else (25, 32, 43), rect, border_radius=4)
-            pygame.draw.rect(screen, (231, 199, 105) if active else (75, 92, 114), rect, 2 if active else 1, border_radius=4)
-            rendered = tiny.render(str(clothing_name), True, (231, 235, 241))
-            screen.blit(rendered, rendered.get_rect(center=rect.center))
-            hitboxes.append({"kind": "clothing", "clothing_id": clothing_id, "rect": rect})
-
-        dna_y = workspace.y + 409
-        screen.blit(font.render("DNA STRING", True, (220, 226, 236)), (right_x, dna_y))
-        dna_rect = pygame.Rect(right_x, dna_y + 27, workspace.right - right_x - 22, 57)
-        pygame.draw.rect(screen, (8, 12, 18), dna_rect, border_radius=4)
-        pygame.draw.rect(screen, (62, 80, 104), dna_rect, 1, border_radius=4)
-        dna = state.get("working_dna", "")
-        midpoint = (len(dna) + 1) // 2
-        screen.blit(tiny.render(dna[:midpoint], True, (155, 213, 190)), (dna_rect.x + 10, dna_rect.y + 9))
-        screen.blit(tiny.render(dna[midpoint:], True, (155, 213, 190)), (dna_rect.x + 10, dna_rect.y + 31))
-
-        button_y = workspace.bottom - 48
-        save_rect = pygame.Rect(right_x, button_y, 116, 34)
-        revert_rect = pygame.Rect(save_rect.right + 10, button_y, 116, 34)
-        sim_rect = pygame.Rect(revert_rect.right + 10, button_y, 138, 34)
-        for rect, label_text, kind, active in (
-            (save_rect, "Save", "save", state.get("dirty")),
-            (revert_rect, "Revert", "revert", True),
-            (sim_rect, "Person Sim", "simulation", True),
-        ):
-            pygame.draw.rect(screen, (72, 91, 116) if active else (37, 43, 52), rect, border_radius=4)
-            pygame.draw.rect(screen, (123, 157, 195) if active else (65, 72, 82), rect, 1, border_radius=4)
-            rendered = small.render(label_text, True, (235, 239, 245) if active else (128, 135, 145))
-            screen.blit(rendered, rendered.get_rect(center=rect.center))
-            if active:
-                hitboxes.append({"kind": kind, "rect": rect})
-
-        status = str(state.get("status") or "")
-        screen.blit(small.render(status, True, (191, 204, 220)), (22, workspace.bottom + 16))
-        screen.blit(tiny.render(
-            "DNA shapes the naked body. Clothing remains an equipped item and never rewrites genetic loci.",
-            True, (139, 153, 171)), (22, workspace.bottom + 40))
-        sim.set_person_editor_hitboxes(hitboxes)
+        from simulations.person.person_editor_view import draw_person_editor
+        draw_person_editor(self, screen, sim)
 
     def _draw_character_creation_banner(self, screen, payload):
         if not payload.get("needs_character_creation") or payload.get("site_simulation"):
@@ -591,6 +494,7 @@ class PersonRenderer:
         for point in payload.get("points", []):
             self._draw_point(screen, camera, point, payload)
         self._draw_site_people(screen, camera, payload)
+        self._draw_things(screen, camera, payload)
         if payload.get("draw_controlled_person", True):
             self._draw_person(screen, camera, payload)
 

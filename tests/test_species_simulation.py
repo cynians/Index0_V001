@@ -1488,6 +1488,88 @@ class SpeciesSimulationTests(unittest.TestCase):
         self.assertLess(mean_band(high, True), mean_band(low, True))
         self.assertGreater(mean_band(high, False), mean_band(low, False))
 
+    def test_tree_crown_taper_narrows_and_lengthens_attachment_zone(self):
+        base = {
+            "id": "spec_tree_crown_taper_test",
+            "plant_growth_form": "tree",
+            "plant_growth_behaviour": "branched_woody",
+            "plant_lifespan": "perennial",
+            "mature_height": {"max_m": 40},
+            "plant_leaf_distribution": "along_shoot",
+            "plant_axis_continuity": "monopodial",
+            "plant_self_pruning": "strong",
+            "plant_lateral_axis_orientation": "mixed",
+            "plant_branch_angle_gradient": 0.54,
+            "plant_crown_shape": "irregular",
+            "plant_crown_openness": 0.42,
+        }
+
+        def first_order_slopes(value):
+            sim = SpeciesSimulation(
+                species_entity={**base, "plant_crown_taper": value}, seed=303,
+            )
+            sim.set_age(sim.mature_age_days)
+            snapshot = sim.render_snapshot
+            placements = snapshot.placements
+            trunk_height = max(
+                placement[4] for placement in placements
+                if placement[0] == "stem_section" and placement[7] == 1
+            )
+            slopes = []
+            for placement in placements:
+                if placement[0] != "branch_section" or placement[7] != 2:
+                    continue
+                parent = placements[placement[1]]
+                if parent[0] != "stem_section":
+                    continue
+                horizontal = math.hypot(placement[2] - parent[2], placement[3] - parent[3])
+                slopes.append((parent[4] / trunk_height, (placement[4] - parent[4]) / max(1e-6, horizontal)))
+            return snapshot, slopes
+
+        neutral_snapshot, neutral = first_order_slopes(0.0)
+        tapered_snapshot, tapered = first_order_slopes(0.84)
+        self.assertEqual(len(neutral), len(tapered))
+        self.assertEqual(neutral_snapshot.stats["leaf_cluster_count"], tapered_snapshot.stats["leaf_cluster_count"])
+        self.assertEqual(neutral_snapshot.stats["estimated_leaf_count"], tapered_snapshot.stats["estimated_leaf_count"])
+        neutral_radii = sorted(math.hypot(*cluster["position_m"][:2]) for cluster in neutral_snapshot.leaf_clusters)
+        tapered_radii = sorted(math.hypot(*cluster["position_m"][:2]) for cluster in tapered_snapshot.leaf_clusters)
+        percentile = int((len(neutral_radii) - 1) * 0.95)
+        self.assertLess(tapered_radii[percentile], neutral_radii[percentile] * 0.7)
+        neutral_lowest = min(
+            placement[4] for placement in neutral_snapshot.placements
+            if placement[0] == "branch_section" and placement[7] == 2
+        )
+        tapered_lowest = min(
+            placement[4] for placement in tapered_snapshot.placements
+            if placement[0] == "branch_section" and placement[7] == 2
+        )
+        self.assertLess(tapered_lowest, neutral_lowest)
+
+    def test_dense_along_shoot_needle_foliage_gets_visual_sockets_without_new_leaves(self):
+        base = {
+            "id": "spec_tree_needle_visual_socket_test",
+            "plant_growth_form": "tree",
+            "plant_growth_behaviour": "branched_woody",
+            "plant_lifespan": "perennial",
+            "mature_height": {"max_m": 30},
+            "plant_leaf_distribution": "along_shoot",
+            "leaf_structure": "needle_like",
+            "plant_leaf_cluster_density": 0.8,
+        }
+        sim = SpeciesSimulation(species_entity=base, seed=303)
+        sim.set_age(sim.mature_age_days)
+        snapshot = sim.render_snapshot
+        decorated = [
+            cluster for cluster in snapshot.leaf_clusters
+            if cluster.get("visual_positions_m") and cluster.get("shoot_role") != "leader"
+        ]
+        self.assertTrue(decorated)
+        self.assertTrue(all(len(cluster["visual_positions_m"]) == 5 for cluster in decorated))
+        self.assertEqual(
+            sum(cluster["estimated_leaf_count"] for cluster in snapshot.leaf_clusters),
+            snapshot.stats["estimated_leaf_count"],
+        )
+
     def test_trunk_girth_scales_radius_and_defaults_to_unchanged(self):
         # Nothing represented trunk girth-to-height ratio at all before this
         # -- every tree used the same fixed height-fraction radius
@@ -1545,8 +1627,8 @@ class SpeciesSimulationTests(unittest.TestCase):
                 sim = SpeciesSimulation(world_model=world, species_id="spec_sequoia_sempervirens",
                                          species_entity=resolved, seed=seed)
                 ratio = lateral_ratio(sim)
-                self.assertLess(ratio, 0.05,
-                                 f"seed {seed}: coast redwood trunk should stay within 5% of height laterally, got {ratio:.3f}")
+                self.assertLess(ratio, 0.02,
+                                 f"seed {seed}: coast redwood trunk should stay within 2% of height laterally, got {ratio:.3f}")
 
     def test_self_pruning_raises_the_lowest_branch_up_the_trunk(self):
         # Every tree used to start its lowest branch at the same fixed
@@ -1656,28 +1738,28 @@ class SpeciesSimulationTests(unittest.TestCase):
         self.assertGreater(umbrella_high, umbrella_low,
                             "an umbrella crown should reach further near the top than near the base")
         # Unauthored/default species reproduce the original fixed envelope.
-        self.assertAlmostEqual(default_low, reach_by_band("ovoid")[0], places=3)
-        self.assertAlmostEqual(default_high, reach_by_band("ovoid")[1], places=3)
+        self.assertAlmostEqual(default_low, reach_by_band("other_unknown")[0], places=3)
+        self.assertAlmostEqual(default_high, reach_by_band("other_unknown")[1], places=3)
+        # Ovoid is now an explicit rounded envelope, rather than an alias
+        # for the unauthored generic crown.
+        self.assertNotAlmostEqual(default_low, reach_by_band("ovoid")[0], places=3)
 
-    def test_a_real_scots_pine_shows_a_small_umbrella_crown_on_a_long_trunk(self):
-        # User request: a Scots pine ("Kiefer") has "a very characteristic
-        # long, long trunk with a small crown on top" -- added as a new
-        # species specifically to exercise crown_shape + self_pruning
-        # together.
+    def test_compact_umbrella_variant_keeps_strong_self_pruning(self):
+        # Retain coverage of the original compact-crown phenotype as an
+        # explicit treatment. The saved pine now has a deeper irregular
+        # crown; changing that composition must not remove this mechanism.
         from world.world_model import WorldModel
 
         world = WorldModel()
         resolved = world.resolved_species_entity("spec_pinus_sylvestris")
-        self.assertEqual("umbrella", resolved.get("plant_crown_shape"))
-        self.assertEqual("strong", resolved.get("plant_self_pruning"))
-        sim = SpeciesSimulation(world_model=world, species_id="spec_pinus_sylvestris",
-                                 species_entity=resolved, seed=303)
+        treatment = {**resolved, "plant_crown_shape": "umbrella", "plant_self_pruning": "strong"}
+        sim = SpeciesSimulation(species_entity=treatment, seed=303)
         sim.set_age(sim.mature_age_days)
         height = max(p[4] for p in sim.render_snapshot.placements if p[0] == "stem_section" and p[7] == 1)
         branch_starts = [p[4] for p in sim.render_snapshot.placements
                           if p[0] == "branch_section" and p[7] == 2]
         self.assertGreater(min(branch_starts) / height, 0.5,
-                            "a mature Scots pine should hold a long clear trunk before the crown begins")
+                            "strong pruning should retain the compact crown on a long clear bole")
 
     def test_leaf_cluster_density_is_continuous_between_tree_species_profiles(self):
         base = {
@@ -1959,6 +2041,69 @@ class SpeciesSimulationTests(unittest.TestCase):
         unresolved_snapshot = unresolved.generate_snapshot(age_days=age, lod=2)
         self.assertFalse(any(placement[0] == "flower" for placement in unresolved_snapshot.placements))
 
+    def test_saved_showy_violet_has_lateral_flowers_and_later_capsules(self):
+        from world.world_model import WorldModel
+        from tools.render_species_views import stage_ages
+
+        world = WorldModel()
+        entity = world.resolved_species_entity("spec_viola_betonicifolia")
+        self.assertTrue(world.plant_catalogue.is_species(entity["id"]))
+        self.assertEqual(["cladis_violets_viola"], entity["parents"])
+        self.assertEqual("lateral", entity["plant_flowering_position"])
+        sim = SpeciesSimulation(world_model=world, species_id=entity["id"], seed=1085136779)
+        self.assertEqual(1, sim.blueprint.growth["lateral_rosette_scapes_version"])
+        self.assertEqual(0.0015, sim.blueprint.module("stem_section").radius_m)
+        self.assertEqual(0.02, sim.blueprint.module("flower").length_m)
+        self.assertEqual(0.01, sim.blueprint.module("fruit").length_m)
+        for role in ("leaf", "stem_section", "flower", "fruit"):
+            self.assertTrue(Path(sim.blueprint.module(role).asset_ref).is_file())
+
+        early = sim.generate_snapshot(45, 2)
+        blooming = sim.generate_snapshot(156.95, 2)
+        late = sim.generate_snapshot(220, 2)
+        self.assertFalse(any(p[0] in {"flower", "fruit"} for p in early.placements))
+        self.assertEqual(3, sum(p[0] == "flower" for p in blooming.placements))
+        self.assertGreater(sum(p[0] == "fruit" for p in late.placements), 0)
+        self.assertTrue(all(blooming.placements[p[1]][0] == "stem_section"
+                            for p in blooming.placements if p[0] == "flower"))
+        self.assertEqual(blooming.to_dict(), sim.generate_snapshot(156.95, 2).to_dict())
+        self.assertTrue(all(math.isfinite(v) for v in blooming.bounds_m))
+        self.assertLessEqual(blooming.bounds_m[5], 0.4)
+        self.assertTrue(all(p[1] < i for i, p in enumerate(blooming.placements) if i))
+        self.assertIn("Fruiting", [name for name, _ in stage_ages(sim)])
+        sim.set_age(156.95)
+        sim.set_lod(2)
+        full_ecology = sim.get_ecological_outcome()
+        sim.set_lod(1)
+        reduced_ecology = sim.get_ecological_outcome()
+        for metric in ("fecundity", "resource_demand", "leaf_area_proxy", "estimated_leaf_count"):
+            self.assertEqual(full_ecology[metric], reduced_ecology[metric])
+
+    def test_lateral_rosette_scapes_are_reusable_and_unknown_is_neutral(self):
+        entity = {
+            "id": "spec_unrelated_lateral_rosette", "plant_growth_form": "forb",
+            "plant_growth_behaviour": "rosette_short_internode", "plant_woodiness": "herbaceous",
+            "leaf_attachment_pattern": "basal_rosette", "plant_flowering_position": "lateral",
+            "plant_reproductive_structure": "flower", "reproductive_mode": "sexual",
+            "mature_height": {"typical_m": 0.3},
+        }
+        flowering = SpeciesSimulation(species_entity=entity, seed=303)
+        control = SpeciesSimulation(species_entity={**entity, "plant_flowering_position": "other_unknown"}, seed=303)
+        age = flowering.life_history_profile["reproductive_start_days"] + 20
+        bloom = flowering.generate_snapshot(age, 2)
+        unresolved = control.generate_snapshot(age, 2)
+        self.assertNotEqual(flowering.blueprint.fingerprint(), control.blueprint.fingerprint())
+        self.assertEqual(1, flowering.blueprint.growth["lateral_rosette_scapes_version"])
+        self.assertNotIn("lateral_rosette_scapes_version", control.blueprint.growth)
+        self.assertGreater(sum(p[0] == "flower" for p in bloom.placements), 0)
+        self.assertFalse(any(p[0] in {"flower", "fruit"} for p in unresolved.placements))
+        missing = SpeciesSimulation(species_entity={k: v for k, v in entity.items()
+                            if k != "plant_flowering_position"}, seed=303)
+        no_sex = SpeciesSimulation(species_entity={**entity, "reproductive_mode": "other_unknown"}, seed=303)
+        self.assertFalse(any(p[0] == "flower" for p in missing.generate_snapshot(age, 2).placements))
+        self.assertFalse(any(p[0] == "flower" for p in no_sex.generate_snapshot(age, 2).placements))
+        self.assertEqual(bloom.to_dict(), type(bloom).from_dict(bloom.to_dict()).to_dict())
+
     def test_asset_store_round_trips_compressed_blueprint_and_snapshot(self):
         store = PlantAssetStore("assets/plants")
         sim = SpeciesSimulation(
@@ -2004,6 +2149,83 @@ class SpeciesSimulationTests(unittest.TestCase):
                     seed=4,
                 )
                 self.assertGreater(sim.get_growth_summary()["placement_count"], 0)
+
+    def test_creeping_prostrate_spread_builds_bounded_attached_mat_axes(self):
+        base = {
+            "id": "spec_synthetic_creeping_fixture",
+            "plant_growth_form": "subshrub",
+            "plant_growth_behaviour": "creeping_prostrate",
+            "plant_lifespan": "perennial",
+            "plant_woodiness": "woody",
+            "mature_height": {"max_m": 0.4},
+            "leaf_length": {"typical_m": 0.005},
+            "leaf_structure": "needle_like",
+            "leaf_clustering": "dense_cluster",
+            "plant_lateral_axis_orientation": "plagiotropic",
+            "clonal_spread": "high",
+        }
+        first = SpeciesSimulation(species_entity=base, seed=303)
+        second = SpeciesSimulation(species_entity=base, seed=303)
+        for simulation in (first, second):
+            simulation.set_lod(2)
+            simulation.set_age(simulation.mature_age_days)
+
+        self.assertEqual(first.render_snapshot.to_dict(), second.render_snapshot.to_dict())
+        stats = first.render_snapshot.stats
+        self.assertEqual(6, stats["creeping_axis_count"])
+        self.assertGreater(stats["creeping_secondary_axis_count"], 0)
+        self.assertGreater(stats["creeping_ascending_axis_count"], 0)
+        self.assertGreaterEqual(stats["creeping_leaf_socket_count"], 200)
+        self.assertGreater(stats["creeping_rooting_contact_count"], 0)
+        self.assertLessEqual(stats["creeping_footprint_radius_m"], 0.5)
+        self.assertGreater(first.render_snapshot.bounds_m[5], 0.08)
+        self.assertLessEqual(first.render_snapshot.bounds_m[5], 0.16)
+
+        placements = first.render_snapshot.placements
+        leaves = [item for item in placements if item[0] == "leaf"]
+        self.assertTrue(leaves)
+        self.assertTrue(all(item[2:5] == placements[item[1]][2:5] for item in leaves))
+        self.assertTrue(all(
+            (item[0] == "root" and int(item[1]) == -1)
+            or 0 <= int(item[1]) < len(placements)
+            for item in placements
+        ))
+
+    def test_creeping_prostrate_spread_order_and_lod_stability(self):
+        base = {
+            "id": "spec_synthetic_creeping_contrast",
+            "plant_growth_form": "subshrub",
+            "plant_growth_behaviour": "creeping_prostrate",
+            "plant_lifespan": "perennial",
+            "plant_woodiness": "woody",
+            "mature_height": {"max_m": 0.4},
+            "leaf_length": {"typical_m": 0.005},
+            "leaf_clustering": "dense_cluster",
+        }
+
+        def snapshot(spread, lod):
+            simulation = SpeciesSimulation(
+                species_entity={**base, "clonal_spread": spread},
+                seed=303,
+            )
+            simulation.set_lod(lod)
+            simulation.set_age(simulation.mature_age_days)
+            return simulation.render_snapshot
+
+        none = snapshot("none", 2)
+        unknown = snapshot("other_unknown", 2)
+        high = snapshot("high", 2)
+        self.assertEqual(1, none.stats["creeping_axis_count"])
+        self.assertEqual(1, unknown.stats["creeping_axis_count"])
+        self.assertGreater(high.stats["creeping_axis_count"], none.stats["creeping_axis_count"])
+        self.assertGreater(high.stats["creeping_footprint_radius_m"], none.stats["creeping_footprint_radius_m"])
+        self.assertGreater(high.stats["estimated_leaf_count"], none.stats["estimated_leaf_count"])
+
+        low_detail = snapshot("high", 0)
+        high_detail = snapshot("high", 2)
+        self.assertEqual(low_detail.stats["creeping_leaf_socket_count"], high_detail.stats["creeping_leaf_socket_count"])
+        self.assertEqual(low_detail.stats["estimated_leaf_count"], high_detail.stats["estimated_leaf_count"])
+        self.assertEqual(low_detail.stats["leaf_area_m2"], high_detail.stats["leaf_area_m2"])
 
     def test_iterative_herbaceous_forb_has_bounded_axes_and_lateral_panicles(self):
         entity = {

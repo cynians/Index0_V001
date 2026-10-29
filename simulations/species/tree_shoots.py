@@ -13,10 +13,18 @@ geometry, not for the default whole-tree/forest render path.
 import math
 import random
 from simulations.species.forest_ecology import branch_response
+from simulations.species.woody_axes import mature_axis_blend, trunk_radius
 
 
-def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, paths, flowering_factor=0., fruiting_factor=0., detail=False):
+def has_young_conical_crown(growth):
+    """Trait combination whose pyramidal habit is expressed before maturity."""
+    return growth.get("branching_rhythm") == "rhythmic" and growth.get("crown_shape") == "conical"
+
+
+def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, paths, flowering_factor=0., fruiting_factor=0., detail=False, leaf_factor=1.):
     g = sim.blueprint.growth
+    leaf_factor = float(leaf_factor)
+    leaf_factor = max(0., min(1., leaf_factor)) if math.isfinite(leaf_factor) else 1.
     h = float(g["max_height_m"]) * max(.025, maturity)
     def trait(name, default):
         value = g.get(name)
@@ -27,6 +35,15 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
     spacing = trait("leaf_spacing_bias",.5)
     apical_control = trait("apical_control", .72)
     trunk_girth = trait("trunk_girth", 0.0)
+    axes_profile = g.get("woody_axes_profile")
+    decurrent = g.get("branching_subpattern") == "decurrent_scaffold"
+    tiered_conifer = g.get("branching_subpattern") == "tiered_conifer"
+    pendant = g.get('branching_subpattern') == 'pendant_branchlets'
+    pendant_axes = []
+    planar = bool(g.get('planar_spray_version'))
+    planar_systems = []
+    scaffold_blend = mature_axis_blend(maturity) if decurrent else 0.0
+    trunk_irregularity = 1.0 - trait("trunk_straightness", 0.0)
     distribution = g.get("leaf_distribution", "along_shoot")
     dimorphic = g.get("shoot_dimorphism") == "long_and_short_shoots"
     axis_continuity = str(g.get("axis_continuity") or "other_unknown")
@@ -55,22 +72,37 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
     # subdivided for rendering (see SpeciesSimulation.get_ecological_outcome).
     axis_length_m = [0.0]
 
-    def segment(parent, end, order, radius, curved=False):
-        start = placements[parent][2:5]
-        path = sim._curved_segment_path(start,end,bend=math.dist(start,end)*.06,
-                                       direction=1 if end[0]>=start[0] else -1) if curved else None
+    def segment(parent, end, order, radius, curved=False, curve_factor=1.0, start_point=None):
+        start = placements[parent][2:5] if start_point is None else start_point
+        path = sim._curved_segment_path(start,end,bend=math.dist(start,end)*.06*curve_factor,
+                                       direction=1 if end[0]>=start[0] else -1) if curved else [start,end] if start_point is not None else None
+        if start_point is not None and curved:
+            path = [start,*path]
         return sim._add(placements,"stem_section" if order==0 else "branch_section",
                         parent,*end,0,radius,order+1,placement_paths=paths,path=path)
 
-    def axis(parent,end,order,radius,steps=3):
-        start = placements[parent][2:5]
+    def axis(parent,end,order,radius,steps=3,start_point=None):
+        start = placements[parent][2:5] if start_point is None else start_point
         nodes=[]
         for i in range(1,steps+1):
             t=i/steps
             point=[start[j]+(end[j]-start[j])*t for j in range(3)]
             point[2]+=math.sin(t*math.pi)*math.dist(start,end)*.09
-            step_start = placements[parent][2:5]
-            parent=segment(parent,point,order,radius*(1-.55*t),curved=order<2)
+            if decurrent and order in {1, 2}:
+                # A broad bend and one shallow change of direction, rather
+                # than repeating elbows along every segment. The curvature
+                # is shared by the whole limb, including its fork sockets.
+                dx, dy = end[0] - start[0], end[1] - start[1]
+                length_xy = max(1e-9, math.hypot(dx, dy))
+                bend = math.sin(t * math.pi) * math.dist(start, end) * .055 * scaffold_blend
+                handedness = -1 if (parent + order) % 2 else 1
+                point[0] += -dy / length_xy * bend * handedness
+                point[1] += dx / length_xy * bend * handedness
+            step_start = start if i == 1 and start_point is not None else placements[parent][2:5]
+            parent=segment(parent,point,order,radius*(1-.55*t),curved=order<2,
+                           start_point=step_start if i == 1 and start_point is not None else None)
+            if i == 1 and start_point is not None:
+                sim._placement_orientation_hints[str(parent)] = {'structural_socket_m':list(start_point)}
             axis_length_m[0] += math.dist(step_start, point)
             nodes.append(parent)
         return nodes
@@ -158,9 +190,8 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
         # 0 (unauthored) reproduces the original fixed radius exactly; 1 is
         # a strongly pachycaul, baobab-style stout trunk (up to 4x the
         # shared-default radius). Scales the whole taper profile uniformly
-        # rather than reshaping it -- a true baobab's near-cylindrical,
-        # late-tapering trunk silhouette is a further limitation, not
-        # attempted here.
+        # rather than reshaping it. An optional woody-axis recipe below
+        # separately controls adult proportions and the taper curve.
         girth_multiplier = 1.0 + trunk_girth * 3.0
         species_shape_salt = sum(ord(char) for char in f"{sim.species_id}:gnarl_shape")
         gnarl_rng = random.Random(sim.seed * 60013 + gnarl_salt * 733 + species_shape_salt + 41)
@@ -188,6 +219,8 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
         parent = root
         nodes = []
         height_factor = (.88 if axis_continuity == "monopodial_to_sympodial" else .92) * height_scale
+        if decurrent:
+            height_factor *= 1.0 - .48 * scaffold_blend
         for i in range(1, 13):
             t = i / 12
             transition = max(0., (t - .5) / .5)
@@ -226,17 +259,47 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
                 .24 * math.sin(t * math.pi * gnarl_freq + gnarl_phase)
                 + .08 * math.sin(t * math.pi * knot_freq + knot_phase)
             )
+            baseline_drift = h * (.001 if axis_continuity == "monopodial" else .012) * t
             end = (
-                h * .012 * t + math.sin(i * 1.71) * offset + math.cos(lean_angle) * lean
-                + math.cos(gnarl_dir) * gnarl_offset,
-                math.cos(i * 1.37) * offset * .72 + math.sin(lean_angle) * lean
-                + math.sin(gnarl_dir) * gnarl_offset,
+                (baseline_drift + math.sin(i * 1.71) * offset + math.cos(lean_angle) * lean
+                 + math.cos(gnarl_dir) * gnarl_offset) * trunk_irregularity,
+                (math.cos(i * 1.37) * offset * .72 + math.sin(lean_angle) * lean
+                 + math.sin(gnarl_dir) * gnarl_offset) * trunk_irregularity,
                 h * height_factor * t,
             )
+            if gnarl_salt and trunk_irregularity < 1.0:
+                # Keep secondary trunks separated as straight inclined axes,
+                # rather than overlapping tubes at the shared root collar.
+                retained_lean = lean * (1.0 - trunk_irregularity)
+                end = (end[0] + math.cos(lean_angle) * retained_lean,
+                       end[1] + math.sin(lean_angle) * retained_lean, end[2])
+            if decurrent:
+                # The adult bole ends inside the crown. Gentle displacement
+                # replaces height-scaled periodic gnarl; succession is
+                # expressed by the scaffold forks above, not a sine-wave bole.
+                bow = h * height_scale * .045 * gnarl_trait * math.sin(t * math.pi) * t
+                adult = ((math.cos(gnarl_phase) * bow + math.cos(lean_angle) * lean * .16) * trunk_irregularity,
+                         (math.sin(gnarl_phase) * bow + math.sin(lean_angle) * lean * .16) * trunk_irregularity,
+                         end[2])
+                end = tuple(end[j] * (1.0 - scaffold_blend) + adult[j] * scaffold_blend for j in range(3))
             start = placements[parent][2:5]
             burl_bump = 1.0 + gnarl_amount * burl_strength * math.exp(-((t - burl_t) / burl_width) ** 2)
-            radius = max(.04, h * .014 * radius_scale * girth_multiplier) * (1 - .55 * t) * burl_bump
-            parent = segment(parent, end, 0, radius, curved=True)
+            radius = max(.04, h * .014 * radius_scale * girth_multiplier) * (1 - .55 * t)
+            if axes_profile:
+                radius = trunk_radius(axes_profile, h, radius_scale, t, maturity, radius)
+            radius *= burl_bump
+            if decurrent:
+                # The short bole retains supporting wood into the scaffold
+                # junction. Keep a thin juvenile leader, then blend adult girth.
+                adult_radius = h * .030 * radius_scale * (1.0 - .60 * t)
+                radius = radius * (1.0 - scaffold_blend) + max(radius, adult_radius) * scaffold_blend
+            # The terminal leader is a growing shoot, not a flat-cut bole.
+            # Retain the established lower trunk and taper its last quarter
+            # to a slender apex that its terminal foliage can actually cover.
+            radius *= max(.025, min(1., ((1 - t) / .25) ** .8))
+            parent = segment(parent, end, 0, radius,
+                             curved=axis_continuity != "monopodial" and trunk_irregularity > 0.0,
+                             curve_factor=trunk_irregularity)
             axis_length_m[0] += math.dist(start, end)
             nodes.append(parent)
         return nodes
@@ -254,6 +317,10 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
         trunk_count = 2
         if arch_rng.random() < fork_chance * 0.35:
             trunk_count = 3
+    if decurrent:
+        # Reiteration happens above the bole in this subpattern, rather than
+        # allocating the crown to several separate, wavy basal trunks.
+        trunk_count = 1
 
     # Lean was previously rolled the same way for every species regardless
     # of growth habit -- a coast redwood (monopodial, strong apical
@@ -311,12 +378,20 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
             return True, target, None
         return False, target, None
 
-    def leafy_shoot(parent,angle,length,short,identity):
+    def leafy_shoot(parent,angle,length,short,identity,visual_positions=None):
         local=random.Random(sim.seed*1009+identity)
         start=placements[parent][2:5]
         count=4 if short else 7
+        # A scaffold crown's terminal twig stands for a bounded spray of
+        # fine shoots. Counts/area represent that same group at every LOD;
+        # the renderer samples it without enlarging an individual oak leaf.
+        spray_shoots = 1 + round(15 * scaffold_blend) if decurrent else 1
+        # Upright lateral architecture applies to its leaf-bearing shoots
+        # as well as the primary limb; otherwise foliage still forms flat
+        # shelves even after the supporting branch is made ascending.
+        shoot_rise = .65 - droop*.25 if lateral_orientation == "orthotropic" else .32-droop*.5
         target=(start[0]+math.cos(angle)*length,start[1]+math.sin(angle)*length,
-                start[2]+length*(.32-droop*.5))
+                start[2]+length*shoot_rise)
         tangent=sim._normalise_vector(tuple(target[j]-start[j] for j in range(3)))
         side=sim._normalise_vector((-tangent[1],tangent[0],0))
         up=(-tangent[2]*side[1],tangent[2]*side[0],tangent[0]*side[1]-tangent[1]*side[0])
@@ -330,20 +405,34 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
             shoot_parent=segment(parent,target,4 if short else 3,.0015*(1-.6*.5))
             midpoint=[(start[j]+target[j])/2 for j in range(3)]
             estimated = count * fascicle_size if fascicled else count * (2 + round(10 * density))
+            estimated *= spray_shoots
+            estimated = round(estimated * leaf_factor)
             leaf_area = estimated * leaf_area_per_leaf * mean_scale ** 2
             cluster_id=sim._add_leaf_cluster(clusters,shoot_parent,*midpoint,estimated,
-                                             leaf_area,4 if short else 3,density)
+                                             leaf_area,4 if short else 3,density,allow_empty=True)
+            clusters[-1]["phenology_factor"] = leaf_factor
+            if decurrent:
+                clusters[-1]["foliage_spray_radius_m"] = min(1.4, math.sqrt(max(0., leaf_area) / math.pi) * .72)
+                r = clusters[-1]["foliage_spray_radius_m"] * 1.5
+                clusters[-1]["organ_bounds_m"] = [midpoint[j] + sign*r for j in range(3) for sign in (-1, 1)]
             clusters[-1].update({"explicit_samples":False,"sample_placement_indices":[],
                                  "shoot_type":shoot_type,"identity":identity,
                                  "angle":angle,"length":length,
                                  "leaf_arrangement":"fascicled" if fascicled else g.get("leaf_arrangement"),
                                  "fascicle_size":fascicle_size if fascicled else 0,
                                  "fascicle_count":count if fascicled else 0})
+            if visual_positions:
+                # Rendering sockets only: these repeat the same calculative
+                # foliage cohort along its supporting twig. They do not add
+                # leaves, leaf area, clusters, or ecological biomass.
+                clusters[-1]["visual_positions_m"] = [list(point) for point in visual_positions] + [midpoint]
             flower = sim.blueprint.module("flower")
             has_reproductive_site, reproductive_point, reproductive_parent = reproductive_site(
                 short, start, target, base_parent=parent,
             )
             reproductive_parent = shoot_parent if reproductive_parent is None else reproductive_parent
+            if g.get("bloom_density",0) > 0 and has_reproductive_site:
+                clusters[-1]["bloom_axis_m"] = [list(start),list(target)]
             # No asset_ref requirement here: SpeciesRenderer already falls
             # back to a plain coloured dot for an unauthored "flower"
             # placement (see the generic `else` branch in
@@ -383,6 +472,10 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
             hosts.append(shoot_parent)
             if lod==0 or (lod==1 and i%2):
                 continue
+            # Keep the twig and its random stream through seasonal shedding.
+            # Detail samples are a view of the same calculative leaf cohort.
+            if (i * .61803398875) % 1 >= leaf_factor:
+                continue
             sample_count = min(2, fascicle_size) if fascicled and lod == 1 else fascicle_size
             for needle_index in range(sample_count):
                 bundle_azimuth = azimuth + needle_index * math.tau / fascicle_size
@@ -399,8 +492,16 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
                 leaves.append(leaf)
         midpoint=points[len(points)//2]
         estimated = count * fascicle_size if fascicled else count * (2 + round(10 * density))
+        estimated *= spray_shoots
+        estimated = round(estimated * leaf_factor)
         cluster_id=sim._add_leaf_cluster(clusters,hosts[0],*midpoint,estimated,
-                                         estimated*leaf_area_per_leaf*sum(s*s for s in scales)/count,4 if short else 3,density)
+                                         estimated*leaf_area_per_leaf*sum(s*s for s in scales)/count,4 if short else 3,density,allow_empty=True)
+        clusters[-1]["phenology_factor"] = leaf_factor
+        if decurrent:
+            area = estimated * leaf_area_per_leaf * sum(s*s for s in scales)/count
+            clusters[-1]["foliage_spray_radius_m"] = min(1.4, math.sqrt(max(0., area) / math.pi) * .72)
+            r = clusters[-1]["foliage_spray_radius_m"] * 1.5
+            clusters[-1]["organ_bounds_m"] = [midpoint[j] + sign*r for j in range(3) for sign in (-1, 1)]
         clusters[-1].update({"explicit_samples":bool(leaves),"sample_placement_indices":leaves,
                              "shoot_type":shoot_type,"identity":identity,
                              "angle":angle,"length":length,
@@ -417,6 +518,8 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
             short, start, target, points=points, hosts=hosts, base_parent=parent,
         )
         reproductive_parent = shoot_parent if reproductive_parent is None else reproductive_parent
+        if g.get("bloom_density",0) > 0 and has_reproductive_site:
+            clusters[-1]["bloom_axis_m"] = [list(start),list(target)]
         # See the coarse-path comment above: no asset_ref requirement.
         if lod >= 2 and flowering_factor > 0 and flower and has_reproductive_site:
             sim._add(placements,"flower",reproductive_parent,*reproductive_point,0,.65+.35*flowering_factor,6)
@@ -440,7 +543,19 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
     # rhythmic species (see species_sim_morus_nigra_v001.md Sec7h/Sec7i).
     _density_boost = 2.2 if branching_rhythm == "rhythmic" else 1.0
     branch_count=max(3,round((15-5*openness)*maturity*_density_boost))
+    if decurrent:
+        branch_count = max(4, round((9 - 2 * openness) * max(.4, maturity)))
+    if "primary_branch_density" in g:
+        # Extra primary axes fill a young crown continuously rather than
+        # multiplying the tiny twigs on the same three horizontal shelves.
+        # Explicit zero retains the original count and layout.
+        # Dense, explicitly authored conifer whorls need more than sixteen
+        # tiers. Keep the established budget for other architectures and
+        # for conifers without this optional density control.
+        limit = 96 if tiered_conifer else 48
+        branch_count = max(3, min(limit, round(branch_count * (1 + 2*trait("primary_branch_density", 0.0)))))
     branches_per_tier = 2
+    young_conical_crown = has_young_conical_crown(g)
     if branching_rhythm == "rhythmic":
         # Rhythmic branching is expressed as evenly-spaced modules on
         # discrete leader tiers, rotating by quarter_turn between tiers.
@@ -450,6 +565,13 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
         # independent radial silhouette than a single opposite pair.
         branches_per_tier = 2 if g.get("leaf_arrangement") == "opposite" else 3
         tier_count = max(2, round(branch_count / branches_per_tier))
+        if young_conical_crown:
+            # Two tiers spread across the entire live leader become two
+            # disconnected shelves. Resolve a young pyramidal crown with
+            # successive whorls; mature budgets already exceed this floor.
+            # This is a visual growth budget, not a literal annual whorl count.
+            tier_floor = 2 + round(2 * min(1.0, max(0.0, maturity) / .20))
+            tier_count = max(tier_floor, tier_count)
         branch_count = max(branches_per_tier * 2, branches_per_tier * tier_count)
     # Total branch count stays exactly what a single-trunk tree would get
     # (openness/maturity-driven, unchanged) even when multi-trunked, so a
@@ -469,6 +591,12 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
         "strong": 7.5, "moderate": 4.5, "light": 2.5, "none": 1.0,
     }.get(self_pruning, 2.0)
     clear_bole_low_node = 2.0 + (self_pruning_target_node - 2.0) * (max(0.0, min(1.0, maturity)) ** 1.3)
+    if axes_profile:
+        # A measured/calibrated crown base is not evidence of self-pruning.
+        # Node zero is already 1/12 of the leader's height above the collar.
+        target = axes_profile["crown_base_fraction"] * 12 - 1
+        blend = mature_axis_blend(maturity)
+        clear_bole_low_node = clear_bole_low_node * (1 - blend) + target * blend
 
     # Crown shape: the overall canopy silhouette outline. Every tree used
     # to fill the exact same fixed envelope (peak reach at 42% of height,
@@ -476,9 +604,9 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
     # conical conifer, a small flat-topped "umbrella" crown on a long bole
     # (a mature Scots pine being the textbook case), and a broad, low,
     # spreading canopy all looked identical apart from height/colour. Young
-    # individuals of *any* species read closer to that shared generic
-    # rounded default -- most trees are more regular/pyramidal when small
-    # -- and only take on their distinctive mature silhouette as they age,
+    # individuals normally blend from the shared rounded default, except
+    # rhythmic conical crowns whose pyramidal habit is already present young,
+    # and only take on their distinctive mature silhouette as they age,
     # so this blends from the default toward the authored target with
     # maturity rather than snapping to it. Unauthored species (and the
     # explicit "ovoid" choice, which names the existing default look) get
@@ -489,13 +617,18 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
         "conical": (.0, .95, .03),        # widest at the base, tapers to a near-point
         "umbrella": (.88, .30, .12),      # small, flat, concentrated near the top
         "spreading": (.35, 1.10, .35),    # broad and flat-ish throughout, no sharp peak
+        "ovoid": (.52, .68, .12),        # rounded crown without an irregular secondary bump
         "irregular": (.55, .80, .32),     # rounded, fuller/less sparse than default
     }
     _target_center, _target_width, _target_floor = _crown_shape_targets.get(crown_shape, _default_envelope_shape)
     _shape_blend = max(0.0, min(1.0, maturity)) ** 0.8
-    envelope_center = _default_envelope_shape[0] + (_target_center - _default_envelope_shape[0]) * _shape_blend
-    envelope_width = _default_envelope_shape[1] + (_target_width - _default_envelope_shape[1]) * _shape_blend
-    envelope_floor = _default_envelope_shape[2] + (_target_floor - _default_envelope_shape[2]) * _shape_blend
+    # A rounded juvenile default gave the top whorl almost half the reach
+    # of the bottom one, contradicting an explicitly conical rhythmic crown.
+    # Keep independent crown_taper maturation below on its existing curve.
+    envelope_blend = 1.0 if young_conical_crown else _shape_blend
+    envelope_center = _default_envelope_shape[0] + (_target_center - _default_envelope_shape[0]) * envelope_blend
+    envelope_width = _default_envelope_shape[1] + (_target_width - _default_envelope_shape[1]) * envelope_blend
+    envelope_floor = _default_envelope_shape[2] + (_target_floor - _default_envelope_shape[2]) * envelope_blend
     # crown_taper: a continuous refinement on top of crown_shape's discrete
     # pattern, letting one species-authored number pull a wide/round outline
     # (a "generic irregular crown", say) into a tall, narrow column -- e.g. a
@@ -505,8 +638,13 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
     # Scaled by maturity like the rest of the envelope blend -- a young tree
     # hasn't taken on its narrow mature profile yet.
     crown_taper = trait("crown_taper", 0.0) * _shape_blend
-    envelope_width *= 1.0 - 0.78 * crown_taper
-    envelope_floor *= 1.0 - 0.85 * crown_taper
+    if self_pruning in {"strong", "moderate"}:
+        # A narrow tapered crown needs vertical room. Let taper trade some
+        # of a self-pruned tree's compressed clear-bole zone for a longer,
+        # slimmer live crown; otherwise the two valid traits combine into a
+        # short lollipop. Zero/unauthored taper preserves the established
+        # self-pruning result exactly.
+        clear_bole_low_node = max(1.0, clear_bole_low_node - 1.5 * crown_taper)
     # A coast redwood's canopy is famously irregular, sometimes with a
     # distinct secondary mass of foliage lower down the trunk (reiterated
     # growth after crown damage/competition) rather than one smooth
@@ -517,11 +655,17 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
     if crown_shape == "irregular":
         bump_rng = random.Random(sim.seed * 7919 + 13)
         envelope_bump_center = bump_rng.uniform(0.15, 0.40)
-        envelope_bump_strength = 0.55 * _shape_blend
+        # The irregular secondary mass must live inside the continuous
+        # taper rather than cancel it. Without this coupling, a high-taper
+        # tree still received one full-width middle tier and collapsed into
+        # a broad umbrella despite its otherwise narrow envelope.
+        envelope_bump_strength = 0.55 * _shape_blend * (1.0 - 0.85 * crown_taper)
 
     for b in range(branch_count):
         local=random.Random(sim.seed*65537+b)
-        if branching_rhythm == "rhythmic":
+        if decurrent:
+            fraction = max(0., min(1., (b + local.uniform(-.38, .38)) / max(1, branch_count - 1)))
+        elif branching_rhythm == "rhythmic":
             tier_count = max(2, branch_count // branches_per_tier)
             tier = b // branches_per_tier
             fraction = tier / max(1, tier_count - 1)
@@ -557,6 +701,8 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
         lower_point = placements[trunks[trunk_index][lower_index]][2:5]
         upper_point = placements[trunks[trunk_index][upper_index]][2:5]
         start = tuple(lower_point[axis_i] + (upper_point[axis_i] - lower_point[axis_i]) * blend_t for axis_i in range(3))
+        if decurrent:
+            start = placements[host][2:5]
         if branching_rhythm == "rhythmic":
             quarter_turn = math.pi * .5 if g.get("leaf_arrangement") == "opposite" else 2.39996
             slot = b % branches_per_tier
@@ -572,9 +718,25 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
         envelope = math.sqrt(max(envelope_floor, 1 - ((fraction - envelope_center) / envelope_width) ** 2))
         if envelope_bump_center is not None:
             envelope += envelope_bump_strength * math.exp(-((fraction - envelope_bump_center) / 0.10) ** 2)
-        reach=branch_h*.25*envelope*(1.12-.4*openness)*local.uniform(.82,1.18)
+        # Blend the category envelope toward a vertically tapered profile.
+        # Narrowing a bell-shaped envelope's width concentrated all reach in
+        # one middle tier, which visually produced the exact flat umbrella
+        # this field was meant to avoid. A taper instead retains substantial
+        # lower-crown reach and progressively shortens axes toward the leader.
+        tapered_envelope = max(0.08, (1.0 - fraction) ** 0.65)
+        envelope = envelope * (1.0 - crown_taper) + tapered_envelope * crown_taper
+        envelope *= 1.0 - 0.60 * crown_taper
+        if tiered_conifer:
+            # A conical envelope alone leaves middle whorls almost as wide
+            # as the basal ones. Shorten each successive layer visibly while
+            # retaining the authored crown shape and its individual jitter.
+            envelope *= 1.0 - .28 * fraction
+        reach=branch_h*trait("primary_branch_length",.25)*envelope*(1.12-.4*openness)*local.uniform(.82,1.18)
         reach *= 1.34 - .52 * apical_control
         reach *= .55+.45*retention
+        if decurrent:
+            reach *= 1.0 - .14 * scaffold_blend
+            reach *= 1.0 + (.45 - .80 * fraction) * scaffold_blend
         rise_bias = {
             "orthotropic": .46,
             "mixed": .28,
@@ -588,45 +750,167 @@ def grow_tree_shoots(sim, placements, maturity, lod, clusters, attachments, path
         # producing a rounded/domed crown without changing branch reach or
         # node count.  Weaker gradients do the inverse.
         angle_gradient_shift = (branch_angle_gradient - 0.5) * 0.85 * (2.0 * fraction - 1.0)
-        primary_rise = reach * (rise_bias + .10 * fraction + angle_gradient_shift)
+        # A strong crown taper is not only a narrower horizontal envelope:
+        # it also describes a vertically tapered crown. Lower axes stay
+        # flatter (or descend slightly), while upper axes become increasingly
+        # ascending. An unauthored/zero taper keeps the previous equation
+        # byte-for-byte equivalent.
+        tapered_rise_bias = rise_bias * (1.0 - 0.35 * crown_taper)
+        taper_rise_shift = crown_taper * 0.42 * (2.0 * fraction - 1.0)
+        primary_rise = reach * (tapered_rise_bias + .10 * fraction + angle_gradient_shift + taper_rise_shift)
         if axis_continuity == "monopodial_to_sympodial" and fraction > .72:
             # Once terminal reproduction ends leader extension, the upper
             # lateral axes overtake it and become the next crown modules.
             primary_rise += reach * .34
         end=(start[0]+math.cos(angle)*reach,start[1]+math.sin(angle)*reach,
              min(branch_h,start[2]+primary_rise-droop*branch_h*.035))
-        primary=axis(host,end,1,max(.012,branch_h*.005),4)
+        if pendant:
+            # Supporting limbs remain arched/ascending; fine branchlets carry
+            # the strong downward curve. A single droop applied to all orders
+            # cannot express that separation.
+            end = (end[0],end[1],min(branch_h,start[2]+primary_rise+reach*.12))
+        if decurrent:
+            # Lower limbs spread; inner/upper successors rise to the dome.
+            # Endpoints stay within the authored height and crown reach.
+            adult_z = branch_h * (.44 + .48 * fraction) + local.uniform(-.035, .035) * branch_h
+            end = (end[0], end[1], end[2] * (1.0 - scaffold_blend) + adult_z * scaffold_blend)
+        primary_radius = max(.012, branch_h*.005)
+        if axes_profile:
+            blend = mature_axis_blend(maturity)
+            primary_radius = primary_radius * (1 - blend) + branch_h * axes_profile["primary_branch_radius_ratio"] * blend
+        if decurrent:
+            supporting_radius = placements[host][6] * .68
+            primary_radius = primary_radius * (1 - scaffold_blend) + min(supporting_radius, branch_h * .014) * scaffold_blend
+        precise_socket = start if tiered_conifer and trait('primary_branch_density',0.) > 0 else None
+        primary=axis(host,end,1,primary_radius,6 if decurrent else 4,start_point=precise_socket)
+        if precise_socket is not None:
+            attachments.append({'placement_index':primary[0],'host_placement_index':host,
+                                'socket':'interpolated_whorl','position_m':list(start)})
+        if planar:
+            from simulations.species.planar_sprays import spray_frame
+            profile=g['planar_spray_profile']
+            plane_rng=random.Random(sim.seed*65537+b+17003)
+            _,_,support_normal=spray_frame(angle,math.radians(profile['plane_tilt_deg']),
+                math.radians(plane_rng.uniform(-profile['plane_roll_variation_deg'],profile['plane_roll_variation_deg'])))
+            def plane_rise(direction, distance):
+                return -distance*(support_normal[0]*math.cos(direction)+support_normal[1]*math.sin(direction))/support_normal[2]
         secondary_count = 2 + round(3 * twig_density)
         if branching_timing == "immediate":
             secondary_count += 1
         elif branching_timing == "delayed":
             secondary_count = max(2, secondary_count - 1)
         for s in range(secondary_count):
-            host2=primary[min(3,1+s//2)]
+            host2=primary[min(len(primary)-1, (2+s//2) if decurrent else (1+s//2))]
             anchor=placements[host2][2:5]
             a2=angle+(-1 if s%2 else 1)*local.uniform(.45,1.1)
             reach2=reach*local.uniform(.30,.58)
             end2=(anchor[0]+math.cos(a2)*reach2,anchor[1]+math.sin(a2)*reach2,
                   min(h*1.03,anchor[2]+reach2*(local.uniform(.1,1.35)-droop*.3)))
-            secondary=axis(host2,end2,2,max(.004,h*.0014),3)
+            if pendant:
+                end2 = (end2[0],end2[1],min(h*1.03,anchor[2]+reach2*local.uniform(.12,.5)))
+            if tiered_conifer:
+                # Keep second-order sprays near their supporting whorl.
+                # The default broadleaf rise can bridge several leader tiers
+                # and optically erase the rhythmic branching pattern.
+                end2 = (end2[0], end2[1], min(h * 1.03,
+                        anchor[2] + reach2 * local.uniform(-.08, .20)))
+            if planar:
+                # The supporting secondary system shares a shallow plane.
+                # Changing only its terminal foliage leaves the generic
+                # randomly ascending broadleaf scaffold visibly intact.
+                end2 = (end2[0], end2[1], anchor[2] + plane_rise(a2,reach2))
+            if decurrent:
+                rise = reach2 * local.uniform(.28, .85)
+                end2 = (end2[0], end2[1], min(h * 1.02, anchor[2] + rise))
+            secondary_radius = max(.004,h*.0014)
+            if decurrent:
+                secondary_radius = secondary_radius * (1 - scaffold_blend) + placements[host2][6] * .45 * scaffold_blend
+            secondary=axis(host2,end2,2,secondary_radius,4 if decurrent else 3)
             twig_count = 3 + round(3 * twig_density)
             if branching_timing == "immediate":
                 twig_count += 1
             for t in range(twig_count):
-                host3=secondary[t%3]
+                host3=secondary[t%len(secondary)]
                 p=placements[host3][2:5]
                 a3=a2+local.uniform(-1.3,1.3)
+                if pendant:
+                    from simulations.species.pendant_branchlets import grow_pendant_branchlet
+                    identity=b*100000+s*1000+t*10
+                    length=min(2.8,h*.09)*local.uniform(.65,1.)
+                    record=grow_pendant_branchlet(sim,placements,host3,a3,length,identity,
+                        maturity,lod,clusters,attachments,paths,leaf_factor,
+                        flowering_factor,fruiting_factor,detail)
+                    pendant_axes.append(record)
+                    axis_length_m[0] += record['axis_length_m']
+                    continue
                 reach3=min(1.5,h*.055)*local.uniform(.55,1.)
                 p3=(p[0]+math.cos(a3)*reach3,p[1]+math.sin(a3)*reach3,
                     p[2]+reach3*local.uniform(-droop,.65))
+                if tiered_conifer:
+                    # Small pendent tips give a fine, layered edge without
+                    # turning each individual needle into a canopy tile.
+                    p3 = (p3[0], p3[1], p[2] + reach3 * local.uniform(-.22, .12))
+                if planar:
+                    # Lateral twigs remain in the supporting plane instead
+                    # of independently rising through neighbouring sprays.
+                    p3 = (p3[0], p3[1], p[2] + plane_rise(a3,reach3))
                 twig_nodes=axis(host3,p3,3,.003,3)
                 identity=b*100000+s*1000+t*10
                 # Stable per-shoot draw preserves paired comparisons and LOD.
                 retained = random.Random(sim.seed*1009+identity+991).random() < retention
                 if retained:
-                    leafy_shoot(twig_nodes[-1],a3,min(.65,leaf_length*5),False,identity)
+                    if planar:
+                        from simulations.species.planar_sprays import grow_planar_spray
+                        record=grow_planar_spray(sim,placements,twig_nodes[-1],a3,identity,
+                            maturity,lod,clusters,attachments,paths,leaf_factor,detail,
+                            support_normal=support_normal)
+                        planar_systems.append(record)
+                        axis_length_m[0] += record['axis_length_m']
+                        continue
+                    visual_positions = None
+                    if distribution == "along_shoot" and leaf_structure in {"needle_like", "scale_like"}:
+                        visual_count = 2 + round(4 * density)
+                        if visual_count > 1:
+                            # Cover the whole leaf-bearing secondary/twig
+                            # transition, not only the terminal 2/3 of the
+                            # twig. This keeps internal conifer limbs from
+                            # reading as bare scaffolding while retaining the
+                            # same single calculative foliage cohort.
+                            candidates = (
+                                [anchor]
+                                + [placements[index][2:5] for index in secondary]
+                                + [p]
+                                + [placements[index][2:5] for index in twig_nodes[:-1]]
+                            )
+                            sample_count = visual_count - 1
+                            if sample_count == 1:
+                                visual_positions = [candidates[len(candidates) // 2]]
+                            else:
+                                visual_positions = [
+                                    candidates[round(index * (len(candidates) - 1) / (sample_count - 1))]
+                                    for index in range(sample_count)
+                                ]
+                    leafy_shoot(
+                        twig_nodes[-1], a3, min(.65, leaf_length*5), False, identity,
+                        visual_positions=visual_positions,
+                    )
                 if retained and dimorphic and distribution=="mixed_long_short_shoots":
                     for n,host4 in enumerate(twig_nodes[1:]):
                         leafy_shoot(host4,a3+(-1 if n else 1)*.85,leaf_length*1.6,True,identity+n+1)
 
-    return {"structural_axis_length_m": axis_length_m[0]}
+    result = {"structural_axis_length_m": axis_length_m[0]}
+    if tiered_conifer and trait('primary_branch_density',0.) > 0:
+        result.update(tiered_primary_density_version=2,
+                      conifer_primary_axis_count=branch_count,
+                      conifer_tier_count=tier_count)
+    if pendant:
+        result.update(pendant_branchlet_version=g['pendant_branchlet_version'],
+                      pendant_branchlet_count=len(pendant_axes),
+                      pendant_branchlets=pendant_axes,
+                      branchlet_representation='bounded_parallel_shoot_groups',
+                      fruit_morphology_status='authored' if sim.blueprint.module('fruit').asset_ref else 'unresolved_not_displayed')
+    if planar:
+        result.update(planar_spray_version=g['planar_spray_version'],
+                      planar_spray_count=len(planar_systems),planar_spray_systems=planar_systems,
+                      reproductive_morphology_status='unresolved_not_displayed')
+    return result

@@ -331,14 +331,8 @@ def build_changes(datasets):
             "is_employed_as": "job_lumber_site_cook",
             "is_employed_at": "location_person_test_kitchen",
             "wishes": ["wish_relax_after_shift"],
-            "knowledge_records": [
-                {"entity": "recipe_simple_cooked_meal", "interest": 0.86, "familiarity": 0.81, "source": "learned recipe"},
-                {"entity": "location_lumber_test_barracks", "interest": 0.65, "familiarity": 0.95, "navigation_knowledge": "route", "source": "resident knowledge"},
-                {"entity": "location_person_test_kitchen", "interest": 0.92, "familiarity": 1.0, "navigation_knowledge": "route", "source": "workplace knowledge"},
-                {"entity": "location_person_test_pantry", "interest": 0.78, "familiarity": 0.9, "navigation_knowledge": "route", "source": "daily provisioning"},
-                {"entity": "location_lumber_test_factory", "interest": 0.55, "familiarity": 0.35, "navigation_knowledge": "direction", "direction_hint": [1, 0.35], "source": "general site orientation"},
-                {"entity": "location_lumber_test_woodlot", "interest": 0.45, "familiarity": 0.25, "navigation_knowledge": "direction", "direction_hint": [-1, 0], "source": "told it lies west"},
-            ],
+            # Beliefs live in the collection, authored by tools/author_person_knowledge_model.py.
+            "knowledge_collection": "coll_knowledge_mara_voss",
         },
         # The four compound buildings below are rebuilt from building
         # blueprints by tools/author_building_blueprint_model.py; re-run it
@@ -367,6 +361,8 @@ def build_changes(datasets):
                 {"side": "south", "center": 25, "width": 3, "opening_class": "kitchen doorway"},
             ],
             "map_color": "#536271", "ownership_records": ["ownership_lumber_test_site"],
+            # Same beds as tools/author_need_tags_model.py merges into the live record.
+            "inventory_items": [{"item": "item_bed", "quantity": 4, "unit": "bed"}],
         },
         {
             "id": "location_lumber_test_storage", "_dataset": "locations", "type": "location",
@@ -464,11 +460,7 @@ def build_changes(datasets):
             "is_employed_by": ["producer_lumber_test_factory"],
             "is_employed_as": "job_lumber_site_laborer",
             "is_employed_at": "location_lumber_test_factory",
-            "knowledge_records": [
-                {"entity": "location_lumber_test_factory", "familiarity": 0.95, "navigation_knowledge": "route"},
-                {"entity": "location_lumber_test_storage", "familiarity": 0.9, "navigation_knowledge": "route"},
-                {"entity": "location_lumber_test_woodlot", "familiarity": 0.8, "navigation_knowledge": "route"},
-            ],
+            "knowledge_collection": "coll_knowledge_elias_kern",
         },
         {
             "id": "person_lumber_laborer_nia", "_dataset": "people", "type": "person",
@@ -480,11 +472,7 @@ def build_changes(datasets):
             "is_employed_by": ["producer_lumber_test_factory"],
             "is_employed_as": "job_lumber_site_laborer",
             "is_employed_at": "location_lumber_test_factory",
-            "knowledge_records": [
-                {"entity": "location_lumber_test_factory", "familiarity": 0.9, "navigation_knowledge": "route"},
-                {"entity": "location_lumber_test_storage", "familiarity": 0.98, "navigation_knowledge": "route"},
-                {"entity": "location_lumber_test_woodlot", "familiarity": 0.35, "navigation_knowledge": "direction", "direction_hint": [-1, 0]},
-            ],
+            "knowledge_collection": "coll_knowledge_nia_vale",
         },
         {
             "id": "person_lumber_overseer_tomas", "_dataset": "people", "type": "person",
@@ -496,12 +484,7 @@ def build_changes(datasets):
             "is_employed_by": ["producer_lumber_test_factory"],
             "is_employed_as": "job_lumber_site_overseer",
             "is_employed_at": "location_lumber_test_site",
-            "knowledge_records": [
-                {"entity": "location_lumber_test_site", "familiarity": 0.98, "navigation_knowledge": "route"},
-                {"entity": "location_lumber_test_factory", "familiarity": 0.98, "navigation_knowledge": "route"},
-                {"entity": "location_lumber_test_storage", "familiarity": 0.95, "navigation_knowledge": "route"},
-                {"entity": "location_lumber_test_woodlot", "familiarity": 0.9, "navigation_knowledge": "route"},
-            ],
+            "knowledge_collection": "coll_knowledge_tomas_rhee",
         },
         {
             "id": "ownership_person_test_kitchen", "_dataset": "ownerships", "type": "ownership",

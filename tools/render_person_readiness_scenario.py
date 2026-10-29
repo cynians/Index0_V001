@@ -41,7 +41,12 @@ def _augment_world(world):
         "_dataset": "people",
         "pretty_name": "Unplaced Stranger",
         "affiliated_institutions": ["institution_person_sim_lab"],
-        "knowledge_records": [{"entity": "location_person_sim_lab", "interest": 0.4}],
+        "knowledge_collection": f"coll_knowledge_{SPARSE_STUB_ID}",
+    }
+    world.entities[f"coll_knowledge_{SPARSE_STUB_ID}"] = {
+        "id": f"coll_knowledge_{SPARSE_STUB_ID}", "type": "collection", "_dataset": "collections",
+        "collection_class": "personal_knowledge", "includes": ["location_person_sim_lab"],
+        "member_records": [{"member": "location_person_sim_lab", "interest": 0.4}],
     }
     world.entities[EMPTY_STUB_ID] = {
         "id": EMPTY_STUB_ID,

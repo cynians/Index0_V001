@@ -3,6 +3,9 @@
 from pathlib import Path
 
 import pygame
+from engine import asset_files
+from simulations.formation.deck_builder_view import draw_deck_view
+from ui.fonts import get_font
 
 
 class FormationRenderer:
@@ -23,7 +26,7 @@ class FormationRenderer:
         self._image_cache = {}
 
     def _font(self, size=16, bold=False):
-        return pygame.font.SysFont("consolas", size, bold=bold)
+        return get_font(size, bold=bold)
 
     def _text(self, value, color=None, size=16, bold=False):
         color = tuple(color or self.TEXT)
@@ -145,19 +148,24 @@ class FormationRenderer:
         pygame.draw.rect(screen, self.BORDER, rect, 1)
 
         scale_y = rect.y + 14
-        design_mode = getattr(sim, "workspace_mode", "inspect") == "design"
+        workspace_mode = getattr(sim, "workspace_mode", "inspect")
+        design_mode = workspace_mode == "design"
 
-        # Inspect / Design workspace toggle (far left of the control row).
+        # Inspect / Design / Deck workspace toggle (far left of the control row).
         mode_x = rect.x + 16
-        for mode_key, label in (("inspect", "Inspect"), ("design", "Design")):
+        for mode_key, label in (("inspect", "Inspect"), ("design", "Design"), ("deck", "Deck")):
             button = pygame.Rect(mode_x, scale_y, 78, 28)
-            active = design_mode == (mode_key == "design")
+            active = workspace_mode == mode_key
             pygame.draw.rect(screen, (61, 69, 48) if active else self.PANEL, button)
             pygame.draw.rect(screen, self.BORDER_ACTIVE if active else self.BORDER, button, 1)
             surface = self._text(label, self.TEXT if active else self.MUTED, size=13, bold=active)
             screen.blit(surface, surface.get_rect(center=button.center))
             hitboxes[f"workspace:{mode_key}"] = button
             mode_x = button.right + 8
+
+        if workspace_mode == "deck":
+            draw_deck_view(self, screen, sim, rect, scale_y, hitboxes)
+            return
 
         if design_mode:
             self._draw_design_view(screen, sim, rect, scale_y, hitboxes)
@@ -799,6 +807,18 @@ class FormationRenderer:
             pygame.draw.line(screen, color, (cx + 8, cy - 11), (cx + 34, cy - 11), 3)
             for dx in (-19, -8, 4, 16):
                 pygame.draw.circle(screen, color, (cx + dx, cy + 10), 3)
+        elif any(word in vehicle_type for word in ("spacecraft", "space", "orbital", "lander")):
+            pygame.draw.polygon(screen, color, [(cx - 24, cy - 8), (cx + 18, cy - 8), (cx + 32, cy),
+                                                (cx + 18, cy + 8), (cx - 24, cy + 8)])
+            pygame.draw.polygon(screen, color, [(cx - 18, cy - 8), (cx - 6, cy - 18), (cx + 2, cy - 8)])
+            pygame.draw.polygon(screen, color, [(cx - 18, cy + 8), (cx - 6, cy + 18), (cx + 2, cy + 8)])
+            pygame.draw.rect(screen, dark, (cx - 30, cy - 5, 6, 10))
+        elif any(word in vehicle_type for word in ("aircraft", "fighter", "plane", "jet", "airlifter")):
+            pygame.draw.polygon(screen, color, [(cx - 30, cy - 2), (cx + 26, cy - 3), (cx + 33, cy),
+                                                (cx + 26, cy + 3), (cx - 30, cy + 2)])
+            pygame.draw.polygon(screen, color, [(cx - 6, cy - 2), (cx + 8, cy - 2), (cx - 2, cy - 18), (cx - 10, cy - 18)])
+            pygame.draw.polygon(screen, color, [(cx - 6, cy + 2), (cx + 8, cy + 2), (cx - 2, cy + 18), (cx - 10, cy + 18)])
+            pygame.draw.polygon(screen, color, [(cx - 30, cy), (cx - 24, cy), (cx - 30, cy - 10)])
         elif any(word in vehicle_type for word in ("ship", "boat", "vessel")):
             pygame.draw.polygon(screen, color, [(cx - 31, cy + 1), (cx + 30, cy + 1),
                                                 (cx + 19, cy + 14), (cx - 23, cy + 14)])
@@ -1244,10 +1264,10 @@ class FormationRenderer:
             key = str(candidate.resolve())
             if key in self._image_cache:
                 return self._image_cache[key]
-            if not candidate.exists():
+            if not asset_files.exists(key):
                 continue
             try:
-                surface = pygame.image.load(str(candidate)).convert_alpha()
+                surface = asset_files.load_image(key).convert_alpha()
             except (OSError, pygame.error):
                 return None
             self._image_cache[key] = surface

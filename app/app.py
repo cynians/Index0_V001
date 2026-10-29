@@ -23,6 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CRASH_REPORT_PATH = install_crash_reporting(PROJECT_ROOT)
 
 import pygame
+from ui.fonts import get_font
 
 from engine.window import SimWindow
 from engine.tab_manager import TabManager
@@ -91,9 +92,9 @@ class App(SimWindow):
         center_x = self.width // 2
         center_y = self.height // 2
 
-        title_font = pygame.font.SysFont("consolas", 56, bold=True)
-        subtitle_font = pygame.font.SysFont("consolas", 18)
-        small_font = pygame.font.SysFont("consolas", 14)
+        title_font = get_font(56, bold=True)
+        subtitle_font = get_font(18)
+        small_font = get_font(14)
 
         title_surface = title_font.render("Index 0", True, (238, 242, 248))
         subtitle_surface = subtitle_font.render("Initializing program", True, (166, 183, 204))

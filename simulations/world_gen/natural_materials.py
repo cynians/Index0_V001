@@ -676,6 +676,10 @@ ROSTER_MIN_AVAILABILITY = 0.12
 # (planetary-scale) lithology, unless it only forms as bounded deposits
 # (diamond pipes, sulfide ore bodies).
 FOUNDATIONAL_ELEMENT_PERCENT = 5.0
+# Weathering products are never bedrock, however rich the crust is in their
+# element: at planet scale they are the surface alteration of true colour
+# (ferric staining, element_pigments), not a lithology.
+ALTERATION_PRODUCT_CATEGORIES = {"supergene_oxidation", "iron_weathering"}
 FOUNDATIONAL_AVAILABILITY = 5.0
 
 
@@ -795,6 +799,7 @@ def derive_natural_material_model(crust_composition, planet_tags):
         carbon_rich_foundation = (
             material.get("material_subclass") == "mineral"
             and formation.get("spatial_representation") != "bounded_deposit"
+            and formation.get("category_id") not in ALTERATION_PRODUCT_CATEGORIES
             and availability >= FOUNDATIONAL_AVAILABILITY
             and any(
                 float(elements.get(element, 0.0) or 0.0) >= FOUNDATIONAL_ELEMENT_PERCENT

@@ -1,0 +1,12 @@
+{
+  "species_id": "spec_torilis_arvensis",
+  "updates": {
+    "plant_leaf_attachment_angle": {
+      "min": 0.17,
+      "typical": 0.22,
+      "max": 0.28,
+      "status": "provisional_visual_fit",
+      "source": "https://www.inaturalist.org/observations/149716762"
+    }
+  }
+}

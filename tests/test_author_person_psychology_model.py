@@ -24,7 +24,8 @@ class AuthorPersonPsychologyModelTests(unittest.TestCase):
         self.assertIn("birth_year", fields)
         self.assertEqual(set(PERSON_PSYCHOLOGY_FIELDS), set(fields) - {"birth_year"})
         self.assertEqual("number", fields["big_five_openness"]["type"])
-        self.assertEqual("string_list", fields["wishes"]["type"])
+        self.assertEqual("entity_list", fields["wishes"]["type"])
+        self.assertEqual("collections", fields["knowledge_collection"]["target"])
 
 
 if __name__ == "__main__":

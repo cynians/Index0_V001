@@ -41,6 +41,9 @@ class Renderer:
             simulation,
             species_renderer=self.species_renderer,
         )
+        # A season can change many plant pictures at once; spread repainting
+        # them over frames rather than freezing one.
+        self.biosphere_builder_renderer.sprite_budget_ms = 18.0
         self.blueprint_designer_renderer = BlueprintDesignerRenderer(simulation)
 
     # --------------------------------------------------
@@ -69,7 +72,10 @@ class Renderer:
             return
 
         if render_mode == "map":
-            self.map_renderer.draw(self.screen, sim)
+            # A Biosphere on generated terrain draws that terrain itself, in
+            # its own projection; the flat regional map under it is never seen.
+            if not getattr(sim, "replaces_map_view", False):
+                self.map_renderer.draw(self.screen, sim)
             self.biosphere_builder_renderer.draw(self.screen, sim)
             return
 

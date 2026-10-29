@@ -1,0 +1,62 @@
+{
+  "resolved": {
+    "id": "spec_cichorium_intybus",
+    "_dataset": "species",
+    "type": "species",
+    "wiki_field_colors": {
+      "intro": "#657d95",
+      "alternate": "#68a55d"
+    },
+    "longevity_class": "moderate",
+    "salinity_tolerance": "medium",
+    "growth_rate": "moderate",
+    "mature_height": {
+      "min_m": 0.3,
+      "max_m": 1.2
+    },
+    "plant_reproductive_structure": "capitulum",
+    "plant_leaf_distribution": "other_unknown",
+    "card_color": "#263523",
+    "waterlogging_tolerance": "low",
+    "plant_crown_shape": "irregular",
+    "binomial_name": "Cichorium intybus",
+    "shade_tolerance": "low",
+    "nutrition_mode": "autotrophic",
+    "clonal_spread": "low",
+    "reproductive_mode": "both",
+    "leaf_arrangement": "alternate",
+    "plant_flowering_position": "mixed",
+    "photosynthesis_pathway": "c3",
+    "mature_height_class": "medium",
+    "plant_woodiness": "herbaceous",
+    "leaf_structure": "simple",
+    "plant_axis_continuity": "monopodial_to_sympodial",
+    "resprouting": "strong",
+    "plant_lifespan": "perennial",
+    "leaf_clustering": "rosette",
+    "plant_shoot_dimorphism": "single_shoot_system",
+    "moisture_preference": "mesic",
+    "root_depth_class": "deep",
+    "seed_size_class": "small",
+    "plant_self_pruning": "none",
+    "regeneration_strategy": "mixed",
+    "card_header_color": "#5d658d",
+    "mycorrhizal_type": "arbuscular",
+    "nitrogen_fixation": "none",
+    "root_architecture": "taproot",
+    "leaf_attachment_pattern": "mixed",
+    "plant_life_form": "hemicryptophyte",
+    "leaf_size_class": "large",
+    "leaf_phenology": "other_unknown",
+    "common_name": "Common Chicory - Cichorium intybus",
+    "plant_growth_form": "forb",
+    "plant_growth_behaviour": "rosette_short_internode",
+    "maturity_rate": "moderate",
+    "plant_lateral_axis_orientation": "mixed",
+    "parents": [
+      "cladis_cichorium"
+    ],
+    "offspring": [],
+    "employed_people": []
+  }
+}

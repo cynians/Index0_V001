@@ -69,6 +69,91 @@ class _World:
         return {entity_id}
 
 
+def _continent(entity_id, name, points, parent="earth"):
+    return {
+        "id": entity_id, "type": "location", "_dataset": "locations", "name": name,
+        "location_class": "continent", "location_role": "map_location",
+        "parent_location": parent, "parent_entity": parent, "parents": [parent],
+        "bounds": {"type": "polygon", "coordinate_space": "map_world", "points": points},
+    }
+
+
+class DraftNameAndSelectionRefinementTests(unittest.TestCase):
+    def _sim(self, *children):
+        world = _World([_planet(), *children])
+        return MapSimulation(SimulationContext(year=2400, root_entity_id="earth", world_model=world))
+
+    def test_a_draft_is_named_after_its_map_its_class_and_the_next_free_number(self):
+        square = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
+        sim = self._sim()
+        root_name = sim.get_root_name()
+        self.assertEqual(f"{root_name} Continent 1", sim._draft_location_name("continent"))
+        sim = self._sim(
+            _continent("loc_a", f"{root_name} Continent 1", square),
+            _continent("loc_b", "Laurentia", square),
+            # A continent of another world does not count, but its name is taken.
+            _continent("loc_c", f"{root_name} Continent 3", square, parent="mars"),
+        )
+        self.assertEqual(f"{root_name} Continent 4", sim._draft_location_name("continent"))
+        self.assertEqual(f"{root_name} Island Chain 1", sim._draft_location_name("island_chain"))
+
+    def test_refining_with_a_place_selected_covers_that_place_and_not_the_view(self):
+        points = [[20.0, -10.0], [60.0, -10.0], [60.0, 10.0], [20.0, 10.0]]
+        sim = self._sim(_continent("loc_a", "Laurentia", points))
+        sim.get_root_entity()["heightmap_model"]["circumference_m"] = 40_030_000.0
+        self.assertIsNone(sim._selected_location_refinement_bounds())       # nothing selected: the view
+        self.assertEqual({"label": "Refine View", "enabled": True}, sim.get_refinement_action(None, 1600, 900))
+        sim.select_location_from_layer_tree("loc_a")
+        bounds = sim._selected_location_refinement_bounds()
+        # 46 degrees of a 40,000 km planet: a Macroregion, in one step.
+        self.assertEqual({"label": "Refine Selection to Macroregion", "enabled": True}, sim.get_refinement_action(None, 1600, 900))
+        # The place with room around it ...
+        self.assertLess(bounds["min_x"], 20.0)
+        self.assertGreater(bounds["max_x"], 60.0)
+        self.assertLess(bounds["min_y"], -10.0)
+        self.assertGreater(bounds["max_y"], 10.0)
+        self.assertAlmostEqual(0.5 * (bounds["min_x"] + bounds["max_x"]), 40.0)
+        # ... far smaller than the planet, and of an aspect a refinement grid holds.
+        width, height = bounds["max_x"] - bounds["min_x"], bounds["max_y"] - bounds["min_y"]
+        self.assertLess(width, 60.0)
+        self.assertLessEqual(width / height, MapSimulation.SELECTION_REFINEMENT_ASPECT[1] + 1e-9)
+        # A place at the edge of the map stays inside it.
+        sim = self._sim(_continent("loc_edge", "Edge", [[150.0, 60.0], [180.0, 60.0], [180.0, 90.0], [150.0, 90.0]]))
+        sim.select_location_from_layer_tree("loc_edge")
+        edge = sim._selected_location_refinement_bounds()
+        self.assertLessEqual(edge["max_x"], 180.0 + 1e-9)
+        self.assertLessEqual(edge["max_y"], 90.0 + 1e-9)
+        # The planet itself selected: the view again.
+        sim.selected_entity_id = "earth"
+        self.assertIsNone(sim._selected_location_refinement_bounds())
+        # A place too large to be a level finer than its map: the button says how large one may be.
+        wide = [[-150.0, -60.0], [150.0, -60.0], [150.0, 60.0], [-150.0, 60.0]]
+        sim = self._sim(_continent("loc_wide", "Pangaea", wide))
+        sim.get_root_entity()["heightmap_model"]["circumference_m"] = 40_030_000.0
+        sim.select_location_from_layer_tree("loc_wide")
+        self.assertEqual({"label": "Selection too large: max 8.2 Mm", "enabled": False}, sim.get_refinement_action(None, 1600, 900))
+        self.assertIsNone(sim.regenerate_visible_region(None, 1600, 900))
+
+    def test_the_refine_button_names_what_the_view_would_become(self):
+        from engine.camera import Camera
+
+        sim = self._sim()
+        heightmap = sim.get_root_entity()["heightmap_model"]
+        heightmap["circumference_m"] = 30_000_000.0
+        heightmap["sample_grid"] = {"width": 513, "height": 257, "rows": [[0.0] * 513 for _row in range(257)]}
+        labels = {}
+        for zoom in (4.0, 40.0, 400.0):
+            camera = Camera(1920, 1080)
+            camera.x, camera.y, camera.zoom = 20.0, 10.0, zoom
+            labels[zoom] = sim.get_refinement_action(camera, 1920, 1080)
+        # The whole planet in view: nothing a level finer fits; a window of
+        # 4,000 km is a Macroregion; one of 400 km a Region, with a
+        # Macroregion made on the way.
+        self.assertEqual({"label": "Zoom in to refine: max 8.2 Mm", "enabled": False}, labels[4.0])
+        self.assertEqual({"label": "Refine View to Macroregion", "enabled": True}, labels[40.0])
+        self.assertEqual({"label": "Refine View to Region (2 maps)", "enabled": True}, labels[400.0])
+
+
 def _planet():
     return {
         "id": "earth",

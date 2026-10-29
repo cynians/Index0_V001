@@ -6,6 +6,7 @@ are currently intended to persist, so worldgen model changes may invalidate
 their derived products without compatibility migration.
 """
 
+import base64
 import copy
 import json
 import logging
@@ -16,6 +17,7 @@ import shutil
 import time
 import types
 import uuid
+import zlib
 from pathlib import Path
 from urllib.parse import quote, unquote
 
@@ -23,6 +25,26 @@ from urllib.parse import quote, unquote
 BASE_IRI = "https://index0.local/ontology.owl#"
 ENTITY_IRI = "https://index0.local/entity/"
 logger = logging.getLogger(__name__)
+
+# A list or dict is kept as one JSON literal.  The worldgen's models are grids of numbers written out as
+# text, ten to twenty characters a number, and pack to about a tenth: from this many characters on a
+# literal is kept packed.  Whoever reads a literal accepts both forms, so older stores and checkpoints load.
+PACKED_JSON_FROM_CHARS = 4096
+PACKED_JSON_PREFIX = "~i0z1~"
+
+
+def pack_json_text(text):
+    """A JSON literal as it is kept: as it is, or deflated and written in base64 so that RDF/XML carries it."""
+    if len(text) < PACKED_JSON_FROM_CHARS:
+        return text
+    return PACKED_JSON_PREFIX + base64.b64encode(zlib.compress(text.encode("utf-8"), 6)).decode("ascii")
+
+
+def unpack_json_text(value):
+    """The JSON literal of a kept value, whether it was packed or not."""
+    if isinstance(value, str) and value.startswith(PACKED_JSON_PREFIX):
+        return zlib.decompress(base64.b64decode(value[len(PACKED_JSON_PREFIX):])).decode("utf-8")
+    return value
 
 
 class OntologyDependencyError(RuntimeError):
@@ -633,9 +655,9 @@ class OntologyRepository:
             # are collapsed and channel/order semantics are lost.  Persist a
             # data list as one JSON literal so RGB triples, coordinate arrays,
             # ordered steps, and deliberate duplicates round-trip exactly.
-            return [json.dumps(value, ensure_ascii=False)]
+            return [pack_json_text(json.dumps(value, ensure_ascii=False))]
         if isinstance(value, dict):
-            return [json.dumps(value, ensure_ascii=False)]
+            return [pack_json_text(json.dumps(value, ensure_ascii=False))]
         return [str(value)]
 
     def _field_uses_json(self, value):
@@ -811,8 +833,8 @@ class OntologyRepository:
         if not isinstance(value, str):
             return value
         try:
-            return json.loads(value)
-        except json.JSONDecodeError:
+            return json.loads(unpack_json_text(value))
+        except (json.JSONDecodeError, zlib.error, ValueError):
             return value
 
     def _field_property_name(self, field_name):

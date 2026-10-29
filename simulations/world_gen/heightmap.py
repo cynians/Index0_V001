@@ -2815,12 +2815,31 @@ def _with_seam(core, width):
     return np.concatenate([core, core[:, :width - core.shape[1]]], axis=1)
 
 
+def joined_sea_rows(heightmap, shape=None):
+    """The sea of a heightmap whose masks tell it from shut-in basins (bool ``[H, W]``), else ``None``.
+
+    ``shape`` resamples the mask to another grid (nearest sample).
+    """
+    masks = (heightmap or {}).get("surface_masks") if isinstance((heightmap or {}).get("surface_masks"), dict) else {}
+    rows = masks.get("ocean_rows")
+    if not masks.get("ocean_is_joined_sea") or not rows:
+        return None
+    width = min(len(row) for row in rows)
+    sea = np.asarray([row[:width] for row in rows], dtype=bool)
+    if shape is not None and tuple(shape) != sea.shape:
+        ys = np.round(np.linspace(0, sea.shape[0] - 1, int(shape[0]))).astype(int)
+        xs = np.round(np.linspace(0, sea.shape[1] - 1, int(shape[1]))).astype(int)
+        sea = sea[np.ix_(ys, xs)]
+    return sea
+
+
 def refresh_heightmap_derivatives(
     heightmap,
     *,
     tectonic_model=None,
     inherited_sea_level_m=None,
     progress_callback=None,
+    sea_mask=None,
 ):
     """Rebuild every derivative that depends on the evolved heightfield.
 
@@ -2828,6 +2847,11 @@ def refresh_heightmap_derivatives(
     sea level.  Regional products inherit the planetary datum and only rebuild
     local masks and morphology.  The duplicate longitude seam is excluded
     from all area-weighted statistics.
+
+    ``sea_mask`` (bool rows, regional maps) says which cells below sea
+    level belong to the sea: water joined to the open sea.  Ground below
+    sea level that land shuts in is land (a basin, with a lake of its own
+    if the water cycle gives it one), and the masks say so.
     """
     if not isinstance(heightmap, dict):
         return {}
@@ -2872,6 +2896,12 @@ def refresh_heightmap_derivatives(
         for y in range(height)
     ]
     land = np.ones(core.shape, dtype=bool) if sea_level is None else core >= sea_level
+    joined_sea = False
+    if sea_mask is not None and sea_level is not None:
+        joined = np.asarray(sea_mask, dtype=bool)
+        if joined.shape == core.shape:
+            land = ~(joined & (core < sea_level))
+            joined_sea = True
     land_per_row = np.count_nonzero(land, axis=1).tolist()
     weighted_land = weighted_ocean = total_weight = 0.0
     for weight, land_count in zip(row_weights, land_per_row):
@@ -3008,6 +3038,7 @@ def refresh_heightmap_derivatives(
             **{key: copy.deepcopy(value) for key, value in prior_masks.items() if key not in replaced_masks},
             "land_rows": land_rows,
             "ocean_rows": ocean_rows,
+            "ocean_is_joined_sea": joined_sea,
             "coastal_rows": coastal_rows,
             "ice_rows": ice_rows,
             "ice_adjacency_rows": ice_adjacency_rows,

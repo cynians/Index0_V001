@@ -171,7 +171,7 @@ class MapUIWorkspaceTests(unittest.TestCase):
 
         self.assertEqual(2401, ui.map_history_timeline.get_selected_year())
 
-    def test_map_workspace_status_and_path_are_not_duplicated(self):
+    def test_map_header_is_the_path_and_scale_without_internal_status(self):
         ui = UIManager()
         sim = FakeMapSimulation(
             {
@@ -184,19 +184,109 @@ class MapUIWorkspaceTests(unittest.TestCase):
             }
         )
         sim.get_scope_breadcrumb = lambda: ["Sol System", "Sol", "Earth"]
+        sim.get_map_scale_label = lambda: "Planet"
 
         ui.rebuild_for_state(sim, 1920, 1080, camera=None)
 
-        status_lines = [
-            line for line in ui.map_context_lines
-            if line == "Status: earth_reference_worldgen_baseline"
-        ]
-        self.assertEqual(1, len(status_lines))
-        self.assertIn("Path: Sol System > Sol > Earth", ui.map_context_lines)
-        self.assertNotIn(
-            "Status: earth_reference_worldgen_baseline | Sol System > Sol > Earth",
-            ui.map_context_lines,
+        self.assertEqual(["Sol System > Sol > Earth", "Planet"], ui.map_context_lines)
+        self.assertEqual(["Sol System", "Sol", "Earth"], ui.map_header["breadcrumb"])
+        # The internal generation status string is card material, not chrome.
+        self.assertFalse(any("earth_reference_worldgen_baseline" in line for line in ui.map_context_lines))
+        self.assertIsNotNone(ui.map_header_rect)
+
+    def test_sidebar_leads_with_navigation_and_folds_location_tools(self):
+        ui = UIManager()
+        sim = FakeMapSimulation(
+            {"id": "loc_child", "name": "Crabflats", "type": "location", "_dataset": "locations",
+             "location_class": "region",
+             "bounds": {"type": "polygon", "points": [(0, 0), (10, 0), (10, 10), (0, 10)]}},
+            parent_root_entity_id="loc_parent",
         )
+        sim.world_model.entities["loc_parent"] = {"id": "loc_parent", "name": "Backtome Island"}
+
+        ui.rebuild_for_state(sim, 1600, 900, camera=None)
+
+        self.assertEqual(
+            ["NAVIGATE", "VIEW", "ADD", "WORKSPACE"], [item["label"] for item in ui.map_sidebar_sections])
+        buttons = {button.id: button for button in ui.buttons}
+        self.assertEqual("Up: Backtome Island", buttons["open_parent_region_map"].label)
+        self.assertNotIn("link_existing_map_location", buttons)
+        self.assertFalse(any(button_id.startswith("new_location:") for button_id in buttons))
+
+        toggle = buttons["map_toggle_add_menu"]
+        action = ui.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": toggle.rect.center}))
+        self.assertEqual("__ui_consumed__", action)
+        ui.rebuild_for_state(sim, 1600, 900, camera=None)
+        buttons = {button.id: button for button in ui.buttons}
+        self.assertIn("link_existing_map_location", buttons)
+        self.assertIn("new_biosphere_patch", buttons)
+
+    def test_a_click_on_a_panel_background_does_not_reach_the_map(self):
+        ui = UIManager()
+        sim = FakeMapSimulation(
+            {"id": "planet_earth", "name": "Earth", "type": "location", "_dataset": "locations",
+             "location_class": "planet",
+             "bounds": {"type": "polygon", "points": [(0, 0), (10, 0), (10, 10), (0, 10)]}})
+        ui.rebuild_for_state(sim, 1600, 900, camera=None)
+
+        sidebar = ui.map_sidebar_rect
+        gap = (sidebar.x + 4, sidebar.bottom - 3)
+        self.assertFalse(any(button.rect.collidepoint(gap) for button in ui.buttons))
+        action = ui.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": gap}))
+        self.assertEqual("__ui_consumed__", action)
+        open_map = (700, 500)
+        self.assertIsNone(
+            ui.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": open_map})))
+
+    def test_the_selection_cards_buttons_can_be_pressed(self):
+        # Every click rebuilds the layout before it is hit-tested.  The card's
+        # buttons were made only while drawing, so that rebuild emptied them:
+        # "Open Map" did nothing and the click went through to the map.
+        ui = UIManager()
+        sim = FakeMapSimulation(
+            {"id": "planet_bristoll", "name": "Bristoll", "type": "location", "_dataset": "locations",
+             "location_class": "planet",
+             "bounds": {"type": "polygon", "points": [(0, 0), (10, 0), (10, 10), (0, 10)]}})
+        sim.get_selection_inspector_payload = lambda: {
+            "entity_id": "loc_child", "title": "Bristoll Continent 1", "kind": "Continent",
+            "details": [], "compact": True, "actions_inline": True,
+            "actions": [{"id": "open_region_map", "label": "Open Map"}, {"id": "open_selection_wiki", "label": "Wiki Entry"}],
+        }
+        ui.rebuild_for_state(sim, 1600, 900, camera=None)
+
+        buttons = {button.id: button for button in ui.simulation_selection_buttons}
+        self.assertEqual({"open_region_map", "open_selection_wiki"}, set(buttons))
+        card = ui.simulation_selection_rect
+        self.assertTrue(all(card.contains(button.rect) for button in buttons.values()))
+        self.assertFalse(buttons["open_region_map"].rect.colliderect(buttons["open_selection_wiki"].rect))
+        for action_id, button in buttons.items():
+            click = pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": button.rect.center})
+            self.assertEqual(action_id, ui.handle_event(click))
+        # The card's background takes the click instead of the map under it.
+        background = pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": (card.x + 3, card.y + 3)})
+        self.assertEqual("__ui_consumed__", ui.handle_event(background))
+        # What is drawn is what can be pressed.
+        ui._draw_simulation_selection_inspector(pygame.Surface((1600, 900)), ui.app_font, card.x, card.y)
+        self.assertEqual(
+            {action_id: tuple(button.rect) for action_id, button in buttons.items()},
+            {button.id: tuple(button.rect) for button in ui.simulation_selection_buttons})
+
+    def test_overlay_toggles_keep_their_label_and_show_state(self):
+        ui = UIManager()
+        sim = FakeMapSimulation(
+            {"id": "planet_earth", "name": "Earth", "type": "location", "_dataset": "locations",
+             "location_class": "planet"})
+        sim.has_height_contours = lambda: True
+        sim.is_height_contours_visible = lambda: False
+        ui.rebuild_for_state(sim, 1600, 900, camera=None)
+
+        toggle = next(
+            item for item in ui.map_layer_selector_items
+            if item.get("action_id") == "toggle_map_height_contours")
+        self.assertEqual("Contours", toggle["label"])
+        self.assertTrue(toggle["toggle"])
+        self.assertFalse(toggle["active"])
 
     def test_map_layer_selector_replaces_visual_locations_buttons(self):
         ui = UIManager()
@@ -312,13 +402,22 @@ class MapUIWorkspaceTests(unittest.TestCase):
         })
         sim.can_regenerate_current_region = lambda: True
         sim.can_regenerate_region = lambda: True
-        sim.get_next_detail_level_label = lambda: "Regenerate Region - Local"
+        sim.get_refinement_action = lambda camera, width, height, viewport_rect=None: {
+            "label": "Refine View to Local (2 maps)", "enabled": True}
 
         ui.rebuild_for_state(sim, 1600, 900, camera=None)
 
-        ids = [button.id for button in ui.buttons]
-        self.assertIn("regenerate_visible_region", ids)
-        self.assertNotIn("regenerate_current_region", ids)
+        buttons = {button.id: button for button in ui.buttons}
+        self.assertIn("regenerate_visible_region", buttons)
+        self.assertNotIn("regenerate_current_region", buttons)
+        self.assertEqual("Refine View to Local (2 maps)", buttons["regenerate_visible_region"].label)
+        self.assertTrue(buttons["regenerate_visible_region"].enabled)
+        # A footprint that cannot be refined keeps the button, greyed out, saying why.
+        sim.get_refinement_action = lambda camera, width, height, viewport_rect=None: {
+            "label": "Zoom in to refine: max 8.2 Mm", "enabled": False}
+        ui.rebuild_for_state(sim, 1600, 900, camera=None)
+        button = next(button for button in ui.buttons if button.id == "regenerate_visible_region")
+        self.assertEqual(("Zoom in to refine: max 8.2 Mm", False), (button.label, button.enabled))
 
     def test_material_selector_uses_two_columns_for_more_than_four_materials(self):
         ui = UIManager()

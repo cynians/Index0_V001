@@ -18,6 +18,7 @@ from simulations.formation.formation_simulation import FormationSimulation
 from simulations.species.species_simulation import SpeciesSimulation
 from simulations.clothing.clothing_simulation import ClothingSimulation
 from world.temporal import DEFAULT_SIMULATION_YEAR
+from world.entity_references import first_entity_reference
 
 try:
     from .launch_affordance_resolver import LaunchAffordanceResolver
@@ -57,6 +58,9 @@ class NavigationController:
         """
         Open or focus the root space simulation tab.
         """
+        root_system_id = first_entity_reference(root_system_id)
+        if root_system_id is None:
+            return False
         tab_key = ("space", root_system_id)
 
         if self.focus_existing_tab_by_key(tab_key):
@@ -95,7 +99,7 @@ class NavigationController:
         if not body_entity:
             return False
 
-        root_system_id = body_entity.get("star_system")
+        root_system_id = first_entity_reference(body_entity.get("star_system"))
         if not root_system_id:
             return False
 
@@ -215,6 +219,32 @@ class NavigationController:
         self.app.camera_controller.setup_for_sim(new_bioregion_sim)
         return True
 
+    def _attach_terrain_refinement(self, biosphere_sim):
+        """Let a Biosphere on generated terrain refine its ground while it runs.
+
+        Refinement blocks the loop for some seconds per chunk; the callback
+        keeps the window alive and repaints the progress it reports.
+        """
+        if getattr(biosphere_sim, "terrain", None) is None:
+            return
+        last_redraw = [0.0]
+
+        def redraw(_progress, _message):
+            import time
+
+            now = time.monotonic()
+            if now - last_redraw[0] < 0.2:
+                return
+            last_redraw[0] = now
+            if pygame.get_init():
+                pygame.event.pump()
+            render_frame = getattr(self.app, "_render_frame", None)
+            if callable(render_frame):
+                render_frame()
+
+        biosphere_sim.terrain_redraw = redraw
+        biosphere_sim.auto_resolve_terrain = True
+
     def launch_biosphere_tab(self, location_entity_id):
         """
         Open or focus the Biosphere overlaying a location, from a plain
@@ -230,10 +260,13 @@ class NavigationController:
             return False
 
         biosphere_id = location.get("biosphere_entity_id")
-        if not biosphere_id:
+        # A site founded on generated terrain is its own launch target: its
+        # ground comes from the region it names, not from a biosphere record.
+        on_generated_terrain = bool(location.get("terrain_source_map_id"))
+        if not biosphere_id and not on_generated_terrain:
             return False
 
-        tab_key = ("biosphere", biosphere_id)
+        tab_key = ("biosphere", biosphere_id or location_entity_id)
         if self.focus_existing_tab_by_key(tab_key):
             self.app.knowledge_layer_active = False
             return True
@@ -281,6 +314,7 @@ class NavigationController:
             biosphere_context=context,
             biosphere_id=biosphere_id,
         )
+        self._attach_terrain_refinement(new_bioregion_sim)
         new_tab = Tab(
             SimulationInstance(new_bioregion_sim),
             name=f"Biosphere: {patch_name}",
@@ -404,6 +438,31 @@ class NavigationController:
         self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
         self.app.knowledge_layer_active = False
         self.app.camera_controller.setup_for_sim(new_person_sim)
+
+    def launch_new_person_tab(self, birth_location_id=None):
+        """
+        Open the Person Editor on a person not yet made, born at a place when one is given.
+        """
+        self._new_person_serial = getattr(self, "_new_person_serial", 0) + 1
+        active_sim = self.app.get_active_simulation()
+        year = getattr(active_sim, "year", 2400) if active_sim is not None else 2400
+        new_person_sim = PersonSimulation(
+            world_model=self.app.world_model,
+            person_entity_id=None,
+            year=year,
+            initial_view="editor",
+        )
+        new_person_sim.start_new_person(birth_location_id)
+        new_tab = Tab(
+            SimulationInstance(new_person_sim),
+            name="New Person",
+            tab_key=("person_create", self._new_person_serial),
+        )
+        self.app.tab_manager.add_tab(new_tab)
+        self.app.tab_manager.active_index = len(self.app.tab_manager.tabs) - 1
+        self.app.knowledge_layer_active = False
+        self.app.camera_controller.setup_for_sim(new_person_sim)
+        return True
 
     def launch_clothing_editor_tab(self, clothing_entity_id):
         """Open or focus the pixel-based editor for an ordinary clothing item."""
@@ -543,7 +602,10 @@ class NavigationController:
             not self.app.world_model.is_plant_species(species_entity_id)
             and not species_entity.get("species_simulation_enabled")
         ):
-            return False
+            from simulations.species.plant_assets import is_surface_species_entity, is_fungal_growth_species_entity
+            if not (is_surface_species_entity(species_entity,self.app.world_model.loader.entities)
+                    or is_fungal_growth_species_entity(species_entity,self.app.world_model.loader.entities)):
+                return False
 
         tab_key = ("species", species_entity_id)
         if self.focus_existing_tab_by_key(tab_key):
@@ -783,6 +845,9 @@ class NavigationController:
         if entity.get("location_class") in {"building", "space_station", "station"}:
             return self.launch_building_tab(entity_id)
 
+        if entity.get("terrain_source_map_id") and entity.get("location_role") == "biosphere_terrain_site":
+            return self.launch_biosphere_tab(entity_id)
+
         if entity.get("location_class") == "room":
             parent_location_id = entity.get("parent_location")
             parent_location = self.app.world_model.get_entity(parent_location_id)
@@ -807,9 +872,19 @@ class NavigationController:
 
         new_map_sim = MapSimulation(context)
         is_refinement = entity.get("location_class") == "generated_region" or entity.get("location_role") == "map_refinement_region"
+        from simulations.map.map_simulation import map_display_name
+
+        display_name = map_display_name(entity, entity_id)
+        if is_refinement:
+            # "Site: Cityworld Prototype": the level leads, so the tabs of one
+            # refinement chain stay distinguishable when their labels are cut.
+            planet = self.app.world_model.get_entity(entity.get("refinement_root_planet_id")) or {}
+            tab_name = f"{display_name}: {planet.get('name')}" if planet.get("name") else display_name
+        else:
+            tab_name = f"Map: {display_name}"
         new_tab = Tab(
             SimulationInstance(new_map_sim),
-            name=f"Region Gen: {entity.get('name', entity_id)}" if is_refinement else f"Map: {entity.get('name', entity_id)}",
+            name=tab_name,
             tab_key=tab_key
         )
 
@@ -841,7 +916,7 @@ class NavigationController:
             if body_class == "planet" and entity.get("star_system"):
                 return self.launch_planet_space_tab(entity_id)
 
-            star_system_id = entity.get("star_system")
+            star_system_id = first_entity_reference(entity.get("star_system"))
             if star_system_id:
                 self.launch_space_root_tab(star_system_id)
                 return True
@@ -892,6 +967,9 @@ class NavigationController:
         if mode == "person_editor":
             self.launch_person_tab(entity_id, initial_view="editor")
             return True
+
+        if mode == "person_create":
+            return self.launch_new_person_tab(entity_id)
 
         if mode == "clothing_editor":
             return self.launch_clothing_editor_tab(entity_id)
@@ -1311,6 +1389,9 @@ class NavigationController:
             tab_index = action.get("tab_index")
             return self.activate_tab_index(tab_index)
 
+        if action_id == "space_panel_action" and active_sim is not None:
+            return bool(getattr(active_sim, "handle_panel_action", lambda _payload: False)(action.get("payload")))
+
         if action_id == "open_space_from_world_gen":
             system_id = action.get("system_id") or getattr(active_sim, "parent_system_id", None) or "system_sol"
             self.launch_space_root_tab(system_id)
@@ -1346,6 +1427,11 @@ class NavigationController:
 
         if action_id == "map_exit_aircraft_cockpit" and active_sim is not None:
             return bool(getattr(active_sim, "exit_aircraft_cockpit", lambda: False)())
+
+        if action_id == "toggle_map_flood_ground" and active_sim is not None:
+            return bool(
+                getattr(active_sim, "toggle_flood_ground_visibility", lambda: False)()
+            )
 
         if action_id == "toggle_map_height_contours" and active_sim is not None:
             return bool(
@@ -1443,6 +1529,9 @@ class NavigationController:
         if action_id == "open_person_character_editor" and active_sim is not None:
             return bool(getattr(active_sim, "open_character_editor", lambda: False)())
 
+        if action_id == "person_save_knowledge" and active_sim is not None:
+            return bool(getattr(active_sim, "save_learned_knowledge", lambda: False)())
+
         if action_id == "knowledge_launch_entry":
             return self.launch_entity_mode(action.get("entity_id"))
 
@@ -1498,6 +1587,9 @@ class NavigationController:
 
         if action_id == "open_person_character_editor" and active_sim is not None:
             return bool(getattr(active_sim, "open_character_editor", lambda: False)())
+
+        if action_id == "person_save_knowledge" and active_sim is not None:
+            return bool(getattr(active_sim, "save_learned_knowledge", lambda: False)())
 
         if action_id == "person_mode_autonomous" and active_sim is not None:
             return bool(getattr(active_sim, "set_control_mode", lambda _mode: False)("autonomous"))
@@ -1724,7 +1816,11 @@ class NavigationController:
             return True
 
         if action_id == "open_region_map" and active_sim is not None:
-            selected_entity_id = getattr(active_sim, "selected_entity_id", None)
+            # The card that carries the button shows a location or a spatial feature.
+            selected_entity_id = (
+                getattr(active_sim, "selected_entity_id", None)
+                or getattr(active_sim, "selected_spatial_feature_id", None)
+            )
             self.open_region_map_tab(selected_entity_id)
             return True
 
@@ -1771,7 +1867,52 @@ class NavigationController:
             if not isinstance(region, dict) or not region.get("id"):
                 return False
             self._refresh_generated_map_views()
+            root_entity = getattr(active_sim, "get_root_entity", lambda: None)() or {}
+            if root_entity.get("terrain_source_map_id"):
+                # A city composites the new patch into its own map; the user
+                # asked for sharper ground here, not for a different map.
+                return True
             return bool(self.open_region_map_tab(region.get("id")))
+
+        if action_id == "start_biosphere_here" and active_sim is not None:
+            return bool(getattr(active_sim, "begin_biosphere_start_pick", lambda: False)())
+
+        if str(action_id).startswith("open_biosphere_site:"):
+            site_id = str(action_id).split(":", 1)[1]
+            # Every open map of the same planet now has a site to draw, and
+            # chunks refined later must reach them too.
+            for tab in getattr(self.app.tab_manager, "tabs", []):
+                simulation = getattr(getattr(tab, "sim_instance", None), "simulation", None)
+                refresh_layers = getattr(simulation, "refresh_generated_map_layers", None)
+                if callable(refresh_layers):
+                    refresh_layers()
+            return bool(self.launch_biosphere_tab(site_id))
+
+        if str(action_id).startswith("biosphere_focus_population:") and active_sim is not None:
+            species_id = str(action_id).split(":", 1)[1]
+            return bool(getattr(active_sim, "focus_population", lambda _species_id: False)(species_id))
+
+        if action_id == "biosphere_cycle_brush" and active_sim is not None:
+            return bool(getattr(active_sim, "cycle_seeding_brush", lambda: False)())
+
+        if action_id == "biosphere_cycle_relief" and active_sim is not None:
+            return bool(getattr(active_sim, "cycle_terrain_relief", lambda: False)())
+
+        if action_id == "biosphere_reset_view" and active_sim is not None:
+            return bool(getattr(active_sim, "reset_isometric_view", lambda: False)())
+
+        if action_id == "found_city" and active_sim is not None:
+            city_id = getattr(active_sim, "found_city", lambda: None)()
+            if not city_id:
+                return False
+            # Every open map of the same planet now has a city to draw.
+            for tab in getattr(self.app.tab_manager, "tabs", []):
+                simulation = getattr(getattr(tab, "sim_instance", None), "simulation", None)
+                refresh_layers = getattr(simulation, "refresh_generated_map_layers", None)
+                if callable(refresh_layers):
+                    refresh_layers()
+            self.open_region_map_tab(city_id)
+            return True
 
         if action_id == "reset_planet_map_view" and active_sim is not None:
             if not bool(getattr(active_sim, "reset_planet_view", lambda: False)()):
@@ -1910,7 +2051,6 @@ class NavigationController:
         if action_id == "open_space_body_map" and active_sim is not None:
             self.open_map_for_selected_space_body(active_sim)
             return True
-
         return False
 
     def handle_ui_action(self, action, active_sim):

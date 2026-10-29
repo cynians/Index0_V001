@@ -37,6 +37,14 @@ JOB_FIELDS = {
     "associated_locations": {"type": "entity_list", "target": "locations", "section": "Organization", "optional": True},
     "supported_outputs": {"type": "entity_list", "target": ["items", "components", "vehicles", "materials"], "section": "Production", "optional": True},
     "supported_tasks": {"type": "entity_list", "target": "tasks", "section": "Production", "optional": True},
+    "hands_out_items": {
+        "type": "entity_list", "target": "items", "section": "Production", "optional": True,
+        "description": (
+            "Items a holder of this job hands to people who ask, on the terms of its "
+            "exchange_doctrine. A person recognises the job holder as a source of whatever "
+            "needs these items serve (world/need_tags.py)."
+        ),
+    },
     "unlock_technologies": {"type": "entity_list", "target": "technologies", "section": "Unlocks", "optional": True},
     "unlock_cultural_aspects": {"type": "entity_list", "target": "cultural_aspects", "section": "Unlocks", "optional": True},
     "unlock_production_outputs": {"type": "entity_list", "target": ["items", "components", "vehicles", "materials"], "section": "Unlocks", "optional": True},

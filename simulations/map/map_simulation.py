@@ -40,6 +40,26 @@ from simulations.map.projection import (
 )
 
 
+def map_display_name(entity, fallback=None):
+    """Short name for a location in map chrome (tabs, breadcrumb, lists).
+
+    A refined region is stored as "<parent name> - <Level> Patch", so four
+    levels down every name starts with the same sixty characters and every
+    truncated label reads alike. In the UI such a region is its level:
+    "Macroregion", "Site", "Parcel".
+    """
+    if not isinstance(entity, dict):
+        return str(fallback or "")
+    if entity.get("location_class") == "generated_region":
+        label = (entity.get("map_detail_profile") or {}).get("label")
+        if label:
+            return str(label)
+        level = entity.get("map_detail_level")
+        if level not in (None, ""):
+            return f"LOD {level}"
+    return str(entity.get("pretty_name") or entity.get("name") or entity.get("id") or fallback or "")
+
+
 class MapSimulation:
     """
     Pure map simulation (entity-driven).
@@ -71,6 +91,11 @@ class MapSimulation:
     POLYGON_POINT_HIT_RADIUS_PX = 10.0
     SQUARE_HANDLE_HIT_RADIUS_PX = 10.0
     CAMERA_DRAG_THRESHOLD_PX = 4.0
+    # Picking where a Biosphere starts.  Class defaults, so a simulation
+    # assembled without __init__ (as tests do) still has no pick in progress.
+    is_picking_biosphere_start = False
+    biosphere_start_notice = None
+    _pending_navigation_action = None
     MIN_SQUARE_SIDE_WORLD = 0.001
     # Active blueprint ghost placement (simulations/building/blueprint_placement.py).
     blueprint_placement = None
@@ -207,6 +232,8 @@ class MapSimulation:
         self.active_climate_layer_id = "koppen"
         self.atmosphere_visible = True
         self.height_contours_visible = True
+        # How often the river covers a city's ground: laid over its map when asked for.
+        self.flood_ground_visible = False
 
         self.live_aircraft = {}
         self.piloted_aircraft_id = None
@@ -220,6 +247,9 @@ class MapSimulation:
 
         self.is_creating_spatial_feature = False
         self.is_creating_biosphere_patch = False
+        self.is_picking_biosphere_start = False
+        self.biosphere_start_notice = None
+        self._pending_navigation_action = None
         self.draft_location_class = "region"
         self.draft_spatial_feature_points = []
         self.draft_hover_map_pos = None
@@ -496,6 +526,31 @@ class MapSimulation:
         )
         return source_nx * 360.0 - 180.0, 90.0 - source_ny * 180.0
 
+    def get_map_scale_label(self):
+        """One line on what this map is: level, physical size, sample spacing."""
+        from simulations.world_gen.regional_refinement import map_physical_dimensions_m
+
+        root = self.get_root_entity() or {}
+        # The terrain of a city, and so its scale, is the region it stands on.
+        surface_root = self._terrain_source_region(root) or root
+        heightmap = surface_root.get("heightmap_model") or {}
+        profile = surface_root.get("map_detail_profile") or {}
+        level = int(surface_root.get("map_detail_level", 0) or 0)
+        if surface_root.get("location_class") in {"planet", "moon"}:
+            parts = [str(surface_root.get("location_class")).title()]
+        elif profile.get("label") or level:
+            parts = [str(profile.get("label") or f"LOD {level}")]
+        else:
+            parts = [str(root.get("location_class") or "map").replace("_", " ").title()]
+        width_m, height_m = map_physical_dimensions_m(surface_root) if heightmap else (0.0, 0.0)
+        if width_m > 0.0 and height_m > 0.0:
+            parts.append(f"{self._format_refinement_distance(width_m)} x {self._format_refinement_distance(height_m)}")
+            grid = heightmap.get("sample_grid") or {}
+            columns = int(grid.get("width", 0) or 0)
+            if columns > 1:
+                parts.append(f"{self._format_refinement_distance(width_m / (columns - 1))} per sample")
+        return " \u00b7 ".join(parts)
+
     def get_projection_focus_label(self):
         if (self.get_root_entity() or {}).get("location_class") not in {"planet", "moon"}:
             return "Regional projection | Drag to pan; double-click to center; zoom selects refinement footprint"
@@ -504,17 +559,39 @@ class MapSimulation:
         return f"Globe center: {longitude:+.1f} deg, {latitude:+.1f} deg | Drag to pan; double-click to refocus"
         return f"Globe center: {longitude:+.1f}°, {latitude:+.1f}° | Drag to rotate"
 
+    def _terrain_source_region(self, root=None):
+        """The refined region a root reads its terrain from, or ``None``.
+
+        Set for a location founded over generated terrain (a city): its own
+        bounds are site metres, while refinement, lineage and child patches
+        all live in the source region's map coordinates.
+        """
+        root = root if root is not None else self.get_root_entity()
+        if not isinstance(root, dict) or not root.get("terrain_source_map_id"):
+            return None
+        source = self.world_model.get_entity(root["terrain_source_map_id"])
+        if isinstance(source, dict) and self._grid_rows(source.get("heightmap_model")):
+            return source
+        return None
+
     def can_regenerate_region(self):
         root = self.get_root_entity()
-        if not isinstance(root, dict) or not isinstance(root.get("heightmap_model"), dict) or self.is_map_editor_active():
+        # A city refines the region it stands on; the patch is composited
+        # back into the city map.
+        surface_root = self._terrain_source_region(root) or root
+        if (
+            not isinstance(surface_root, dict)
+            or not isinstance(surface_root.get("heightmap_model"), dict)
+            or self.is_map_editor_active()
+        ):
             return False
         from simulations.world_gen.regional_refinement import (
             MAX_DETAIL_LEVEL, map_physical_dimensions_m, refinement_floor_reached,
         )
-        width_m, height_m = map_physical_dimensions_m(root)
+        width_m, height_m = map_physical_dimensions_m(surface_root)
         if width_m > 0.0 and height_m > 0.0:
-            return not refinement_floor_reached(root)
-        return int(root.get("map_detail_level", 0) or 0) < MAX_DETAIL_LEVEL
+            return not refinement_floor_reached(surface_root)
+        return int(surface_root.get("map_detail_level", 0) or 0) < MAX_DETAIL_LEVEL
 
     def can_regenerate_current_region(self):
         root = self.get_root_entity()
@@ -526,7 +603,7 @@ class MapSimulation:
         root = self.get_root_entity() or {}
         profile = root.get("map_detail_profile") or {}
         detail_label = profile.get("label")
-        return f"Regenerate This Region - {detail_label}" if detail_label else "Regenerate This Region"
+        return f"Rebuild This {detail_label}" if detail_label else "Rebuild This Region"
 
     def _surface_models_for_generation(self, entity):
         if not isinstance(entity, dict):
@@ -742,18 +819,21 @@ class MapSimulation:
         """Re-run the open refinement from its parent using the same footprint."""
         if self.is_map_editor_active():
             return None
-        from simulations.world_gen.regional_refinement import generate_refined_region
+        from simulations.world_gen.regional_refinement import RefinementStepError, generate_refined_region
 
         request = self._current_region_regeneration_request()
         if request is None:
             return None
         generation_parent, bounds, seed_suffix, focus_occurrence_id = request
+        root = self.get_root_entity() or {}
+        # A stored refinement is rebuilt in place, from the parent it has;
+        # an authored region gets whatever maps its footprint needs.
+        in_place = root.get("location_class") == "generated_region" and root.get("location_role") == "map_refinement_region"
         parent_heightmap = generation_parent.get("heightmap_model") or {}
         parent_grid = parent_heightmap.get("sample_grid") or {}
         logger.info(
             "[RegionalRefinement] Starting regeneration "
             f"parent={generation_parent.get('id')} "
-            f"level={int(generation_parent.get('map_detail_level', 0) or 0) + 1} "
             f"bounds={bounds} "
             f"source_uv={parent_heightmap.get('source_uv_bounds')} "
             f"parent_grid={parent_grid.get('width')}x{parent_grid.get('height')} "
@@ -775,7 +855,12 @@ class MapSimulation:
                 feedback_iterations=getattr(self.context, "regional_feedback_iterations", None),
                 storage_root=getattr(self.context, "worldgen_storage_root", None),
                 progress_callback=self._regional_progress_bridge(progress_callback),
+                allow_intermediate=not in_place,
             )
+        except RefinementStepError as error:
+            logger.info(f"[MapSimulation] Regeneration refused: {error}", key="map_refinement_refused", interval=0.5)
+            self._invalidate_layer_cache()
+            return None
         finally:
             self._finish_regional_refinement_loading()
         regenerated_heightmap = (regenerated or {}).get("heightmap_model") or {}
@@ -796,6 +881,139 @@ class MapSimulation:
         """Discard cached map layers after a refinement changes repository truth."""
         self._invalidate_layer_cache()
         return True
+
+    def get_city_founding_action(self):
+        """Sidebar action for the open refined region, or ``None``.
+
+        ``{"label", "enabled", "city_id"}``: founds a city over the region,
+        or reopens the one already standing on it.
+        """
+        return self._repository_memo_get(
+            "city_founding_action",
+            (self.context.root_entity_id, self.is_map_editor_active()),
+            self._build_city_founding_action,
+        )
+
+    def _build_city_founding_action(self):
+        root = self.get_root_entity()
+        if not isinstance(root, dict) or root.get("location_class") != "generated_region":
+            return None
+        from simulations.city.city_site import cities_on_region, founding_report
+
+        existing = cities_on_region(self.world_model, root.get("id"))
+        if existing:
+            city = existing[0]
+            label = city.get("pretty_name") or city.get("name") or city.get("id")
+            return {"label": f"Open {label}", "enabled": True, "city_id": city.get("id")}
+        can_found, reason = founding_report(root)
+        return {
+            "label": "Found City Here" if can_found else f"Found City: {reason}",
+            "enabled": can_found and not self.is_map_editor_active(),
+            "city_id": None,
+        }
+
+    def get_biosphere_start_action(self):
+        """Sidebar action that starts a Biosphere at a point of this map's terrain, or ``None``."""
+        return self._repository_memo_get(
+            "biosphere_start_action",
+            (self.context.root_entity_id, self.is_map_editor_active()),
+            self._build_biosphere_start_action,
+        )
+
+    def _build_biosphere_start_action(self):
+        root = self.get_root_entity()
+        if not isinstance(root, dict):
+            return None
+        if root.get("location_class") != "generated_region" and not root.get("terrain_source_map_id"):
+            return None
+        from simulations.biosphere.terrain_site import founding_report, is_terrain_site
+
+        if is_terrain_site(root):
+            return None  # Already a Biosphere's own ground.
+        can_found, reason = founding_report(self.world_model, root)
+        return {
+            "label": "Start Biosphere Here" if can_found else f"Start Biosphere: {reason}",
+            "enabled": can_found and not self.is_map_editor_active(),
+        }
+
+    def begin_biosphere_start_pick(self):
+        """Arm the cursor: the next click on the ground founds a Biosphere there."""
+        action = self.get_biosphere_start_action()
+        if not action or not action["enabled"]:
+            return False
+        self._set_all_editor_modes_inactive()
+        self.is_picking_biosphere_start = True
+        self.biosphere_start_notice = None
+        self._invalidate_layer_cache()
+        return True
+
+    def cancel_biosphere_start_pick(self):
+        if not self.is_picking_biosphere_start:
+            return False
+        self.is_picking_biosphere_start = False
+        self.biosphere_start_notice = None
+        self._invalidate_layer_cache()
+        return True
+
+    def start_biosphere_at(self, map_point):
+        """Found a Biosphere site at a point of this map and ask the app to open it."""
+        from simulations.biosphere import terrain_site
+
+        root = self.get_root_entity()
+        region = terrain_site.anchor_region(self.world_model, root)
+        can_found, _reason = terrain_site.founding_report(self.world_model, root)
+        if region is None or not can_found:
+            return None
+        bounds = self._entity_map_bounds(root) or {}
+        inside = (
+            bounds
+            and bounds["min_x"] <= map_point[0] <= bounds["max_x"]
+            and bounds["min_y"] <= map_point[1] <= bounds["max_y"]
+        )
+        if not inside:
+            self.biosphere_start_notice = "Biosphere start: click inside the map"
+            return None
+        point_m = terrain_site.map_point_to_frame_m(root, region, map_point)
+        substrate = terrain_site.site_substrate(self.world_model, {
+            "bounds": terrain_site.frame_bounds_m(region),
+            terrain_site.TERRAIN_SOURCE_FIELD: region["id"],
+        })
+        if substrate is not None and substrate.open_water_at(*point_m):
+            # Every founding species is terrestrial; open water would never establish.
+            self.biosphere_start_notice = "Biosphere start: that is open water, click dry ground"
+            return None
+        site = terrain_site.found_biosphere_site(
+            self.world_model, self.context.root_entity_id, map_point, year=self.year,
+        )
+        if site is None:
+            return None
+        self.is_picking_biosphere_start = False
+        self.biosphere_start_notice = None
+        self._notify_incremental_repository_change()
+        self._invalidate_layer_cache()
+        self._pending_navigation_action = f"open_biosphere_site:{site['id']}"
+        return site["id"]
+
+    def consume_pending_navigation_action(self):
+        action = getattr(self, "_pending_navigation_action", None)
+        self._pending_navigation_action = None
+        return action
+
+    def found_city(self):
+        """Found a city over the open region; return its id (or the existing one's)."""
+        action = self.get_city_founding_action()
+        if not action or not action["enabled"]:
+            return None
+        if action["city_id"]:
+            return action["city_id"]
+        from simulations.city.city_site import found_city
+
+        city = found_city(self.world_model, self.context.root_entity_id, year=self.year)
+        if city is None:
+            return None
+        self._notify_incremental_repository_change()
+        self._invalidate_layer_cache()
+        return city["id"]
 
     def can_reset_planet_view(self):
         root = self.get_root_entity()
@@ -903,12 +1121,97 @@ class MapSimulation:
             None,
         )
 
-    def get_next_detail_level_label(self):
-        from simulations.world_gen.regional_refinement import MAX_DETAIL_LEVEL, detail_level_spec
-        current = int((self.get_root_entity() or {}).get("map_detail_level", 0) or 0)
-        level = min(MAX_DETAIL_LEVEL, current + 1)
-        suffix = " (toward 10 m)" if current >= MAX_DETAIL_LEVEL else ""
-        return f"Regenerate Region - {detail_level_spec(level)['label']}{suffix}"
+    def get_refinement_action(self, camera, viewport_width, viewport_height, viewport_rect=None):
+        """What the refine button would do now: ``{"label", "enabled"}``.
+
+        A selected place becomes the new map; without one, the visible window
+        does.  The level is the scale of that footprint, so the label names
+        it, counts the maps in between that would be made on the way, and
+        says how large a footprint may be where this one is too large.
+        """
+        from simulations.world_gen.regional_refinement import describe_refinement, format_extent
+
+        what = "Selection" if self._selected_location_refinement_bounds() is not None else "View"
+        key = (
+            self.context.root_entity_id, self.selected_entity_id, self.selected_material_occurrence_id,
+            None if camera is None else (
+                round(float(getattr(camera, "x", 0.0)), 9), round(float(getattr(camera, "y", 0.0)), 9),
+                float(getattr(camera, "zoom", 1.0)),
+            ),
+            viewport_width, viewport_height, self.map_projection_focus_x, self.map_projection_focus_y,
+            getattr(self.world_model, "repository_revision", None),
+        )
+        cached = getattr(self, "_refinement_action_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        request = self._refinement_request(camera, viewport_width, viewport_height, viewport_rect)
+        if request is None:
+            action = {"label": f"Refine {what}", "enabled": True}
+        else:
+            _root, generation_parent, child_bounds = request
+            plan = describe_refinement(
+                self.world_model, generation_parent, child_bounds,
+                sample_dimensions=getattr(self.context, "regional_sample_dimensions", None),
+            )
+            if plan["status"] == "ok":
+                maps = f" ({plan['steps']} maps)" if plan["steps"] > 1 else ""
+                action = {"label": f"Refine {what} to {plan['label']}{maps}", "enabled": True}
+            elif plan["status"] == "finest":
+                action = {"label": "Finest level reached", "enabled": False}
+            else:
+                limit = f": max {format_extent(plan['max_extent_m'])}" if plan.get("max_extent_m") else ""
+                action = {
+                    "label": (f"Selection too large{limit}" if what == "Selection" else f"Zoom in to refine{limit}"),
+                    "enabled": False,
+                }
+        self._refinement_action_cache = (key, action)
+        return action
+
+    # Room left around a selected place when it is refined: its outline must
+    # not lie in the band where a child fades into its parent.
+    SELECTION_REFINEMENT_MARGIN = 0.08
+    # A refinement grid holds footprints between these width-to-height ratios
+    # with square cells (``refinement_sample_dimensions``).
+    SELECTION_REFINEMENT_ASPECT = (0.6, 2.8)
+
+    def _selected_location_refinement_bounds(self, parent_bounds=None):
+        """Footprint that refining the selected place covers, in the map's coordinates; ``None`` to refine the view.
+
+        The place's own envelope with a margin, widened on its short side to
+        an aspect a refinement grid can hold, and kept inside the map.  A
+        point has no envelope, and a region that is itself a refinement is
+        opened, not refined a second time from its parent.
+        """
+        entity_id = getattr(self, "selected_entity_id", None)
+        if not entity_id or entity_id == self.context.root_entity_id or getattr(self, "selected_material_occurrence_id", None):
+            return None
+        entity = self.get_location(entity_id)
+        if not isinstance(entity, dict) or not self._is_location_entity(entity):
+            return None
+        if entity.get("location_class") == "generated_region" or entity.get("location_role") == "map_refinement_region":
+            return None
+        envelope = self._entity_map_bounds(entity)
+        if parent_bounds is None:
+            parent_bounds = self._entity_map_bounds(self.get_root_entity())
+        if envelope is None or parent_bounds is None:
+            return None
+        parent_width = float(parent_bounds["max_x"]) - float(parent_bounds["min_x"])
+        parent_height = float(parent_bounds["max_y"]) - float(parent_bounds["min_y"])
+        width = float(envelope["max_x"]) - float(envelope["min_x"])
+        height = float(envelope["max_y"]) - float(envelope["min_y"])
+        if min(width, height, parent_width, parent_height) <= 0.0:
+            return None
+        margin = self.SELECTION_REFINEMENT_MARGIN * max(width, height)
+        width, height = width + 2.0 * margin, height + 2.0 * margin
+        narrowest, widest = self.SELECTION_REFINEMENT_ASPECT
+        width = max(width, height * narrowest)
+        height = max(height, width / widest)
+        width, height = min(width, parent_width), min(height, parent_height)
+        center_x = 0.5 * (float(envelope["min_x"]) + float(envelope["max_x"]))
+        center_y = 0.5 * (float(envelope["min_y"]) + float(envelope["max_y"]))
+        min_x = max(float(parent_bounds["min_x"]), min(float(parent_bounds["max_x"]) - width, center_x - 0.5 * width))
+        min_y = max(float(parent_bounds["min_y"]), min(float(parent_bounds["max_y"]) - height, center_y - 0.5 * height))
+        return {"min_x": min_x, "max_x": min_x + width, "min_y": min_y, "max_y": min_y + height}
 
     @staticmethod
     def _format_refinement_distance(distance_m):
@@ -957,9 +1260,42 @@ class MapSimulation:
         viewport_rect=None,
         progress_callback=None,
     ):
-        if not self.can_regenerate_region() or camera is None:
+        from simulations.world_gen.regional_refinement import RefinementStepError, generate_refined_region
+
+        request = self._refinement_request(camera, viewport_width, viewport_height, viewport_rect)
+        if request is None:
             return None
-        from simulations.world_gen.regional_refinement import generate_refined_region
+        root, generation_parent, child_bounds = request
+        self._begin_regional_refinement_loading(
+            f"Refining {root.get('name') or root.get('id') or 'visible region'}",
+            generation_parent,
+        )
+        region = None
+        try:
+            region = generate_refined_region(
+                self.world_model, generation_parent, child_bounds,
+                focus_occurrence_id=self.selected_material_occurrence_id,
+                sample_dimensions=getattr(self.context, "regional_sample_dimensions", None),
+                feedback_iterations=getattr(self.context, "regional_feedback_iterations", None),
+                storage_root=getattr(self.context, "worldgen_storage_root", None),
+                progress_callback=self._regional_progress_bridge(progress_callback),
+            )
+        except RefinementStepError as error:
+            # The button says so beforehand; this is the same answer for a caller that did not ask.
+            logger.info(f"[MapSimulation] Refinement refused: {error}", key="map_refinement_refused", interval=0.5)
+        finally:
+            self._finish_regional_refinement_loading()
+        self._invalidate_layer_cache()
+        return region
+
+    def _refinement_request(self, camera, viewport_width, viewport_height, viewport_rect=None):
+        """``(root, parent, bounds)`` of the map refining would make now, or ``None``.
+
+        The footprint is the selected place (``_selected_location_refinement_bounds``)
+        or else the visible window, centred on a selected material occurrence.
+        """
+        if not self.can_regenerate_region():
+            return None
         root = self.get_root_entity()
         rect = self._planet_rect_from_entity(root)
         parent_bounds = {"type": "bbox", "min_x": rect["x"] - rect["width_world"] * 0.5,
@@ -968,20 +1304,15 @@ class MapSimulation:
                          "max_y": rect["y"] + rect["height_world"] * 0.5}
         parent_width = parent_bounds["max_x"] - parent_bounds["min_x"]
         parent_height = parent_bounds["max_y"] - parent_bounds["min_y"]
-        visible_bounds = self._visible_refinement_bounds(
-            camera, viewport_width, viewport_height, parent_bounds, root, viewport_rect=viewport_rect,
-        )
+        visible_bounds = self._selected_location_refinement_bounds(parent_bounds)
+        if visible_bounds is None and camera is not None:
+            visible_bounds = self._visible_refinement_bounds(
+                camera, viewport_width, viewport_height, parent_bounds, root, viewport_rect=viewport_rect,
+            )
         if visible_bounds is None:
             return None
         region_width = min(parent_width, visible_bounds["max_x"] - visible_bounds["min_x"])
         region_height = min(parent_height, visible_bounds["max_y"] - visible_bounds["min_y"])
-        if region_width >= parent_width * 0.98 and region_height >= parent_height * 0.98:
-            logger.info(
-                "[MapSimulation] Zoom into a region before generating a refinement patch",
-                key="map_refinement_requires_zoom",
-                interval=0.5,
-            )
-            return None
         center_x = (visible_bounds["min_x"] + visible_bounds["max_x"]) * 0.5
         center_y = (visible_bounds["min_y"] + visible_bounds["max_y"]) * 0.5
         focused_occurrence = self._selected_material_occurrence(root)
@@ -997,22 +1328,27 @@ class MapSimulation:
         min_y = max(parent_bounds["min_y"], min(parent_bounds["max_y"] - region_height, center_y - region_height * 0.5))
         generation_parent = dict(root)
         generation_parent["bounds"] = parent_bounds
-        self._begin_regional_refinement_loading(
-            f"Refining {root.get('name') or root.get('id') or 'visible region'}",
-            generation_parent,
-        )
-        try:
-            region = generate_refined_region(self.world_model, generation_parent, {
-                "min_x": min_x, "max_x": min_x + region_width, "min_y": min_y, "max_y": min_y + region_height,
-            }, focus_occurrence_id=self.selected_material_occurrence_id,
-            sample_dimensions=getattr(self.context, "regional_sample_dimensions", None),
-            feedback_iterations=getattr(self.context, "regional_feedback_iterations", None),
-            storage_root=getattr(self.context, "worldgen_storage_root", None),
-            progress_callback=self._regional_progress_bridge(progress_callback))
-        finally:
-            self._finish_regional_refinement_loading()
-        self._invalidate_layer_cache()
-        return region
+        child_bounds = {
+            "min_x": min_x, "max_x": min_x + region_width, "min_y": min_y, "max_y": min_y + region_height,
+        }
+        terrain_source = self._terrain_source_region(root)
+        if terrain_source is not None:
+            # The visible window is in the city's metres; the patch is a
+            # child of the source region, in that region's coordinates.
+            source_bounds = self._entity_map_bounds(terrain_source)
+            if source_bounds is None:
+                return None
+            scale_x = (source_bounds["max_x"] - source_bounds["min_x"]) / max(1e-9, parent_width)
+            scale_y = (source_bounds["max_y"] - source_bounds["min_y"]) / max(1e-9, parent_height)
+            child_bounds = {
+                "min_x": source_bounds["min_x"] + (child_bounds["min_x"] - parent_bounds["min_x"]) * scale_x,
+                "max_x": source_bounds["min_x"] + (child_bounds["max_x"] - parent_bounds["min_x"]) * scale_x,
+                "min_y": source_bounds["min_y"] + (child_bounds["min_y"] - parent_bounds["min_y"]) * scale_y,
+                "max_y": source_bounds["min_y"] + (child_bounds["max_y"] - parent_bounds["min_y"]) * scale_y,
+            }
+            generation_parent = dict(terrain_source)
+            generation_parent["bounds"] = {"type": "bbox", **source_bounds}
+        return root, generation_parent, child_bounds
 
     def _visible_refinement_bounds(self, camera, viewport_width, viewport_height, parent_bounds, root, viewport_rect=None):
         """Map the actually visible map rectangle back into the parent's source space."""
@@ -1084,10 +1420,22 @@ class MapSimulation:
         }
 
     def _refined_region_models(self):
+        return self._repository_memo_get(
+            "refined_region_models", self.context.root_entity_id, self._build_refined_region_models,
+        )
+
+    def _build_refined_region_models(self):
         root = self.get_root_entity()
         if not isinstance(root, dict):
             return []
         entities = getattr(getattr(self.world_model, "loader", None), "entities", {})
+        # A city composites the patches refined from the region it stands
+        # on. Their bounds are in that region's coordinates, so lineage and
+        # placement are both resolved against the source, not the city's
+        # metre frame; the normalised result is the same rectangle.
+        terrain_source = self._terrain_source_region(root)
+        if terrain_source is not None:
+            root = terrain_source
         root_id = str(root.get("id") or "")
         root_planet_id = root.get("refinement_root_planet_id") or (root_id if root.get("location_class") in {"planet", "moon"} else None)
         root_bounds = self._entity_map_bounds(root)
@@ -1110,7 +1458,10 @@ class MapSimulation:
         # a real nested subregion has. Compositing a region onto its own base
         # doubles the (expensive) true-color render and can leave the result
         # mis-sized against the destination rect. Exclude it explicitly.
-        own_generated_id = (self._own_generated_region(root) or {}).get("id")
+        own_generated_id = (
+            None if terrain_source is not None
+            else (self._own_generated_region(root) or {}).get("id")
+        )
 
         def descends_from(candidate):
             current, visited = candidate, set()
@@ -1232,6 +1583,15 @@ class MapSimulation:
             if parent_id and parent_id != entity_id and self._is_location_entity(parent):
                 return parent_id
 
+        # Only a location that names no parent reaches this scan of every
+        # entity; a parentless map root (a city, a Biosphere site) reached it
+        # for each breadcrumb of each frame.
+        return self._repository_memo_get(
+            f"constituent_parent:{entity_id}", entity_id,
+            lambda: self._constituent_parent_location_id(entity_id),
+        )
+
+    def _constituent_parent_location_id(self, entity_id):
         entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
         for candidate_id, candidate in entities.items():
             if candidate_id == entity_id or not self._is_location_entity(candidate):
@@ -1247,11 +1607,26 @@ class MapSimulation:
             or entity.get("type") == "location"
         )
 
+    def _navigation_parent_location_id(self, entity):
+        """The map one step up from ``entity``.
+
+        Usually the structural parent. A location founded over generated
+        terrain (a city) has none, so its terrain source region stands in:
+        that is the map the user came from and expects to return to.
+        """
+        parent_id = self._structural_parent_location_id(entity)
+        if parent_id:
+            return parent_id
+        source_id = entity.get("terrain_source_map_id") if isinstance(entity, dict) else None
+        if source_id and self._is_location_entity(self.world_model.get_entity(source_id)):
+            return source_id
+        return None
+
     def get_parent_root_entity_id(self):
         root_entity = self.get_root_entity()
         if not root_entity:
             return None
-        return self._structural_parent_location_id(root_entity)
+        return self._navigation_parent_location_id(root_entity)
 
     def get_scope_breadcrumb(self):
         """
@@ -1267,9 +1642,9 @@ class MapSimulation:
                 break
 
             visited.add(entity_id)
-            breadcrumb.append(current_entity.get("name", entity_id))
+            breadcrumb.append(map_display_name(current_entity, entity_id))
 
-            parent_id = self._structural_parent_location_id(current_entity)
+            parent_id = self._navigation_parent_location_id(current_entity)
             if not parent_id:
                 break
 
@@ -1678,6 +2053,33 @@ class MapSimulation:
         self._inherited_surface_context_cache = None
         self._last_hover_pick_screen_pos = None
         self._last_hover_pick_camera_state = None
+        self._repository_memo = {}
+
+    def _repository_state_key(self):
+        """Changes whenever the repository this map reads is edited or reloaded."""
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", None)
+        return (
+            id(entities),
+            len(entities) if entities is not None else 0,
+            getattr(self.world_model, "repository_revision", 0),
+        )
+
+    def _repository_memo_get(self, name, extra_key, build):
+        """Reuse a result derived from repository state until that state changes.
+
+        The renderer and the UI ask the map for the same derived lists every
+        frame (refined children, location tree, history items). Each walks
+        every entity; together they cost about 70 ms per frame. The memo is
+        dropped with the layer cache and whenever the repository key moves.
+        """
+        memo = self.__dict__.setdefault("_repository_memo", {})
+        key = (self._repository_state_key(), extra_key)
+        entry = memo.get(name)
+        if entry is not None and entry[0] == key:
+            return entry[1]
+        value = build()
+        memo[name] = (key, value)
+        return value
 
     def _prepare_layer_cache(self, layers):
         layers = sorted(layers, key=self._render_layer_sort_key)
@@ -2226,8 +2628,28 @@ class MapSimulation:
         children. That meant the regenerated data was silently orphaned:
         the Map tab kept showing a coarse crop of the root planet even after
         a fresh, detailed regeneration existed one hop away.
+
+        A location may instead name its terrain explicitly through
+        ``terrain_source_map_id``. A city is founded *over* an existing
+        refined region (see ``simulations/city/city_site.py``): it has its
+        own metre frame, so the region cannot be its structural child, but
+        the region's models are still the surface this map shows.
         """
         if not isinstance(root, dict):
+            return None
+        terrain_source_id = root.get("terrain_source_map_id")
+        if terrain_source_id:
+            terrain_source = self.world_model.get_entity(terrain_source_id)
+            if isinstance(terrain_source, dict) and self._grid_rows(terrain_source.get("heightmap_model")):
+                return terrain_source
+        if self._grid_rows(root.get("heightmap_model")):
+            # A map with terrain of its own is its own surface. Refining a
+            # window of it also appends a generated_region to
+            # ``constituents``, but that child covers only the window: it is
+            # a patch to composite (``_refined_region_models``), not a
+            # replacement. Without this guard a planet's map showed its
+            # first LOD1 patch stretched over the whole globe, and every
+            # refined region showed its child's terrain instead of its own.
             return None
         entities = getattr(getattr(self.world_model, "loader", None), "entities", {}) or {}
         best = None
@@ -2247,6 +2669,11 @@ class MapSimulation:
         return best
 
     def _root_surface_context(self):
+        return self._repository_memo_get(
+            "root_surface_context", self.context.root_entity_id, self._build_root_surface_context,
+        )
+
+    def _build_root_surface_context(self):
         root = self.get_root_entity()
         if not isinstance(root, dict):
             return None
@@ -2523,6 +2950,44 @@ class MapSimulation:
         self._invalidate_layer_cache()
         return True
 
+    def has_flood_ground(self):
+        """Whether this map is a city's whose ground tells how often its river floods it."""
+        root = self.get_root_entity()
+        if not isinstance(root, dict) or root.get("location_class") != "city":
+            return False
+        from simulations.city.city_floods import has_floods
+
+        return has_floods(self.get_ground_substrate())
+
+    def is_flood_ground_visible(self):
+        return bool(self.flood_ground_visible and self.has_flood_ground())
+
+    def toggle_flood_ground_visibility(self):
+        if not self.has_flood_ground():
+            return False
+        self.flood_ground_visible = not self.flood_ground_visible
+        self._invalidate_layer_cache()
+        return True
+
+    def _flood_ground_layers(self):
+        """The ground a city's river floods, tinted by how often, over its map and the plants on it."""
+        if not self.is_flood_ground_visible():
+            return []
+        from simulations.city.city_floods import flood_picture
+        from simulations.city.city_vegetation import city_bounds
+
+        root = self.get_root_entity()
+        key = (root.get("id"), getattr(self.world_model, "repository_revision", 0))
+        cached = getattr(self, "_flood_ground_cache", None)
+        if cached is None or cached[0] != key:
+            self._flood_ground_cache = cached = (key, flood_picture(self.get_ground_substrate(), city_bounds(root)))
+        picture, rect = cached[1], self._map_image_rect_from_entity(root)
+        if picture is None or rect is None:
+            return []
+        return [{"x": rect["x"], "y": rect["y"], "width_world": rect["width_world"], "height_world": rect["height_world"],
+                 "pickable": False, "shape": "image_rect", "_prepared_surface": picture, "name": "River floods",
+                 "draw_order": -3998}]
+
     def has_height_contours(self):
         surface_context = self._root_surface_context()
         heightmap = surface_context.get("heightmap_model") if isinstance(surface_context, dict) else None
@@ -2747,6 +3212,13 @@ class MapSimulation:
         return parent_ids
 
     def get_location_layer_tree_items(self):
+        return self._repository_memo_get(
+            "location_layer_tree_items",
+            (self.context.root_entity_id, self.year, self.selected_entity_id),
+            self._build_location_layer_tree_items,
+        )
+
+    def _build_location_layer_tree_items(self):
         root_entity = self.get_root_entity()
         root_id = str(getattr(self.context, "root_entity_id", "") or "")
         active_locations = [
@@ -2790,7 +3262,7 @@ class MapSimulation:
             visited.add(entity_id)
             items.append({
                 "id": entity_id,
-                "label": entity.get("name") or entity.get("pretty_name") or entity_id,
+                "label": map_display_name(entity, entity_id),
                 "depth": max(0, int(depth)),
                 "active": entity_id == self.selected_entity_id,
                 "location_class": entity.get("location_class"),
@@ -2806,9 +3278,19 @@ class MapSimulation:
             if entity_id != root_id and entity_id not in visited:
                 append_entity(entity, 0)
 
+        for entity, _footprint in self._terrain_linked_locations():
+            append_entity(entity, 0)
+
         return items
 
     def get_map_location_browser_items(self):
+        return self._repository_memo_get(
+            "map_location_browser_items",
+            (self.context.root_entity_id, self.year, self.selected_entity_id),
+            self._build_map_location_browser_items,
+        )
+
+    def _build_map_location_browser_items(self):
         root_entity = self.get_root_entity()
         root_id = str(getattr(self.context, "root_entity_id", "") or "")
         if not isinstance(root_entity, dict) or not root_id:
@@ -2854,7 +3336,7 @@ class MapSimulation:
             entity_id = str(entity.get("id") or "")
             return {
                 "id": entity_id,
-                "label": entity.get("name") or entity.get("pretty_name") or entity_id,
+                "label": map_display_name(entity, entity_id),
                 "depth": max(0, int(depth)),
                 "active": entity_id == self.selected_entity_id,
                 "location_class": entity.get("location_class"),
@@ -2880,6 +3362,11 @@ class MapSimulation:
                 append_children(child_id, depth + 1)
 
         append_children(root_id, 1)
+        for entity, _footprint in self._terrain_linked_locations():
+            entity_id = str(entity.get("id") or "")
+            if entity_id and entity_id not in visited:
+                visited.add(entity_id)
+                items.append(item_for(entity, 1, role="child"))
         return items
 
     def select_location_from_layer_tree(self, entity_id):
@@ -2929,26 +3416,28 @@ class MapSimulation:
             or entity.get("region_class")
             or entity.get("type", "map entity")
         )
-        details = [
-            f"Class: {entity_class}",
-            f"Repository ID: {entity_id}",
-            f"Layer: {self.get_active_layer_label()}",
-        ]
+        kind = str(entity_class).replace("_", " ").title()
         start_year = entity.get("start_year")
         end_year = entity.get("end_year")
         if start_year not in (None, "") or end_year not in (None, ""):
             active_start = start_year if start_year not in (None, "") else "?"
             active_end = end_year if end_year not in (None, "") else "present"
-            details.append(f"Active: {active_start} to {active_end}")
+            kind = f"{kind} \u00b7 {active_start} to {active_end}"
 
+        actions = []
+        if entity_id != self.context.root_entity_id and self._is_location_entity(entity):
+            is_biosphere_site = bool(entity.get("terrain_source_map_id")) and entity.get("location_role") == "biosphere_terrain_site"
+            actions.append({"id": "open_region_map", "label": "Open Biosphere" if is_biosphere_site else "Open Map"})
+        actions.append({"id": "open_selection_wiki", "label": "Wiki Entry"})
         return {
             "entity_id": entity_id,
-            "title": entity.get("pretty_name") or entity.get("name") or entity_id,
-            "kind": "Map selection",
-            "details": details,
-            "actions": [
-                {"id": "open_selection_wiki", "label": "Open Wiki Entry"},
-            ],
+            "title": map_display_name(entity, entity_id),
+            "kind": kind,
+            "details": [],
+            "actions": actions,
+            # Two short labels fit side by side under the name.
+            "actions_inline": True,
+            "compact": True,
         }
 
     def _get_entity_bbox_bounds(self, entity):
@@ -3289,6 +3778,7 @@ class MapSimulation:
     def is_map_editor_active(self):
         return (
             self.is_creating_point_location
+            or getattr(self, "is_picking_biosphere_start", False)
             or self.is_polygon_editor_active()
             or self.is_square_editor_active()
             or self.blueprint_placement is not None
@@ -3313,6 +3803,65 @@ class MapSimulation:
         self.selected_entity_id = None
         self.hover_entity_id = None
         return True
+
+    def _resident_vegetation_layers(self):
+        """The plants a city's ground carries, drawn over it: what its planet's biomes have established.
+
+        Nothing for any other map, and for a city on a planet where nothing is
+        established yet (``simulations/city/city_vegetation.py``).
+        """
+        root = self.get_root_entity()
+        if not isinstance(root, dict) or root.get("location_class") != "city":
+            return []
+        from simulations.biosphere.flora import planet_floras
+        from simulations.city.city_vegetation import city_planet_id, city_plant_cover
+
+        floras = planet_floras(self.world_model, city_planet_id(self.world_model, root))
+        key = (root.get("id"), getattr(self.world_model, "repository_revision", 0), tuple(
+            (biome, species_id, flora.rarity(species_id))
+            for biome, flora in sorted(floras.items()) for species_id in flora.species()))
+        cached = getattr(self, "_resident_vegetation_cache", None)
+        if cached is None or cached[0] != key:
+            cover = city_plant_cover(self.world_model, root, self.get_ground_substrate()) if floras else None
+            self._resident_vegetation_cache = cached = (key, cover)
+        cover, rect = cached[1], self._map_image_rect_from_entity(root)
+        if cover is None or rect is None:
+            return []
+        place = {"x": rect["x"], "y": rect["y"], "width_world": rect["width_world"],
+                 "height_world": rect["height_world"], "pickable": False}
+        layers = []
+        if cover.ground is not None:
+            layers.append({**place, "shape": "image_rect", "_prepared_surface": cover.ground,
+                           "name": "Resident ground cover", "draw_order": -4000})
+        field = cover.field
+        if field:
+            # The whole city at once is one picture; closer in, its plants are painted at the view's own scale.
+            closer = field.tiles_from_px_per_m * field.width_m / rect["width_world"]
+            layers.append({**place, "shape": "image_rect", "_prepared_surface": field.overview,
+                           "name": "Resident vegetation", "draw_order": -3999, "max_zoom": closer})
+            layers.append({**place, "shape": "plant_field", "_plant_field": field, "name": "Resident vegetation",
+                           "draw_order": -3999, "min_zoom": closer, "strict_zoom_visibility": True})
+        return layers
+
+    def get_ground_substrate(self):
+        """Physical ground sampler for this map in its own coordinates, or ``None``.
+
+        Only a city has one today: its terrain is the region it stands on,
+        overridden by finer patches. Building placement asks it where the
+        water is.
+        """
+        root = self.get_root_entity()
+        if not isinstance(root, dict) or not root.get("terrain_source_map_id"):
+            return None
+        cache_key = (root.get("id"), getattr(self.world_model, "repository_revision", 0))
+        cached = getattr(self, "_ground_substrate_cache", None)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+        from simulations.city.city_site import city_substrate
+
+        substrate = city_substrate(self.world_model, root)
+        self._ground_substrate_cache = (cache_key, substrate)
+        return substrate
 
     def cancel_blueprint_placement(self):
         had_placement = self.blueprint_placement is not None
@@ -3369,6 +3918,8 @@ class MapSimulation:
     def _set_all_editor_modes_inactive(self):
         self.is_creating_spatial_feature = False
         self.is_creating_biosphere_patch = False
+        self.is_picking_biosphere_start = False
+        self.biosphere_start_notice = None
         self.draft_location_class = "region"
         self.draft_spatial_feature_points = []
         self.draft_hover_map_pos = None
@@ -3399,6 +3950,9 @@ class MapSimulation:
         self.blueprint_placement = None
 
     def can_finish_map_editor(self):
+        if self.is_picking_biosphere_start:
+            return False  # The click on the ground is the whole gesture.
+
         if self.is_creating_point_location:
             return self.draft_point_location_pos is not None
 
@@ -3411,6 +3965,9 @@ class MapSimulation:
         return self.can_finish_polygon_editor()
 
     def finish_map_editor(self):
+        if self.is_picking_biosphere_start:
+            return False
+
         if self.is_creating_point_location:
             return self.finish_point_location_draft()
 
@@ -3423,6 +3980,9 @@ class MapSimulation:
         return self.finish_polygon_editor()
 
     def cancel_map_editor(self):
+        if self.is_picking_biosphere_start:
+            return self.cancel_biosphere_start_pick()
+
         if self.is_creating_point_location:
             return self.cancel_point_location_draft()
 
@@ -3441,6 +4001,11 @@ class MapSimulation:
     def get_map_editor_status_label(self):
         if self.blueprint_placement is not None:
             return self.blueprint_placement.status_label()
+
+        if self.is_picking_biosphere_start:
+            return self._map_editor_status_with_keys(
+                self.biosphere_start_notice or "Biosphere start: click the ground where life begins"
+            )
 
         if self.is_creating_point_location:
             label = str(self.draft_point_location_class or "site").replace("_", " ").title()
@@ -4359,12 +4924,56 @@ class MapSimulation:
         )
         return True
 
+    def _draft_location_name(self, location_class):
+        """Suggested name of a new location: its map, its class and the next free number.
+
+        "Bristoll Continent 4" on the map of Bristoll: the number counts the
+        locations of that class the map already holds, so a name says where
+        the place is and stays unique among its neighbours.
+        """
+        root_id = self.context.root_entity_id
+        root_name = str(self.get_root_name() or "").strip()
+        label = str(location_class or "location").replace("_", " ").title()
+        wanted_class = str(location_class or "").strip().lower()
+        entities = getattr(getattr(self.world_model, "loader", None), "entities", None)
+        if isinstance(entities, dict):
+            candidates = list(entities.values())
+        else:
+            candidates = list(self.world_model.get_active_entities(self.year))
+
+        def on_this_map(entity):
+            seen = set()
+            parent_id = entity.get("parent_location") or entity.get("parent_entity")
+            while parent_id and parent_id not in seen:
+                if parent_id == root_id:
+                    return True
+                seen.add(parent_id)
+                parent = self.world_model.get_entity(parent_id)
+                if not isinstance(parent, dict):
+                    return False
+                parent_id = parent.get("parent_location") or parent.get("parent_entity")
+            return False
+
+        names = set()
+        count = 0
+        for entity in candidates:
+            if not isinstance(entity, dict):
+                continue
+            names.add(str(entity.get("name") or ""))
+            if str(entity.get("location_class") or "").strip().lower() == wanted_class and on_this_map(entity):
+                count += 1
+        prefix = f"{root_name} {label}".strip()
+        number = count + 1
+        while f"{prefix} {number}" in names:
+            number += 1
+        return f"{prefix} {number}"
+
     def _build_draft_point_location_record(self):
         location_id, index = self._allocate_location_draft_id()
         root_name = self.get_root_name()
         location_class = self.draft_point_location_class or "site"
         label = str(location_class).replace("_", " ").title()
-        name = f"Draft {label} {index:03d}"
+        name = self._draft_location_name(location_class)
         point_x, point_y = self.draft_point_location_pos or (0.0, 0.0)
         parent_id = self._smallest_draft_parent_for_points(
             [(point_x, point_y)], location_class
@@ -5076,7 +5685,7 @@ class MapSimulation:
             parent = self.get_location(parent_id) or {}
             parent_name = parent.get("name") or parent.get("pretty_name") or root_name
             label = str(location_class).replace("_", " ").title()
-            name = f"Draft {label} {index:03d}"
+            name = self._draft_location_name(location_class)
             notes = f"Draft {label.lower()} polygon created under {parent_name}."
             region_class = location_class
             location_role = "map_location"
@@ -5247,7 +5856,7 @@ class MapSimulation:
     def _build_draft_map_square_location_record(self):
         location_id, index = self._allocate_location_draft_id()
         root_name = self.get_root_name()
-        name = f"Draft Location {index:03d}"
+        name = self._draft_location_name("location")
         notes = f"Draft location rectangle created under {root_name}."
 
         return {
@@ -6181,6 +6790,12 @@ class MapSimulation:
         context_entities = self._map_context_entities()
         if not context_entities:
             return layers
+        # Every ancestor encloses the root. Over a root with terrain of its
+        # own, a translucent ancestor fill is a uniform veil on that terrain
+        # (ghosts draw above the base layer): four nested ancestors greyed a
+        # LOD4 map visibly, and rasterising polygons millions of pixels wide
+        # cost 300 ms a frame. Such ancestors keep their outline only.
+        root_has_terrain = self._root_surface_context() is not None
 
         for index, entity in enumerate(reversed(context_entities)):
             if (
@@ -6204,6 +6819,11 @@ class MapSimulation:
                 else:
                     layer["alpha"] = 34 if index < len(context_entities) - 1 else 52
                     layer["border_alpha"] = 98 if index < len(context_entities) - 1 else 132
+                    if root_has_terrain and entity.get("id") != self.context.root_entity_id:
+                        layer["outline_only"] = True
+                        layer["border_color"] = (118, 130, 150)
+                        layer["border_width"] = 1
+                        layer["suppress_label"] = True
                 layer["name"] = self._label_for_entity(entity)
                 layers.append(layer)
 
@@ -6997,6 +7617,112 @@ class MapSimulation:
                 layer["draw_order"] = 700 + int(layer.get("map_hierarchy_depth", 0) or 0) * 100 + index * 0.001
                 layers.append(layer)
 
+        layers.extend(self._build_terrain_linked_location_layers())
+        return layers
+
+    def _terrain_linked_locations(self):
+        """Locations standing on this map's terrain without being in its scope.
+
+        A city founded over a refined region keeps its own metre frame and
+        has no structural parent (``simulations/city/city_site.py``), so the
+        scope walk never reaches it. It still belongs on the map of the
+        region it stands on and on every map that region was refined from.
+
+        Returns ``[(location, footprint)]``; the footprint is the location's
+        ``geographic_source_bounds``, which is in the planet's map
+        coordinates like every refined region's ``bounds``.
+        """
+        root_id = self.context.root_entity_id
+        loader = getattr(self.world_model, "loader", None)
+        entities = getattr(loader, "entities", {}) or {}
+        cache_key = (root_id, id(entities), len(entities), getattr(self.world_model, "repository_revision", 0))
+        cached = getattr(self, "_terrain_linked_locations_cache", None)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+
+        def source_is_on_this_map(source_id):
+            visited = set()
+            while source_id and source_id not in visited:
+                if source_id == root_id:
+                    return True
+                visited.add(source_id)
+                source = self.world_model.get_entity(source_id)
+                if not isinstance(source, dict):
+                    return False
+                if source.get("location_class") in {"planet", "moon"}:
+                    # The footprint is in this body's surface coordinates;
+                    # a star-system map above it is a different frame.
+                    return False
+                source_id = source.get("refinement_parent_map_id") or self._structural_parent_location_id(source)
+            return False
+
+        linked = []
+        for entity in entities.values():
+            if not isinstance(entity, dict) or entity.get("id") == root_id:
+                continue
+            footprint = entity.get("geographic_source_bounds")
+            if (
+                not entity.get("terrain_source_map_id")
+                or not isinstance(footprint, dict)
+                or footprint.get("type", "bbox") != "bbox"
+                or not all(key in footprint for key in ("min_x", "max_x", "min_y", "max_y"))
+            ):
+                continue
+            if source_is_on_this_map(entity["terrain_source_map_id"]):
+                linked.append((entity, {"type": "bbox", **{
+                    key: float(footprint[key]) for key in ("min_x", "max_x", "min_y", "max_y")
+                }}))
+        linked.sort(key=lambda item: str(item[0].get("name") or item[0].get("id") or "").lower())
+        self._terrain_linked_locations_cache = (cache_key, linked)
+        return linked
+
+    # A footprint is drawn once it spans this many pixels; below that the
+    # marker alone stands for the location.
+    TERRAIN_LINKED_FOOTPRINT_MIN_PX = 18.0
+
+    def _build_terrain_linked_location_layers(self):
+        """Marker (always) and footprint outline (once resolvable) per linked location."""
+        layers = []
+        for index, (entity, footprint) in enumerate(self._terrain_linked_locations()):
+            color = self._color_for_entity(entity)
+            name = entity.get("name") or entity.get("pretty_name") or entity.get("id")
+            span = max(footprint["max_x"] - footprint["min_x"], footprint["max_y"] - footprint["min_y"])
+            for layer in self._build_location_geometry_layers(entity, footprint, color):
+                layer.update({
+                    "is_location_overlay": True,
+                    "outline_only": True,
+                    "suppress_label": True,
+                    "border_color": (236, 226, 190),
+                    "border_width": 2,
+                    "min_zoom": self.TERRAIN_LINKED_FOOTPRINT_MIN_PX / max(span, 1e-12),
+                    # The marker is the click target; the outline may enclose
+                    # the whole map and must not swallow every other pick.
+                    "pickable": False,
+                    "draw_order": 1900 + index * 0.001,
+                    # The marker carries the name; a selected outline would
+                    # otherwise print it a second time on top.
+                    "name": None,
+                })
+                layer.pop("pickable_min_zoom", None)
+                layers.append(layer)
+            x, y = self._map_point_to_world(
+                (footprint["min_x"] + footprint["max_x"]) * 0.5,
+                (footprint["min_y"] + footprint["max_y"]) * 0.5,
+            )
+            layers.append({
+                "shape": "marker",
+                "x": x,
+                "y": y,
+                "min_screen_size": 10,
+                "pick_radius_px": 12,
+                "name": name,
+                "entity_id": entity.get("id"),
+                "color": color,
+                "location_class": entity.get("location_class"),
+                "is_location_overlay": True,
+                "min_zoom": 0.0,
+                "draw_order": 2000 + index * 0.001,
+            })
         return layers
 
     def _build_layers(self, year):
@@ -7037,6 +7763,9 @@ class MapSimulation:
             heightmap_base["draw_order"] = -5000
             heightmap_base["is_location_base"] = True
             layers.append(heightmap_base)
+
+        layers.extend(self._resident_vegetation_layers())
+        layers.extend(self._flood_ground_layers())
 
         layers.extend(self._build_ghost_context_layers())
         layers.extend(self._build_placement_ancestor_layers())
@@ -7163,6 +7892,8 @@ class MapSimulation:
             self._decorate_surface_location_layer(layer, entity)
             layers.append(layer)
 
+        layers.extend(self._build_terrain_linked_location_layers())
+
         if self._root_is_building() and not any(
             layer.get("entity_id") == self.context.root_entity_id
             for layer in layers
@@ -7174,6 +7905,15 @@ class MapSimulation:
         return layers
 
     def get_heightmap_base_layer(self, render_mode="scientific"):
+        layer = self._repository_memo_get(
+            f"heightmap_base_layer:{render_mode}",
+            (self.context.root_entity_id, self.is_atmosphere_visible()),
+            lambda: self._build_heightmap_base_layer(render_mode),
+        )
+        # Callers annotate the layer (projection focus, draw order).
+        return dict(layer) if layer is not None else None
+
+    def _build_heightmap_base_layer(self, render_mode="scientific"):
         root_entity = self.get_root_entity()
         if not isinstance(root_entity, dict) or self._entity_is_gas_giant(root_entity):
             return None
@@ -7391,6 +8131,11 @@ class MapSimulation:
         return entries
 
     def get_history_timeline_items(self):
+        return self._repository_memo_get(
+            "history_timeline_items", self.context.root_entity_id, self._build_history_timeline_items,
+        )
+
+    def _build_history_timeline_items(self):
         if not hasattr(self.world_model, "get_timeline_items"):
             return []
 
@@ -7468,7 +8213,13 @@ class MapSimulation:
         return min_x <= world_x <= max_x and min_y <= world_y <= max_y
 
     def _point_in_marker_layer(self, world_x, world_y, layer, camera):
-        pick_radius_world = max(12.0 / max(camera.zoom, 1e-9), 8.0)
+        pick_radius_px = layer.get("pick_radius_px")
+        if pick_radius_px is not None:
+            # A screen-sized target. The default's 8-world-unit floor suits a
+            # planet map; on a refined region it is wider than the whole map.
+            pick_radius_world = float(pick_radius_px) / max(camera.zoom, 1e-9)
+        else:
+            pick_radius_world = max(12.0 / max(camera.zoom, 1e-9), 8.0)
 
         dx = world_x - layer["x"]
         dy = world_y - layer["y"]
@@ -7612,6 +8363,7 @@ class MapSimulation:
         * Europe beats Earth
         """
         layers = self.get_layers()
+        root_id = getattr(getattr(self, "context", None), "root_entity_id", None)
 
         deferred_broad_location_layer = None
         for layer in reversed(layers):
@@ -7640,6 +8392,17 @@ class MapSimulation:
                     if layer.get("is_broad_location_overlay"):
                         deferred_broad_location_layer = deferred_broad_location_layer or layer
                         continue
+                    if (
+                        deferred_broad_location_layer is not None
+                        and root_id is not None
+                        and layer.get("entity_id") == root_id
+                    ):
+                        # A continent or an ocean steps back for anything
+                        # finer inside it, but not for the map's own ground,
+                        # which lies under everything: on a planet map that
+                        # rectangle took every click and no continent could
+                        # be selected.
+                        return deferred_broad_location_layer
                     return layer
 
             elif shape == "polygon":
@@ -8159,6 +8922,14 @@ class MapSimulation:
                     self.finish_blueprint_placement()
                 elif button == 3:
                     self.blueprint_placement.rotate()
+            return
+
+        if self.is_picking_biosphere_start:
+            if event.type == self.MOUSEBUTTONDOWN_EVENT_TYPE:
+                if button == 1:
+                    self.start_biosphere_at(self._world_point_to_map(world_x, world_y))
+                elif button == 3:
+                    self.cancel_biosphere_start_pick()
             return
 
         if self.is_square_editor_active():

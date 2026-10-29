@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pygame
 
@@ -91,6 +92,87 @@ class MapRendererTests(unittest.TestCase):
             surface,
             renderer._projected_spherical_surface(surface, {}),
         )
+
+    @staticmethod
+    def _navigation_contour_layer():
+        return {
+            "x": 0.0, "y": 0.0, "width_world": 100000.0,
+            "height_world": 50000.0, "canvas_width_px": 100000,
+            "heightmap_model": {
+                "min_elevation_m": 0.0, "max_elevation_m": 1000.0,
+                "sea_level_m": None,
+                "sample_grid": {
+                    "width": 3, "height": 3,
+                    "rows": [[0, 200, 400], [200, 500, 700], [400, 700, 1000]],
+                },
+            },
+        }
+
+    def test_contour_source_stays_bounded_and_reused_at_extreme_zoom(self):
+        renderer = self._renderer()
+        layer = self._navigation_contour_layer()
+        smoothscale = pygame.transform.smoothscale
+
+        def bounded_scale(source, size):
+            self.assertLessEqual(size[0], 1280)
+            self.assertLessEqual(size[1], 720)
+            return smoothscale(source, size)
+
+        with patch("pygame.transform.smoothscale", side_effect=bounded_scale):
+            first, _ = renderer._height_contour_surface_for_layer(
+                layer, 1.0, target_size=(100000, 50000),
+            )
+            second, _ = renderer._height_contour_surface_for_layer(
+                layer, 1.0, target_size=(200000, 100000),
+            )
+        self.assertLessEqual(first.get_width(), 1280)
+        self.assertLessEqual(first.get_height(), 720)
+        self.assertEqual(2.0, first.get_width() / first.get_height())
+        self.assertIs(first, second)
+
+    def test_contour_display_surface_is_reused_during_pan(self):
+        renderer = self._renderer()
+        layer = self._navigation_contour_layer()
+        first, _ = renderer._height_contour_surface_for_layer(
+            layer, 1.0, target_size=(900, 450),
+        )
+        with patch("pygame.transform.smoothscale", side_effect=AssertionError("pan rescaled contours")):
+            second, _ = renderer._height_contour_surface_for_layer(
+                layer, 1.0, target_size=(900, 450),
+            )
+        self.assertIs(first, second)
+
+    def test_contour_draw_scales_only_viewport_at_extreme_zoom(self):
+        from engine.camera import Camera
+
+        renderer = self._renderer()
+        screen = pygame.Surface((100, 100))
+        camera = Camera(100, 100)
+        camera.zoom = 1.0
+        layer = self._navigation_contour_layer()
+        # Exercise the refined overlay and projection before the viewport blit.
+        layer["refined_region_models"] = [{
+            "entity_id": "child", "heightmap_model": layer["heightmap_model"],
+            "uv_bounds": {"min_u": 0.25, "max_u": 0.75, "min_v": 0.25, "max_v": 0.75},
+        }]
+        layer["projection_focus_x"] = 0.1
+        smoothscale = pygame.transform.smoothscale
+
+        def bounded_scale(source, size):
+            self.assertLessEqual(size[0], 1280)
+            self.assertLessEqual(size[1], 720)
+            return smoothscale(source, size)
+
+        with patch("pygame.transform.smoothscale", side_effect=bounded_scale):
+            renderer._draw_height_contours(screen, layer, camera)
+            first = next(iter(renderer._large_scaled_layer_cache.values()))["surface"]
+            camera.move(5.0, 0.0)
+            renderer._draw_height_contours(screen, layer, camera)
+        cached = next(iter(renderer._large_scaled_layer_cache.values()))["surface"]
+        self.assertIs(first, cached)
+        self.assertLessEqual(cached.get_width(), screen.get_width() + renderer._viewport_overscan_px * 2)
+        self.assertLessEqual(cached.get_height(), screen.get_height() + renderer._viewport_overscan_px * 2)
+        self.assertEqual(screen.get_rect(), screen.get_clip())
 
     def test_blue_shoreline_comes_from_ocean_mask_not_zero_metre_datum(self):
         renderer = self._renderer()

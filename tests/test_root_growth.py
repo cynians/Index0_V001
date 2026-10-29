@@ -8,7 +8,7 @@ from simulations.species.root_growth import (
     root_profile,
 )
 from simulations.species.species_simulation import SpeciesSimulation
-from simulations.species.plant_assets import PlantGrowthSnapshot
+from simulations.species.plant_assets import PlantBlueprint, PlantGrowthSnapshot
 
 
 class RootGrowthTests(unittest.TestCase):
@@ -52,6 +52,61 @@ class RootGrowthTests(unittest.TestCase):
         for old, new in zip(primary_before, primary_after):
             self.assertAlmostEqual(math.atan2(old["position"][1], old["position"][0]),
                                    math.atan2(new["position"][1], new["position"][0]))
+
+    def test_large_tree_height_expands_lateral_reach_without_changing_depth(self):
+        ordinary = root_profile({
+            "root_architecture": "mixed", "root_depth_class": "deep",
+            "shape": "tree", "max_height_m": 20.0,
+        })
+        emergent = root_profile({
+            "root_architecture": "mixed", "root_depth_class": "deep",
+            "shape": "tree", "max_height_m": 110.3,
+        })
+        extreme = root_profile({
+            "root_architecture": "mixed", "root_depth_class": "deep",
+            "shape": "tree", "max_height_m": 1000.0,
+        })
+
+        self.assertEqual(2.5, ordinary["target_spread_radius_m"])
+        self.assertAlmostEqual(13.236, emergent["target_spread_radius_m"])
+        self.assertEqual("bounded_tree_height_proxy", emergent["spread_source"])
+        self.assertEqual(35.0, extreme["target_spread_radius_m"])
+
+        ordinary_graph, ordinary_stats = build_root_graph(ordinary, 1.0, 303)
+        emergent_graph, emergent_stats = build_root_graph(emergent, 1.0, 303)
+        self.assertEqual(ordinary_stats["root_depth_m"], emergent_stats["root_depth_m"])
+        self.assertEqual(len(ordinary_graph), len(emergent_graph))
+        self.assertGreater(emergent_stats["root_spread_m"], ordinary_stats["root_spread_m"] * 4.0)
+        self.assertEqual((emergent_graph, emergent_stats), build_root_graph(emergent, 1.0, 303))
+
+    def test_non_tree_and_missing_height_preserve_depth_derived_spread(self):
+        expected = 2.0 * 1.25
+        for growth in (
+            {"root_architecture": "mixed", "root_depth_class": "deep"},
+            {"root_architecture": "mixed", "root_depth_class": "deep", "shape": "forb", "max_height_m": 110.3},
+            {"root_architecture": "mixed", "root_depth_class": "deep", "shape": "tree"},
+        ):
+            with self.subTest(growth=growth):
+                self.assertEqual(expected, root_profile(growth)["target_spread_radius_m"])
+
+    def test_compact_forb_taproot_limits_lateral_proxy_without_shrinking_depth(self):
+        base = {"root_architecture": "taproot", "root_depth_class": "deep",
+                "growth_form": "forb", "plant_woodiness": "herbaceous"}
+        lupine = root_profile({**base, "max_height_m": 0.45})
+        chicory = root_profile({**base, "max_height_m": 1.2})
+        missing = root_profile(base)
+        woody = root_profile({**base, "plant_woodiness": "woody", "max_height_m": 0.45})
+        self.assertEqual(2.0, lupine["target_depth_m"])
+        self.assertEqual(2.0, chicory["target_depth_m"])
+        self.assertAlmostEqual(0.2925, lupine["target_spread_radius_m"])
+        self.assertAlmostEqual(0.78, chicory["target_spread_radius_m"])
+        self.assertEqual("bounded_forb_taproot_proxy", lupine["spread_source"])
+        self.assertEqual(1.3, missing["target_spread_radius_m"])
+        self.assertEqual(1.3, woody["target_spread_radius_m"])
+        _, small_stats = build_root_graph(lupine, 1.0, 303)
+        _, large_stats = build_root_graph(chicory, 1.0, 303)
+        self.assertLess(small_stats["root_spread_m"], large_stats["root_spread_m"])
+        self.assertEqual(small_stats["root_depth_m"], large_stats["root_depth_m"])
 
     def test_lod_keeps_complete_parents_and_identical_root_outcomes(self):
         sim = self.make_sim()
@@ -134,6 +189,101 @@ class RootGrowthTests(unittest.TestCase):
         snapshot = sim.render_snapshot
         self.assertTrue(any(p[0] == "root_section" for p in snapshot.placements))
         self.assertIn("root_section", snapshot.modules)
+
+
+class UnknownRootScalingTests(unittest.TestCase):
+    def test_unknown_depth_scales_monotonically_with_bounded_mature_stature(self):
+        heights=(.01,.1,.21,.4,.8,15.)
+        expected=(.05,.075,.1575,.3,.6,.6)
+        for h,d in zip(heights,expected):
+            with self.subTest(height=h):
+                p=root_profile({'root_architecture':'adventitious','max_height_m':h})
+                self.assertAlmostEqual(d,p['target_depth_m'])
+                self.assertAlmostEqual(.8*d,p['target_spread_radius_m'])
+                self.assertEqual('stature_scaled_runtime_default' if h<.8 else 'runtime_default',p['depth_source'])
+                self.assertEqual(7,p['grammar_version'])
+
+    def test_supplied_depths_and_classes_take_precedence_on_dwarf_plants(self):
+        for label,expected in [('shallow',.35),('intermediate',1.),('deep',2.)]:
+            p=root_profile({'root_depth_class':label,'max_height_m':.1})
+            self.assertEqual(expected,p['target_depth_m'])
+            self.assertEqual('depth_class_default',p['depth_source'])
+        for depth in [.02,.8,3.]:
+            p=root_profile({'max_height_m':.1,'root_depth_class':'deep','max_root_depth':{'max_m':depth}})
+            self.assertEqual(depth,p['target_depth_m'])
+            self.assertEqual('authored_max_root_depth',p['depth_source'])
+
+    def test_invalid_and_missing_height_retains_neutral_default(self):
+        for height in [None,True,False,0,-1,math.nan,math.inf,'0.2',{}]:
+            p=root_profile({'max_height_m':height})
+            self.assertEqual(.6,p['target_depth_m'])
+            self.assertEqual('runtime_default',p['depth_source'])
+        for bad in [None,{}, {'max_m':0},{'max_m':-1},{'max_m':math.nan},{'max_m':True}]:
+            for label in [None,'other_unknown','invalid']:
+                p=root_profile({'max_height_m':.2,'root_depth_class':label,'max_root_depth':bad})
+                self.assertAlmostEqual(.15,p['target_depth_m'])
+                self.assertEqual('stature_scaled_runtime_default',p['depth_source'])
+
+    def test_smaller_envelope_changes_lengths_without_reshuffling_graph(self):
+        for architecture in ['taproot','fibrous','adventitious','mixed']:
+            small=root_profile({'root_architecture':architecture,'max_height_m':.4})
+            old=root_profile({'root_architecture':architecture})
+            for maturity in [.1,.5692,1.]:
+                graph,stats=build_root_graph(small,maturity,303)
+                control,control_stats=build_root_graph(old,maturity,303)
+                self.assertEqual(len(control),len(graph))
+                for a,b in zip(graph,control):
+                    self.assertEqual((a['parent'],a['order'],a['kind']),(b['parent'],b['order'],b['kind']))
+                    for x,y in zip(a['position'],b['position']): self.assertAlmostEqual(x,y*.5)
+                for key in ['root_depth_m','root_spread_m','root_length_m']:
+                    self.assertAlmostEqual(stats[key],control_stats[key]*.5,delta=.0001)
+
+    def test_unrelated_short_herb_reuses_rule_and_keeps_canonical_lod_outcomes(self):
+        e={'id':'spec_unrelated_short_herb','plant_growth_form':'forb','mature_height':{'max_m':.2},
+           'root_architecture':'fibrous','root_depth_class':'other_unknown'}
+        s=SpeciesSimulation(species_entity=e,seed=303);s.set_age(s.mature_age_days)
+        snaps=[s.generate_snapshot(lod=lod) for lod in range(3)]
+        self.assertEqual('stature_scaled_runtime_default',snaps[2].stats['root_depth_source'])
+        for key in ['root_depth_m','root_spread_m','root_length_m','root_segment_count']:
+            self.assertEqual(len({snap.stats[key] for snap in snaps}),1)
+        for snap in snaps:
+            self.assertEqual(snap.to_dict(),PlantGrowthSnapshot.from_dict(snap.to_dict()).to_dict())
+            for i,p in enumerate(snap.placements):
+                self.assertLess(p[1],i)
+                self.assertTrue(all(math.isfinite(v) for v in p[2:7]))
+        bp=copy.deepcopy(s.blueprint.to_dict())
+        self.assertEqual(s.blueprint.fingerprint(),PlantBlueprint.from_dict(bp).fingerprint())
+        bp['growth']['root_profile']['grammar_version']=5
+        self.assertNotEqual(s.blueprint.fingerprint(),PlantBlueprint.from_dict(bp).fingerprint())
+        control=SpeciesSimulation(species_entity={**e,'max_root_depth':{'max_m':.6}},seed=303)
+        control.set_age(control.mature_age_days)
+        shoots=lambda snap:[p for p in snap.placements if p[0] not in {'root_section','root_support'}]
+        self.assertEqual(shoots(s.render_snapshot),shoots(control.render_snapshot))
+        self.assertEqual(s.render_snapshot.to_dict(),s.generate_snapshot(s.age_days,s.lod).to_dict())
+
+    def test_live_paintpetal_and_biosphere_handoff_use_same_profile(self):
+        from world.world_model import WorldModel
+        from simulations.biosphere.biosphere_simulation import BiosphereSimulation
+        w=WorldModel();sid='spec_codonorhiza_elandsmontana';raw=copy.deepcopy(w.loader.get(sid))
+        self.assertTrue(w.loader.plant_catalogue.is_leaf_species(sid))
+        self.assertEqual(['cladis_paintpetals_codonorhiza'],raw['parents'])
+        s=SpeciesSimulation(world_model=w,species_id=sid,seed=303)
+        self.assertAlmostEqual(.1575,s.blueprint.growth['root_profile']['target_depth_m'])
+        self.assertEqual(raw,w.loader.get(sid))
+        self.assertFalse(raw.get('max_root_depth'))
+        s.set_age(s.mature_age_days)
+        snapshots=[s.generate_snapshot(lod=lod) for lod in range(3)]
+        for key in ['root_depth_m','root_spread_m','root_length_m','leaf_area_m2']:
+            self.assertEqual(len({snap.stats[key] for snap in snapshots}),1)
+        site=BiosphereSimulation.reference_site(world_model=w)
+        site.ecology.introduce(sid,5,5,1.5,.8)
+        site.representatives.sync_from_population(site.ecology)
+        reps=site.representatives.items(alive_only=True)
+        self.assertTrue(reps)
+        for rep in reps:
+            body=rep.simulation;body.set_age(body.mature_age_days)
+            self.assertEqual(s.blueprint.growth['root_profile'],body.blueprint.growth['root_profile'])
+            self.assertAlmostEqual(.1575,body.get_ecological_outcome()['root_depth_m'])
 
 
 if __name__ == "__main__":

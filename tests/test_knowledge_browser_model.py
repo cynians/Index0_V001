@@ -284,6 +284,13 @@ class _LocationWorldModel:
     def get_entities_by_dataset(self, dataset_name):
         return list(self._datasets.get(dataset_name, []))
 
+    def get_entity(self, entity_id):
+        return next(
+            (entity for entities in self._datasets.values() for entity in entities
+             if entity.get("id") == entity_id),
+            None,
+        )
+
 
 class _LocationHost:
     IDEA_GENERIC_FIELDS = set()
@@ -384,6 +391,88 @@ class CityLocationSubclassTests(unittest.TestCase):
         entity_ids = [row["entity_id"] for row in rows if row.get("kind") == "tree_entity"]
 
         self.assertEqual(entity_ids, ["loc_earth", "city_capital"])
+
+
+class RegistryVisibilityTests(unittest.TestCase):
+    def setUp(self):
+        self.plant = {"id": "spec_tree", "type": "species", "_dataset": "species", "name": "Tree"}
+        self.artwork = {
+            "id": "illust_leaf", "type": "idea", "_dataset": "ideas",
+            "idea_class": "illustration", "name": "Leaf artwork",
+            "parents": [self.plant["id"]],
+        }
+        self.map_region = {
+            **_location("loc_soil", "Soil region", "loc_earth", location_class="region"),
+            "location_role": "map_region", "layer_kind": "ground_materials",
+            "region_class": "ground_materials",
+        }
+        self.datasets = {
+            "ideas": [self.artwork, {
+                "id": "illust_ship", "type": "idea", "_dataset": "ideas",
+                "idea_class": "illustration", "name": "Ship artwork",
+            }],
+            "species": [self.plant],
+            "locations": [_location("loc_earth", "Earth"), self.map_region],
+        }
+
+    def test_locations_are_first_and_ideas_remain_available(self):
+        model = KnowledgeBrowserModel(_LocationHost(self.datasets))
+        sections = [row["text"] for row in model._build_browser_items(model.world_model)
+                    if row.get("kind") == "section"]
+        self.assertEqual(sections[:2], ["Locations / Systems", "Ideas"])
+
+    def test_plant_illustrations_stay_hidden_in_all_and_ideas_filters(self):
+        for filter_dataset in ("all", "ideas"):
+            with self.subTest(filter_dataset=filter_dataset):
+                model = KnowledgeBrowserModel(_LocationHost(self.datasets, filter_dataset=filter_dataset))
+                ids = [row.get("entity_id") for row in model._build_browser_items(model.world_model)]
+                self.assertNotIn("illust_leaf", ids)
+                self.assertIn("illust_ship", ids)
+                self.assertIs(model.world_model.get_entity("illust_leaf"), self.artwork)
+
+    def test_role_metadata_hides_species_assets_without_a_parent_link(self):
+        self.artwork.pop("parents")
+        self.artwork["plant_asset_role"] = "leaf"
+        model = KnowledgeBrowserModel(_LocationHost(self.datasets, query="leaf artwork"))
+        self.assertFalse(any(row.get("entity_id") == "illust_leaf"
+                             for row in model._build_browser_items(model.world_model)))
+
+    def test_search_cannot_reveal_hidden_species_artwork(self):
+        model = KnowledgeBrowserModel(_LocationHost(self.datasets, query="leaf artwork"))
+        self.assertFalse(any(row.get("kind") == "entity"
+                             for row in model._build_browser_items(model.world_model)))
+
+    def test_material_regions_do_not_make_location_branches_expandable(self):
+        model = KnowledgeBrowserModel(_LocationHost(self.datasets))
+        rows = model._build_location_browser_items(model.world_model)
+        self.assertEqual([row["entity_id"] for row in rows], ["loc_earth"])
+        self.assertFalse(rows[0]["expandable"])
+        self.assertIs(model.world_model.get_entity("loc_soil"), self.map_region)
+
+    def test_location_search_keeps_named_regions_and_hides_material_regions(self):
+        self.datasets["locations"].append(_location("loc_country", "Named region", "loc_earth", location_class="region"))
+        model = KnowledgeBrowserModel(_LocationHost(self.datasets, query="region", filter_dataset="locations"))
+        ids = [row.get("entity_id") for row in model._build_browser_items(model.world_model)]
+        self.assertIn("loc_country", ids)
+        self.assertNotIn("loc_soil", ids)
+
+    def test_generated_material_bodies_and_nested_occurrences_are_hidden(self):
+        parent_id = "loc_earth"
+        for index, location_class in enumerate(("geologic_unit", "surface_material_cover", "material_deposit", "mineral_constituent_occurrence")):
+            entity_id = f"loc_material_{index}"
+            self.datasets["locations"].append({
+                **_location(entity_id, "Basalt material body", parent_id, location_class=location_class),
+                "location_role": "generated_material_body",
+            })
+            parent_id = entity_id
+        for query in ("", "basalt"):
+            with self.subTest(query=query):
+                model = KnowledgeBrowserModel(_LocationHost(self.datasets, query=query, filter_dataset="locations"))
+                rows = model._build_location_browser_items(model.world_model)
+                self.assertFalse(any(str(row.get("entity_id", "")).startswith("loc_material_") for row in rows))
+                if not query:
+                    self.assertFalse(rows[0]["expandable"])
+                self.assertIsNotNone(model.world_model.get_entity("loc_material_3"))
 
 
 if __name__ == "__main__":

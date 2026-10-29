@@ -20,16 +20,16 @@ ONTOLOGY_PATH = PROJECT_ROOT / "ontology" / "index0.owl"
 
 
 PERSON_PSYCHOLOGY_FIELDS = {
-    "known_entities": {
-        "type": "entity_list",
+    "knowledge_collection": {
+        "type": "entity",
+        "target": "collections",
         "section": "Knowledge",
         "optional": True,
-    },
-    "knowledge_records": {
-        "type": "object_list",
-        "section": "Knowledge",
-        "optional": True,
-        "description": "Interest, familiarity, stance, conviction, and behavioral rules concerning any ontology entity.",
+        "description": (
+            "The person's own knowledge collection (collection_class personal_knowledge): what they "
+            "know, the shared collections they draw on, and their beliefs in its member_records. "
+            "Read by simulations/person/person_knowledge.py."
+        ),
     },
     "wishes": {
         "type": "entity_list",

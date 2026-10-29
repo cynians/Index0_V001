@@ -8,7 +8,16 @@ def root_visual_profile(growth):
     shape = growth.get('shape')
     woody = growth.get('plant_woodiness') == 'woody' or shape in ('tree', 'shrub', 'subshrub')
     if woody:
-        radius, base, tip = (.035 if shape == 'tree' else .012), (110, 76, 49), (210, 184, 137)
+        radius = .035 if shape == 'tree' else .012
+        max_height = growth.get('max_height_m')
+        if (shape == 'tree' and isinstance(max_height, (int, float))
+                and not isinstance(max_height, bool) and math.isfinite(max_height) and max_height > 0):
+            # Root axes need a size relationship to their supporting tree,
+            # just as lateral reach does. This is a bounded visual proxy,
+            # not an inferred botanical diameter; missing height preserves
+            # the established 3.5 cm default exactly.
+            radius = max(radius, min(.45, float(max_height) * .004))
+        base, tip = (110, 76, 49), (210, 184, 137)
     elif shape == 'graminoid':
         radius, base, tip = .0012, (163, 144, 101), (233, 224, 180)
     elif shape == 'aquatic':
@@ -16,7 +25,7 @@ def root_visual_profile(growth):
     else:
         radius, base, tip = .0028, (160, 127, 88), (230, 208, 163)
     return {'radius_m': radius, 'base_color': base, 'tip_color': tip,
-            'woody': woody, 'source': 'functional_form_visual_default', 'version': 1}
+            'woody': woody, 'source': 'functional_form_visual_default', 'version': 2}
 
 
 def root_segment_style(growth, placement, maturity):

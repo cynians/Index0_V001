@@ -481,6 +481,10 @@ class WorldGenOrbitClickTests(unittest.TestCase):
             self.assertIn("star_alpha", planet["parents"])
             self.assertGreaterEqual(planet["mean_anomaly_deg_at_epoch"], 0.0)
             self.assertLess(planet["mean_anomaly_deg_at_epoch"], 360.0)
+            for orientation_key in ("longitude_of_ascending_node_deg", "argument_of_periapsis_deg"):
+                self.assertGreaterEqual(planet[orientation_key], 0.0)
+                self.assertLess(planet[orientation_key], 360.0)
+            self.assertNotEqual(planet["longitude_of_ascending_node_deg"], planet["argument_of_periapsis_deg"])
             self.assertEqual(1.5 * sim.AU_M, planet["semi_major_axis_m"])
             self.assertAlmostEqual(1.0 / 3.0, planet["eccentricity"])
             self.assertIn("orbit_locked", planet["tags"])

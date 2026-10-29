@@ -7,8 +7,14 @@ remain open strings until botanical terminology has had a dedicated review.
 """
 
 PLANT_TRAIT_SECTION = "Simulation / Plant Ecology"
+from world.fungal_traits import FUNGAL_TRAIT_SCHEMA_FIELDS
 
 PLANT_TRAIT_SCHEMA_FIELDS = {
+    **FUNGAL_TRAIT_SCHEMA_FIELDS,
+    # Shared surface-body recipe. Lichens remain fungal taxa; mosses can use
+    # the same substrate attachment without acquiring a vascular root model.
+    "surface_growth_profile": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "biosphere_growth_profile": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_growth_form": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_growth_behaviour": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_lifespan": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
@@ -19,7 +25,17 @@ PLANT_TRAIT_SCHEMA_FIELDS = {
     "growth_rate": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "maturity_rate": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "longevity_class": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Real time, in years: ``maturity_age`` {typical_years} is the age at
+    # mature size and regular reproduction, ``longevity`` {typical_years,
+    # max_years} how long an individual lives.  Optional.  Where a species
+    # has no figure, simulations/species/plant_life_timing.py derives one
+    # from maturity_rate, longevity_class, the growth form and the life cycle.
+    "maturity_age": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "longevity": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaf_phenology": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Optional visual calibration for fallback foliage. It changes displayed
+    # colour only, leaving botanical leaf structure and geometry untouched.
+    "plant_leaf_palette": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaf_size_class": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaf_length": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaf_structure": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
@@ -28,6 +44,9 @@ PLANT_TRAIT_SCHEMA_FIELDS = {
     "leaflet_length": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaflet_width": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "leaf_arrangement": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Arrangement inside a divided frond is independent of whole leaves
+    # arising basally on the plant. Legacy rows retain their old fallback.
+    "frond_pinna_arrangement": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     # Integer count of leaves sharing one fascicle/short-shoot socket.  This
     # stays separate from cluster density: the former is botanical identity,
     # while the latter is a continuous canopy-fullness calibration.
@@ -45,6 +64,10 @@ PLANT_TRAIT_SCHEMA_FIELDS = {
     # are assembled; growth_form and growth_behaviour remain the coarse
     # body-plan/grammar selectors.
     "plant_axis_continuity": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Optional visual architecture within the coarse axis-continuity category.
+    # A decurrent scaffold can be used with either a persistent juvenile
+    # leader or successive leaders; it does not redefine the botanical trait.
+    "plant_branching_subpattern": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     # How aggressively lower/shaded branches die and drop off as the tree
     # grows, producing a clear trunk below the live crown (the standard
     # forestry "self-pruning" / clear-bole concept) -- separate from
@@ -77,6 +100,14 @@ PLANT_TRAIT_SCHEMA_FIELDS = {
     # authored number instead of a bespoke per-species code branch"
     # convention as plant_crown_taper.
     "plant_trunk_girth": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # A visual observation of the trunk axis, independent of the botanical
+    # monopodial/sympodial category: 0 preserves the trait-derived geometry,
+    # 1 removes primary-axis drift/lean and all trunk meander/segment bends;
+    # secondary trunks retain their straight inclination to stay separated.
+    "plant_trunk_straightness": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_primary_branch_density": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_primary_branch_length": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_bloom_density": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_branching_rhythm": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_branching_timing": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_lateral_axis_orientation": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
@@ -95,8 +126,24 @@ PLANT_TRAIT_SCHEMA_FIELDS = {
     # add more only once a species actually needs one that
     # "flower"/"cone"/"spike" misrepresents.
     "plant_reproductive_structure": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Optional organ dimensions/colours and seasonal windows. Fractions are
+    # qualitative phenology controls, not a measured age-to-death schedule.
+    "plant_reproductive_profile": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Whole cluster dimensions and individual-flower units remain separate.
+    "plant_inflorescence_profile": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Reusable shoot recipes: basal/cauline foliage, flowering axes and
+    # persistent supporting axes with discrete elevated terminal rosettes.
+    "plant_shoot_profile": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_root_profile": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_apical_control": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_leaf_spacing_bias": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Visual opening angle from the host shoot's forward tangent: 0..1
+    # maps to 0..180 degrees. Missing retains the existing leaf pose.
+    "plant_leaf_attachment_angle": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Visual lateral length / mature host height and distal upward curvature.
+    # Missing values retain legacy shoot geometry.
+    "plant_lateral_shoot_length": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_lateral_shoot_curvature": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_branch_droop": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_branch_angle_gradient": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_crown_openness": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
@@ -122,6 +169,11 @@ PLANT_TRAIT_SCHEMA_FIELDS = {
     "shade_tolerance": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "moisture_preference": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "waterlogging_tolerance": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    # Where the plant grows wild, as the coldest and the warmest zone of one ordered scale (frigid to very
+    # hot): what a distribution map tells where no exact temperatures are known.  ``temperature_range`` and
+    # ``frost_tolerance`` are the exact figures and stand before it.
+    "thermal_range_coldest": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "thermal_range_warmest": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "temperature_range": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "frost_tolerance": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
     "soil_ph_range": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
@@ -131,6 +183,8 @@ PLANT_TRAIT_SCHEMA_FIELDS = {
     "plant_stem_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_branch_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_flower_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_strobilus_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
+    "plant_calyx_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_fruit_module_ref": {"type": "string", "section": PLANT_TRAIT_SECTION, "optional": True},
     "plant_module_anchors": {"type": "dict", "section": PLANT_TRAIT_SECTION, "optional": True},
 }
@@ -140,11 +194,18 @@ PLANT_TRAIT_FIELDS = frozenset(PLANT_TRAIT_SCHEMA_FIELDS)
 PLANT_ARCHITECTURE_RANGE_FIELDS = frozenset({
     "plant_apical_control",
     "plant_leaf_spacing_bias",
+    "plant_leaf_attachment_angle",
+    "plant_lateral_shoot_length",
+    "plant_lateral_shoot_curvature",
     "plant_branch_droop",
     "plant_branch_angle_gradient",
     "plant_crown_openness",
     "plant_crown_taper",
     "plant_trunk_girth",
+    "plant_trunk_straightness",
+    "plant_primary_branch_density",
+    "plant_primary_branch_length",
+    "plant_bloom_density",
     "plant_leaf_depth_gradient",
     "plant_fine_twig_density",
     "plant_leaf_cluster_density",
@@ -191,6 +252,19 @@ def _choices(*values):
         }
         for value, label in values
     )
+
+
+# One ordered scale of climates a plant grows wild in, coldest first.  What each means in degrees is the
+# Biosphere's to say (``simulations.biosphere.ecology.THERMAL_ZONE_C``).
+PLANT_THERMAL_ZONES = (
+    ("frigid", "Frigid (polar, alpine)"),
+    ("cold", "Cold (boreal)"),
+    ("cool", "Cool (cool temperate)"),
+    ("mild", "Mild (warm temperate)"),
+    ("warm", "Warm (subtropical)"),
+    ("hot", "Hot (tropical)"),
+    ("very_hot", "Very hot (hot desert)"),
+)
 
 
 # These are intentionally conservative UI vocabularies, not closed scientific
@@ -263,6 +337,7 @@ PLANT_TRAIT_CHOICES = {
         ("palmately_compound", "Palmately compound"),
         ("scale_like", "Scale-like"),
         ("needle_like", "Needle-like"),
+        ("spine_like", "Spines (modified leaves)"),
         ("frond_like", "Frond-like"),
         ("other_unknown", "Other / unknown"),
     ),
@@ -276,10 +351,16 @@ PLANT_TRAIT_CHOICES = {
         ("fascicled", "Fascicled"),
         ("other_unknown", "Other / unknown"),
     ),
+    "frond_pinna_arrangement": _choices(
+        ("alternate", "Alternate"),
+        ("opposite", "Opposite"),
+        ("other_unknown", "Other / unknown"),
+    ),
     "leaf_attachment_pattern": _choices(
         ("along_stem", "Along stem"),
         ("terminal_cluster", "Terminal cluster"),
         ("basal_rosette", "Basal rosette"),
+        ("basal_tuft", "Basal tuft"),
         ("branch_tips", "Branch tips"),
         ("mixed", "Mixed"),
         ("other_unknown", "Other / unknown"),
@@ -296,6 +377,7 @@ PLANT_TRAIT_CHOICES = {
     "plant_shoot_dimorphism": _choices(
         ("single_shoot_system", "Single shoot system"),
         ("long_and_short_shoots", "Long and short shoots"),
+        ("axial_and_peripheral_shoots", "Axial and peripheral shoots"),
         ("other_unknown", "Other / unknown"),
     ),
     "plant_leaf_distribution": _choices(
@@ -303,6 +385,7 @@ PLANT_TRAIT_CHOICES = {
         ("mixed_long_short_shoots", "Mixed long / short shoots"),
         ("terminal_cluster", "Terminal cluster"),
         ("basal_rosette", "Basal rosette"),
+        ("basal_tuft", "Basal tuft"),
         ("other_unknown", "Other / unknown"),
     ),
     "plant_axis_continuity": _choices(
@@ -317,6 +400,14 @@ PLANT_TRAIT_CHOICES = {
         ("moderate", "Moderate"),
         ("light", "Light"),
         ("none", "None"),
+        ("other_unknown", "Other / unknown"),
+    ),
+    "plant_branching_subpattern": _choices(
+        ("decurrent_scaffold", "Decurrent scaffold (oak-like)"),
+        ("tiered_conifer", "Tiered conifer whorls"),
+        ("pendant_branchlets", "Scaffold with pendant branchlets"),
+        ("planar_foliage_sprays", "Planar foliage sprays"),
+        ("flower_terminated_forks", "Flower-terminated leafy fork modules"),
         ("other_unknown", "Other / unknown"),
     ),
     "plant_crown_shape": _choices(
@@ -353,11 +444,15 @@ PLANT_TRAIT_CHOICES = {
         ("other_unknown", "Other / unknown"),
     ),
     "plant_reproductive_structure": _choices(
+        ("apothecium", "Apothecium"),
+        ("strobilus", "Spore cone / strobilus"),
         ("flower", "Flower"),
         ("capitulum", "Capitulum / flower head"),
         ("cone", "Cone"),
         ("spike", "Spike"),
+        ("digitate_spike_cluster", "Digitate / anthela spike cluster"),
         ("panicle", "Panicle"),
+        ("compound_umbel", "Compound umbel"),
         ("other_unknown", "Other / unknown"),
     ),
     "photosynthesis_pathway": _choices(
@@ -424,6 +519,7 @@ PLANT_TRAIT_CHOICES = {
         ("other_unknown", "Other / unknown"),
     ),
     "nutrition_mode": _choices(
+        ("lichen_symbiosis_phototrophic", "Lichen phototrophic symbiosis"),
         ("autotrophic", "Autotrophic"),
         ("parasitic", "Parasitic"),
         ("hemiparasitic", "Hemiparasitic"),
@@ -468,6 +564,8 @@ PLANT_TRAIT_CHOICES = {
         ("high", "High"),
         ("other_unknown", "Other / unknown"),
     ),
+    "thermal_range_coldest": _choices(*PLANT_THERMAL_ZONES, ("other_unknown", "Other / unknown")),
+    "thermal_range_warmest": _choices(*PLANT_THERMAL_ZONES, ("other_unknown", "Other / unknown")),
 }
 
 PLANT_TRAIT_DROPDOWN_FIELDS = frozenset(PLANT_TRAIT_CHOICES)
@@ -479,6 +577,8 @@ PLANT_TRAIT_BEHAVIOR_PATHS = {
     "growth_rate": ("Growth", "Growth Rate"),
     "maturity_rate": ("Growth", "Maturity Rate"),
     "longevity_class": ("Growth", "Longevity Class"),
+    "maturity_age": ("Growth", "Maturity Age"),
+    "longevity": ("Growth", "Longevity"),
     "leaf_phenology": ("Leaf / Shoot Function", "Leaf Phenology"),
     "leaf_size_class": ("Leaf / Shoot Function", "Leaf Size Class"),
     "leaf_length": ("Leaf / Shoot Function", "Leaf Length"),
@@ -488,6 +588,7 @@ PLANT_TRAIT_BEHAVIOR_PATHS = {
     "leaflet_length": ("Leaf / Shoot Function", "Leaflet Length"),
     "leaflet_width": ("Leaf / Shoot Function", "Leaflet Width"),
     "leaf_arrangement": ("Leaf / Shoot Architecture", "Leaf Arrangement"),
+    "frond_pinna_arrangement": ("Leaf / Shoot Architecture", "Frond Pinna Arrangement"),
     "leaf_fascicle_size": ("Leaf / Shoot Architecture", "Leaves per Fascicle"),
     "leaf_attachment_pattern": ("Leaf / Shoot Architecture", "Leaf Attachment"),
     "leaf_clustering": ("Leaf / Shoot Architecture", "Leaf Clustering"),
@@ -496,19 +597,31 @@ PLANT_TRAIT_BEHAVIOR_PATHS = {
     "plant_shoot_dimorphism": ("Leaf / Shoot Architecture", "Shoot Dimorphism"),
     "plant_leaf_distribution": ("Leaf / Shoot Architecture", "Leaf Distribution"),
     "plant_leaf_spacing_bias": ("Leaf / Shoot Architecture", "Leaf Spacing Bias"),
+    "plant_leaf_attachment_angle": ("Leaf / Shoot Architecture", "Leaf Attachment Angle"),
     "plant_leaf_depth_gradient": ("Leaf / Shoot Architecture", "Leaf Depth Gradient"),
     "plant_leaf_cluster_density": ("Leaf / Shoot Architecture", "Leaf Cluster Density"),
     "plant_axis_continuity": ("Branch Architecture", "Axis Continuity"),
+    "plant_branching_subpattern": ("Branch Architecture", "Branching Subpattern"),
     "plant_self_pruning": ("Branch Architecture", "Self-Pruning"),
     "plant_crown_shape": ("Branch Architecture", "Crown Shape"),
     "plant_crown_taper": ("Branch Architecture", "Crown Taper"),
     "plant_trunk_girth": ("Branch Architecture", "Trunk Girth"),
+    "plant_trunk_straightness": ("Branch Architecture", "Trunk Straightness"),
+    "plant_primary_branch_density": ("Branch Architecture", "Primary Branch Density"),
+    "plant_primary_branch_length": ("Branch Architecture", "Primary Branch Length / Height"),
+    "plant_bloom_density": ("Reproduction", "Bloom Display Density"),
     "plant_branching_rhythm": ("Branch Architecture", "Branching Rhythm"),
     "plant_branching_timing": ("Branch Architecture", "Branching Timing"),
     "plant_lateral_axis_orientation": ("Branch Architecture", "Lateral Axis Orientation"),
     "plant_flowering_position": ("Branch Architecture", "Flowering Position"),
     "plant_reproductive_structure": ("Reproduction", "Reproductive Structure"),
+    "plant_strobilus_module_ref": ("Reproduction", "Spore Cone Module"),
+    "plant_inflorescence_profile": ("Reproduction", "Inflorescence Profile"),
+    "plant_shoot_profile": ("Branch Architecture", "Shoot Profile"),
+    "plant_root_profile": ("Root Architecture", "Root Profile"),
     "plant_apical_control": ("Branch Architecture", "Apical Control"),
+    "plant_lateral_shoot_length": ("Branch Architecture", "Lateral Shoot Length / Height"),
+    "plant_lateral_shoot_curvature": ("Branch Architecture", "Lateral Shoot Upward Curvature"),
     "plant_branch_droop": ("Branch Architecture", "Branch Droop"),
     "plant_branch_angle_gradient": ("Branch Architecture", "Branch Angle Gradient"),
     "plant_crown_openness": ("Branch Architecture", "Crown Openness"),
@@ -528,6 +641,8 @@ PLANT_TRAIT_BEHAVIOR_PATHS = {
     "moisture_preference": ("Environmental Response", "Moisture Preference"),
     "waterlogging_tolerance": ("Environmental Response", "Waterlogging Tolerance"),
     "salinity_tolerance": ("Environmental Response", "Salinity Tolerance"),
+    "thermal_range_coldest": ("Environmental Response", "Coldest Climate It Grows In"),
+    "thermal_range_warmest": ("Environmental Response", "Warmest Climate It Grows In"),
 }
 
 

@@ -36,7 +36,7 @@ ONTOLOGY_PATH = PROJECT_ROOT / "ontology" / "index0.owl"
 POP_SCHEMA_FIELDS = {
     "pop_type": {
         "type": "string", "section": "Classification", "optional": True,
-        "description": "location | cultural | employment. Controls whether population_count is authored ground truth (location/cultural) or derived from source_allocations (employment).",
+        "description": "location | cultural | employment | service. Controls whether population_count is authored ground truth (location/cultural/service) or derived from source_allocations (employment). A service pop is the cumulative pool of one service's members (e.g. US Army service members, with a faction); formation decks draw their manpower from it (simulations/formation/fielding.py).",
     },
     "parent_pop": {
         "type": "entity", "target": "pops", "section": "Classification", "optional": True,

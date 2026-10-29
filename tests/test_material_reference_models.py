@@ -101,7 +101,7 @@ class OntologyMaterialContractTests(unittest.TestCase):
             "recyclability_class",
             "distribution_scale",
         }
-        self.assertEqual(332, len(self.concrete))
+        self.assertEqual(345, len(self.concrete))
         concrete_ids = {material["id"] for material in self.concrete}
         for material in self.concrete:
             self.assertTrue(required_fields.issubset(material), material["id"])
@@ -115,14 +115,14 @@ class OntologyMaterialContractTests(unittest.TestCase):
             material.get("material_system_role") == "natural_geologic_material"
             for material in self.concrete
         )
-        self.assertEqual(210, geological_count)
+        self.assertEqual(217, geological_count)
 
     def test_geological_materials_have_ontology_mechanical_contracts(self):
         geological = [
             material for material in self.concrete
             if material.get("material_system_role") == "natural_geologic_material"
         ]
-        self.assertEqual(210, len(geological))
+        self.assertEqual(217, len(geological))
         for material in geological:
             self.assertTrue(material.get("mechanical_class"), material.get("id"))
             profile = material.get("mechanical_rock_profile")

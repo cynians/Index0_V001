@@ -9,18 +9,23 @@ G = 6.67430e-11  # gravitational constant
 # --------------------------------------------------
 
 class KeplerOrbit:
-    def __init__(self, parent, a, e=0.0, mu=None, M0=0.0):
+    def __init__(self, parent, a, e=0.0, mu=None, M0=0.0, varpi=0.0, t=0.0):
         """
         parent : SpaceObject
         a      : semi-major axis (meters)
         e      : eccentricity
         mu     : gravitational parameter (G * M_parent)
         M0     : mean anomaly at epoch
+        varpi  : longitude of periapsis (radians), the planar stand-in for
+                 ascending node + argument of periapsis
+        t      : seconds since epoch (world/interplanetary_calendar.py)
         """
         self.parent = parent
         self.a = a
         self.e = e
-        self.M = M0
+        self.M0 = M0
+        self.varpi = varpi
+        self.t = float(t)
 
         if mu is None:
             self.mu = G * parent.mass
@@ -29,24 +34,40 @@ class KeplerOrbit:
 
         # mean motion
         self.n = math.sqrt(self.mu / (a ** 3))
+        self.M = self.mean_anomaly_at(self.t)
+
+    def mean_anomaly_at(self, t):
+        # From absolute time rather than accumulated, so any date can be read.
+        return (self.M0 + self.n * t) % (2 * math.pi)
+
+    def set_time(self, t):
+        self.t = float(t)
+        self.M = self.mean_anomaly_at(self.t)
 
     def update(self, dt):
-        # advance mean anomaly
-        self.M += self.n * dt
+        self.set_time(self.t + dt)
 
-        # keep in range
-        self.M = self.M % (2 * math.pi)
+    def state_at(self, t):
+        """
+        Position and velocity relative to the parent at seconds since epoch t.
+        """
+        E = self._solve_kepler(self.mean_anomaly_at(t), self.e)
 
-    def get_position(self):
-        # solve Kepler equation: M = E - e*sin(E)
-        E = self._solve_kepler(self.M, self.e)
-
-        # true anomaly
         cos_E = math.cos(E)
         sin_E = math.sin(E)
+        b = self.a * math.sqrt(1 - self.e ** 2)
 
+        # perifocal frame: periapsis along +x
         x = self.a * (cos_E - self.e)
-        y = self.a * math.sqrt(1 - self.e ** 2) * sin_E
+        y = b * sin_E
+        rate = self.n / (1 - self.e * cos_E)
+        vx = -self.a * rate * sin_E
+        vy = b * rate * cos_E
+
+        return self._rotate(x, y), self._rotate(vx, vy)
+
+    def get_position(self):
+        (x, y), _ = self.state_at(self.t)
 
         # offset by parent
         px, py = self.parent.position
@@ -58,24 +79,22 @@ class KeplerOrbit:
         """
 
         points = []
+        b = self.a * math.sqrt(1 - self.e ** 2)
+        px, py = self.parent.position
 
         for i in range(num_points):
-            t = (i / num_points) * 2 * math.pi
+            # evenly spaced in eccentric anomaly, which traces the ellipse exactly
+            E = (i / num_points) * 2 * math.pi
 
-            # eccentric anomaly approximation
-            E = t
-
-            cos_E = math.cos(E)
-            sin_E = math.sin(E)
-
-            x = self.a * (cos_E - self.e)
-            y = self.a * math.sqrt(1 - self.e ** 2) * sin_E
-
-            # parent offset
-            px, py = self.parent.position
+            x, y = self._rotate(self.a * (math.cos(E) - self.e), b * math.sin(E))
             points.append((px + x, py + y))
 
         return points
+
+    def _rotate(self, x, y):
+        cos_w = math.cos(self.varpi)
+        sin_w = math.sin(self.varpi)
+        return cos_w * x - sin_w * y, sin_w * x + cos_w * y
 
     def _solve_kepler(self, M, e, tol=1e-6, max_iter=50):
         E = M if e < 0.8 else math.pi

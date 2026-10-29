@@ -35,8 +35,21 @@ from simulations.world_gen.drainage import (
 )
 
 
-WATER_CYCLE_MODEL_VERSION = "monthly-normals-koppen-geiger-v21-hierarchical-surface-hydrology"
+WATER_CYCLE_MODEL_VERSION = "monthly-normals-koppen-geiger-v22-parent-conserving-surface-hydrology"
+# Share of a child tile, from each edge, over which its own climate detail
+# fades in.  Kept to a few cells: a broad 7.5 % strip was visible as a
+# rectangular frame in 100 km diagnostic tiles.
 PARENT_CLIMATE_EDGE_BLEND_MARGIN = 0.025
+# Smallest ground distance over which the air above two places differs,
+# apart from the lapse rate.  Cloud water takes of the order of 1000 s to
+# form and fall (Smith & Barstad 2004, J. Atmos. Sci. 61), in which a 5 m/s
+# wind carries it 5 km; climatological ridge-valley rainfall contrasts are
+# observed down to roughly that scale and not below (Anders et al. 2007,
+# Olympic Mountains).  A child whose parent already samples the ground this
+# finely adds no climate of its own.
+ATMOSPHERIC_RESPONSE_LENGTH_M = 5_000.0
+# Free-air temperature change with height, K per metre.
+LAPSE_RATE_K_PER_M = 0.0062
 
 # Only a fraction of condensed moisture truly leaves the advecting air mass
 # each hop; the rest represents the same parcel producing rain repeatedly
@@ -355,23 +368,6 @@ def _sample_inherited_category(rows, global_u, global_v, source_bounds=None):
     x = min(width - 1, max(0, int(round(local_u * (width - 1)))))
     y = min(height - 1, max(0, int(round(local_v * (height - 1)))))
     return rows[y][x]
-
-
-def _edge_locked_parent_weight(base_weight, local_x, local_y):
-    """Converge continuous child climate fields to their parent at patch edges."""
-    edge_distance = min(
-        float(local_x),
-        1.0 - float(local_x),
-        float(local_y),
-        1.0 - float(local_y),
-    )
-    # Keep the exact parent value on the outer boundary, but confine the
-    # conditioning strip to a few cells. A broad 7.5% strip was visible as a
-    # rectangular frame in 100 km diagnostic tiles after climate upscaling.
-    transition = _clamp(edge_distance / PARENT_CLIMATE_EDGE_BLEND_MARGIN)
-    transition = transition * transition * (3.0 - 2.0 * transition)
-    edge_lock = 1.0 - transition
-    return float(base_weight) + (1.0 - float(base_weight)) * edge_lock
 
 
 def _inherit_parent_ocean_circulation(local_model, parent_model, source_bounds, parent_source_bounds):
@@ -1294,16 +1290,163 @@ def _climate_texture_grid(map_seed, key, nx, ny):
     return sphere_signed_table(map_seed, key, nx, ny, features=5.0, octaves=3)
 
 
-def _edge_locked_parent_weight_grid(base_weight, local_x, local_y):
-    """Array form of ``_edge_locked_parent_weight`` (broadcast x/y)."""
-    edge_distance = np.minimum(
-        np.minimum(local_x, 1.0 - local_x),
-        np.minimum(local_y, 1.0 - local_y),
+def _axis_window_mean(values, radius, axis):
+    """Mean over ``2 * radius + 1`` cells along one axis.
+
+    The ends continue the field's trend (odd reflection), so a uniform
+    gradient comes back unchanged.  A window that covers the whole axis is
+    the mean along it.
+    """
+    size = values.shape[axis]
+    if radius <= 0:
+        return values
+    window = 2 * radius + 1
+    if window >= size:
+        return np.broadcast_to(values.mean(axis=axis, keepdims=True), values.shape)
+    padding = [(0, 0), (0, 0)]
+    padding[axis] = (radius + 1, radius)
+    summed = np.cumsum(np.pad(values, padding, mode="reflect", reflect_type="odd"), axis=axis)
+    upper = np.take(summed, np.arange(window, window + size), axis=axis)
+    lower = np.take(summed, np.arange(size), axis=axis)
+    return (upper - lower) / window
+
+
+def _lattice_projector(size, spacing_cells, origin_cells):
+    """Least-squares projector of ``size`` cells onto a coarser lattice.
+
+    The lattice has a node every ``spacing_cells`` cells, one of them at
+    ``origin_cells``, and stands for the functions that are linear between
+    its nodes: what a field sampled on it and read back by linear
+    interpolation can hold.  ``None`` when the lattice is as fine as the
+    cells and holds everything.
+    """
+    if size < 2 or spacing_cells <= 1.0:
+        return None
+    first = math.floor(-origin_cells / spacing_cells)
+    last = math.ceil((size - 1 - origin_cells) / spacing_cells)
+    nodes = origin_cells + spacing_cells * np.arange(first, max(last, first + 1) + 1, dtype=np.float64)
+    cells = np.arange(size, dtype=np.float64)
+    weights = np.clip(1.0 - np.abs(cells[:, None] - nodes[None, :]) / spacing_cells, 0.0, None)
+    return weights @ np.linalg.pinv(weights)
+
+
+class _ParentClimate:
+    """A child tile's air as its parent's, plus what the parent could not resolve.
+
+    A child's own climate model starts again from the planet's zonal means
+    and re-solves moisture transport on its own cells; mixed with the parent
+    at a fixed weight, as refinement used to do, every level drifted (a
+    Parcel chunk stood 1.8 K warmer and 10 % drier than the Site ground it
+    lies on).  A child field is now
+
+        parent, sampled at the child's cells  +  detail,
+
+    where the detail is the child's own model between two scales: smoothed
+    over ``ATMOSPHERIC_RESPONSE_LENGTH_M``, minus its least-squares fit on
+    the parent's lattice, and faded out at the tile edge.  The detail holds
+    nothing the parent's samples can express (it is zero-mean around every
+    parent sample), and it is absent wherever the parent already samples the
+    ground more finely than the air above it can differ.  Cell counts and
+    origins are ``(rows, columns)`` of child cells.
+    """
+
+    def __init__(self, shape, parent_cells, response_cells, parent_origin=(0.0, 0.0)):
+        height, width = shape
+        self.parent_cells = tuple(float(cells) for cells in parent_cells)
+        self.response_cells = tuple(float(cells) for cells in response_cells)
+        self.response_radius = tuple(max(0, int(round(cells / 2.0))) for cells in self.response_cells)
+        # Detail needs a scale below the parent's spacing that is still wider
+        # than the air's response, and a tile wide enough to hold it.
+        self.has_detail = any(
+            spacing > 1.0 and response < spacing and 2 * radius + 1 < size
+            for size, spacing, response, radius in zip(shape, self.parent_cells, self.response_cells, self.response_radius)
+        )
+        self.projectors = tuple(
+            _lattice_projector(size, spacing, float(origin)) if self.has_detail else None
+            for size, spacing, origin in zip(shape, self.parent_cells, parent_origin)
+        )
+        local_x = (np.arange(width, dtype=np.float64) / max(1, width - 1))[None, :]
+        local_y = (np.arange(height, dtype=np.float64) / max(1, height - 1))[:, None]
+        edge_distance = np.minimum(np.minimum(local_x, 1.0 - local_x), np.minimum(local_y, 1.0 - local_y))
+        transition = np.clip(edge_distance / PARENT_CLIMATE_EDGE_BLEND_MARGIN, 0.0, 1.0)
+        # The child equals its parent on the tile edge.
+        self.fade = transition * transition * (3.0 - 2.0 * transition)
+
+    def _on_parent_lattice(self, values):
+        """The part of ``values`` the parent's lattice holds."""
+        if self.projectors[0] is not None:
+            values = self.projectors[0] @ values
+        if self.projectors[1] is not None:
+            values = values @ self.projectors[1].T
+        return values
+
+    def _scales(self, local):
+        """``local`` at the air's own scale, and the part of that the parent's lattice holds."""
+        smooth = _axis_window_mean(_axis_window_mean(local, self.response_radius[0], 0), self.response_radius[1], 1)
+        return smooth, self._on_parent_lattice(smooth)
+
+    def offset(self, parent, local):
+        """States (temperature, humidity): the parent plus the child's zero-mean detail."""
+        value = parent
+        if self.has_detail:
+            smooth, coarse = self._scales(local)
+            value = parent + (smooth - coarse) * self.fade
+        return np.where(np.isfinite(parent), value, local)
+
+    def share(self, parent, local):
+        """Amounts (rain, evaporation, runoff): the parent redistributed by the child's local share.
+
+        The detail is relative, so a rain shadow halves the parent's rain
+        whatever the child's own solve made of the total, and it is brought
+        back to zero mean around every parent sample.
+        """
+        value = parent
+        if self.has_detail:
+            smooth, coarse = self._scales(np.maximum(0.0, local))
+            ratio = np.where(coarse > 1e-9, smooth / np.maximum(coarse, 1e-9), 1.0)
+            amount = np.where(np.isfinite(parent), parent, 0.0) * (np.clip(ratio, 0.25, 4.0) - 1.0)
+            value = parent + (amount - self._on_parent_lattice(amount)) * self.fade
+        return np.where(np.isfinite(parent), value, local)
+
+
+def _parent_climate_frame(parent_grid, child_bounds, shape, extent_m):
+    """The ``_ParentClimate`` of a child lattice, or ``None`` without a parent grid.
+
+    ``child_bounds`` is ``(u0, u1, v0, v1)`` in global UV, ``extent_m`` the
+    tile's ``(width, height)`` on the ground.
+    """
+    if np is None or not isinstance(parent_grid, dict):
+        return None
+    reference = next(
+        (
+            parent_grid.get(key) for key in ("temperature_rows_k", "annual_precipitation_rows_mm")
+            if isinstance(parent_grid.get(key), list) and parent_grid.get(key) and isinstance(parent_grid[key][0], list)
+        ),
+        None,
     )
-    transition = np.clip(edge_distance / PARENT_CLIMATE_EDGE_BLEND_MARGIN, 0.0, 1.0)
-    transition = transition * transition * (3.0 - 2.0 * transition)
-    edge_lock = 1.0 - transition
-    return float(base_weight) + (1.0 - float(base_weight)) * edge_lock
+    if reference is None:
+        return None
+    height, width = shape
+    bounds = parent_grid.get("source_uv_bounds") if isinstance(parent_grid.get("source_uv_bounds"), dict) else {}
+    parent_u0 = float(bounds.get("min_u", 0.0) or 0.0)
+    parent_v0 = float(bounds.get("min_v", 0.0) or 0.0)
+    parent_du = (float(bounds.get("max_u", 1.0) or 1.0) - parent_u0) / max(1, len(reference[0]) - 1)
+    parent_dv = (float(bounds.get("max_v", 1.0) or 1.0) - parent_v0) / max(1, len(reference) - 1)
+    u0, u1, v0, v1 = child_bounds
+    child_du = max(1e-15, abs(u1 - u0) / max(1, width - 1))
+    child_dv = max(1e-15, abs(v1 - v0) / max(1, height - 1))
+    cell_width_m = float(extent_m[0]) / max(1, width - 1)
+    cell_height_m = float(extent_m[1]) / max(1, height - 1)
+    return _ParentClimate(
+        shape,
+        (parent_dv / child_dv, parent_du / child_du),
+        (
+            ATMOSPHERIC_RESPONSE_LENGTH_M / max(1e-9, cell_height_m),
+            ATMOSPHERIC_RESPONSE_LENGTH_M / max(1e-9, cell_width_m),
+        ),
+        # Where the parent's first sample lies, in child cells from the tile's corner.
+        parent_origin=((parent_v0 - v0) / child_dv, (parent_u0 - u0) / child_du),
+    )
 
 
 def _budyko_evapotranspiration_grid(precipitation_mm, potential_evaporation_mm, omega=2.6):
@@ -1482,12 +1625,6 @@ def _optional_rows_array(rows, height, width, none_value=float("nan")):
         ],
         dtype=np.float64,
     )
-
-
-def _write_back(rows, values, mask):
-    """Assign ``values`` into a list-of-rows grid where ``mask`` is set."""
-    for y, x in zip(*np.nonzero(mask)):
-        rows[y][x] = float(values[y, x])
 
 
 def _terrain_metrics_arrays(rows, ocean_mask, span):
@@ -2499,26 +2636,6 @@ def _row_mean_ocean_temperature_k(ocean_mask, sst_rows):
     return means
 
 
-def _climate_inheritance_weights(detail_level):
-    """Preserve synoptic climate while allowing finer-scale terrain to matter."""
-    level = max(0, int(detail_level or 0))
-    parent_weight = {
-        0: 0.0,
-        1: 0.80,
-        2: 0.70,
-        3: 0.60,
-        4: 0.52,
-        5: 0.44,
-        6: 0.38,
-        7: 0.32,
-    }.get(level, 0.32)
-    return {
-        "temperature": parent_weight,
-        "precipitation": max(0.24, parent_weight - 0.04),
-        "seasonality": min(0.86, parent_weight + 0.04),
-    }
-
-
 def _upwind_relief_context(rows, ocean_mask, x, y, wind_x, wind_y, span, steps=24):
     """Measure cumulative windward ascent and intervening rain-shadow relief."""
     height = len(rows)
@@ -2752,9 +2869,8 @@ def _climate_field_diagnostics(
     height = len(rows)
     width = min((len(row) for row in rows if isinstance(row, list)), default=0)
     land_samples = []
+    shore_samples = []
     all_precipitation = []
-    coastal_precipitation = []
-    interior_precipitation = []
     wind_meander = []
     for y in range(height):
         row_values = rows[y][:width]
@@ -2767,11 +2883,7 @@ def _climate_field_diagnostics(
             if ocean_row[x]:
                 continue
             land_samples.append((float(elevation or 0.0), precipitation))
-            shore_distance = float(shore_row[x] or 0.0) if x < len(shore_row) else 0.0
-            if shore_distance >= 0.5:
-                coastal_precipitation.append(precipitation)
-            elif shore_distance <= 0.25:
-                interior_precipitation.append(precipitation)
+            shore_samples.append((float(shore_row[x] or 0.0) if x < len(shore_row) else 0.0, precipitation))
         if y < len(wind_vector_rows):
             wind_row = wind_vector_rows[y][:width]
             if wind_row:
@@ -2798,6 +2910,15 @@ def _climate_field_diagnostics(
         mean = sum(values) / len(values)
         zonal_residual += sum(abs(value - mean) for value in values)
         total_residual += sum(abs(value) for value in values)
+
+    # Shore distance is 0 at the sea and grows inland (``_shore_distance_rows``),
+    # and its scale is the map's: coastal is the land quarter nearest the sea,
+    # interior the quarter farthest from it.
+    shore_sorted = sorted(distance for distance, _p in shore_samples)
+    near_threshold = shore_sorted[int(0.25 * (len(shore_sorted) - 1))] if shore_sorted else 0.0
+    far_threshold = shore_sorted[int(0.75 * (len(shore_sorted) - 1))] if shore_sorted else 0.0
+    coastal_precipitation = [p for distance, p in shore_samples if distance <= near_threshold]
+    interior_precipitation = [p for distance, p in shore_samples if distance >= far_threshold]
 
     elevation_sorted = sorted(value[0] for value in land_samples)
     high_threshold = elevation_sorted[int(0.75 * (len(elevation_sorted) - 1))] if elevation_sorted else 0.0
@@ -2836,6 +2957,110 @@ def _climate_field_diagnostics(
             for value in row
         ),
     }
+
+
+# Parent climate-grid fields that stand for an entering river's upstream catchment.
+_INFLOW_CATCHMENT_FIELDS = {
+    "runoff": "annual_runoff_rows_mm",
+    "precipitation": "annual_precipitation_rows_mm",
+    "potential_evaporation": "annual_potential_evaporation_rows_mm",
+    "groundwater_recharge": "annual_groundwater_recharge_rows_mm",
+    "snowmelt_runoff": "annual_snowmelt_release_rows_mm",
+    "driest_month_precipitation": "driest_month_precipitation_rows_mm",
+    "wettest_month_precipitation": "wettest_month_precipitation_rows_mm",
+}
+
+
+def _solver_boundary_inflow(heightmap, width, height, represented_area_m2, parent_climate_model):
+    """A regional heightmap's ``boundary_inflow`` on the drainage solver lattice.
+
+    The solver routes only its own footprint, so a river crossing the tile
+    was a headwater stream in the regional river list (the 440,000 km2 trunk
+    of a LOD2 tile was missing; its largest river carried 13 m3/s).  The
+    entry cells of the parent's rivers get their upstream catchment as
+    solver cells, with the parent tile's mean land climate standing for that
+    catchment, and edge cells the parent's flow does not leave through are
+    no outlets.  ``None`` without inflow (planet maps, old tiles).
+    """
+    record = heightmap.get("boundary_inflow") if isinstance(heightmap, dict) else None
+    grid = (heightmap.get("sample_grid") or {}).get("rows") if isinstance(heightmap, dict) else None
+    if not isinstance(record, dict) or not record.get("cells") or not grid or bool(heightmap.get("wrap_x", True)):
+        return None
+    from simulations.world_gen.material_routing import CLOSED_EDGE_INFLOW, inflow_grid, inlet_mask
+
+    source_shape = (len(grid), len(grid[0]))
+    region_width_m = float(heightmap.get("region_width_m") or 0.0)
+    region_height_m = float(heightmap.get("region_height_m") or 0.0)
+    if region_width_m <= 0.0 or region_height_m <= 0.0:
+        return None
+    dx = region_width_m / max(1, source_shape[1] - 1)
+    dy = region_height_m / max(1, source_shape[0] - 1)
+    source = inflow_grid(source_shape, record, dx * dy)
+    closed = inlet_mask(source, source_shape, dx=dx, dy=dy)
+    if closed is None:
+        return None
+    solver_cells_per_source_cell = dx * dy / max(1e-9, float(represented_area_m2) / max(1, width * height))
+    column_of = np.rint(np.arange(source_shape[1]) / max(1, source_shape[1] - 1) * (width - 1)).astype(int)
+    row_of = np.rint(np.arange(source_shape[0]) / max(1, source_shape[0] - 1) * (height - 1)).astype(int)
+    # What each entry's own catchment brings (m2 mm), where the record has it.
+    brought = {}
+    record_means = record.get("catchment_means_mm") or {}
+    for name, column in record_means.items():
+        if not column or len(column) != len(record["cells"]):
+            continue
+        grid_of_name = np.zeros(source_shape)
+        for (x, y, area_m2), mean in zip(record["cells"], column):
+            if 0 <= int(y) < source_shape[0] and 0 <= int(x) < source_shape[1]:
+                grid_of_name[int(y), int(x)] += float(area_m2) * float(mean)
+        brought[name] = grid_of_name
+    cell_sums, cell_areas = {}, {}
+    cells = {}
+    inlets = np.zeros((height, width), dtype=bool)
+    for source_edge, solver_row, solver_column in (
+        ((0, slice(None)), 0, None), ((source_shape[0] - 1, slice(None)), height - 1, None),
+        ((slice(None), 0), None, 0), ((slice(None), source_shape[1] - 1), None, width - 1),
+    ):
+        along = column_of if solver_column is None else row_of
+        # A solver edge cell is closed only when every source cell it stands for is.
+        shut = np.ones(width if solver_column is None else height, dtype=bool)
+        np.logical_and.at(shut, along, closed[source_edge])
+        if solver_column is None:
+            inlets[solver_row, :] |= shut
+        else:
+            inlets[:, solver_column] |= shut
+        for position, (index, value) in enumerate(zip(along, source[source_edge])):
+            if value > 10.0 * CLOSED_EDGE_INFLOW:
+                key = (int(index), solver_row) if solver_column is None else (solver_column, int(index))
+                cells[key] = cells.get(key, 0.0) + float(value) * solver_cells_per_source_cell
+                if brought:
+                    cell_areas[key] = cell_areas.get(key, 0.0) + float(value) * dx * dy
+                    sums = cell_sums.setdefault(key, {})
+                    for name, grid_of_name in brought.items():
+                        sums[name] = sums.get(name, 0.0) + float(grid_of_name[source_edge][position])
+    means = {}
+    parent_grid = (parent_climate_model or {}).get("climate_grid") if isinstance(parent_climate_model, dict) else None
+    if isinstance(parent_grid, dict):
+        elevation = parent_grid.get("elevation_rows")
+        sea_level = heightmap.get("sea_level_m")
+        land = None
+        if elevation and sea_level is not None:
+            land = np.asarray(elevation, dtype=np.float64) >= float(sea_level)
+        for name, key in _INFLOW_CATCHMENT_FIELDS.items():
+            rows = parent_grid.get(key)
+            if not rows:
+                continue
+            values = np.asarray(rows, dtype=np.float64)
+            chosen = values[land] if land is not None and land.shape == values.shape and land.any() else values.ravel()
+            if chosen.size:
+                means[name] = float(np.nanmean(chosen))
+    # Each entry's own catchment where the parent's record carries it; the
+    # tile's mean land climate stands in only for entries without one.
+    cell_means = {
+        key: {name: total / cell_areas[key] for name, total in sums.items()}
+        for key, sums in cell_sums.items()
+        if cell_areas.get(key, 0.0) > 0.0
+    }
+    return {"cells": cells, "inlets": inlets.tolist(), "means": means, "cell_means": cell_means}
 
 
 def _path_length_m(points, width_m, height_m=None, *, wrap_x=True):
@@ -3114,6 +3339,13 @@ def derive_water_cycle_model(
         [bool(sea_level is not None and float(value or 0.0) <= sea_level) for value in row]
         for row in rows
     ]
+    # A basin below sea level that land shuts in is land to the climate and
+    # the drainage: it gets a lake by its own water balance, not the sea.
+    from simulations.world_gen.heightmap import joined_sea_rows
+
+    joined_sea = joined_sea_rows(heightmap, (height, width))
+    if joined_sea is not None:
+        ocean_mask = [[bool(ocean_mask[y][x] and joined_sea[y, x]) for x in range(width)] for y in range(height)]
     ocean_fraction = sum(1 for row in ocean_mask for value in row if value) / max(1, height * width)
     surface_ice_rows = ((heightmap.get("surface_masks") or {}).get("ice_rows") or [])
     shore_distances = _shore_distance_rows(ocean_mask)
@@ -3193,6 +3425,13 @@ def derive_water_cycle_model(
         isinstance(parent_climate_grid, dict) and parent_climate_grid
     )
     parent_source_uv = parent_climate_grid.get("source_uv_bounds") if isinstance(parent_climate_grid, dict) else {}
+    # A planet has one circulation: a child draws the wind meanders, weather
+    # anomalies and seasonal phase of its parent's air, not a fresh set from
+    # its own tile seed.
+    climate_seed = str(
+        (has_parent_climate and (parent_climate_model.get("climate_seed") or parent_climate_model.get("map_seed")))
+        or map_seed
+    )
     inherited_width_cache = {}
     inherited_grid_cache = {}
     lattice_lookup = {}
@@ -3270,7 +3509,56 @@ def derive_water_cycle_model(
         return values
 
     detail_level = int(heightmap.get("map_detail_level", 0) or 0)
-    inheritance_weights = _climate_inheritance_weights(detail_level)
+    # A child tile reads its parent's air: each climate field below is the
+    # parent's plus the child's own detail between the atmosphere's response
+    # length and the parent's spacing (``_ParentClimate``).
+    parent_climate = None
+    if has_parent_climate and all(len(row) == width for row in rows):
+        parent_climate = _parent_climate_frame(
+            parent_climate_grid,
+            (source_u0, source_u1, source_v0, source_v1),
+            (height, width),
+            (
+                float(heightmap.get("region_width_m") or 0.0) or circumference_m * abs(source_u1 - source_u0),
+                float(heightmap.get("region_height_m") or 0.0) or circumference_m * 0.5 * abs(source_v1 - source_v0),
+            ),
+        )
+
+    def parent_field(key):
+        """A parent climate field on this lattice (NaN where it has no value), or ``None``."""
+        return sample_parent_grid(parent_climate_grid.get(key)) if parent_climate is not None else None
+
+    parent_temperature = parent_field("temperature_rows_k")
+    if parent_climate is not None:
+        ground = np.asarray([[float(value or 0.0) for value in row] for row in rows], dtype=np.float64)
+        if parent_temperature is not None:
+            parent_elevation = parent_field("elevation_rows")
+            if parent_elevation is not None:
+                # The parent's air at the child's own height.
+                parent_temperature = np.where(
+                    np.isfinite(parent_elevation),
+                    parent_temperature - (ground - parent_elevation) * LAPSE_RATE_K_PER_M,
+                    parent_temperature,
+                )
+        # Distance to the sea is the parent's.  A tile's own measure is a
+        # fraction of the tile, so an inland child read as mid-continent and
+        # a coastal one as an ocean margin, whatever the planet said.
+        inherited_shore = parent_field("shore_distance_rows")
+        if inherited_shore is not None and len(shore_distances) == height:
+            own_shore = np.asarray([row[:width] for row in shore_distances], dtype=np.float64)
+            shore = np.where(np.isfinite(inherited_shore), inherited_shore, own_shore)
+            shore = np.where(np.asarray(ocean_mask, dtype=bool), 0.0, shore)
+            shore_distances = _round_rows(np.clip(shore, 0.0, 1.0), 5)
+
+    def conserved_temperature(local_rows):
+        """The parent's temperature plus the child's detail at sea level.
+
+        Height is already in the parent term through the lapse rate, at the
+        child's full resolution.
+        """
+        local = np.asarray(local_rows, dtype=np.float64)
+        reduced = local + np.maximum(0.0, ground) * LAPSE_RATE_K_PER_M
+        return np.where(np.isfinite(parent_temperature), parent_climate.offset(parent_temperature, reduced), local)
 
     # Terrain metrics and upwind relief are pure functions of the solver
     # lattice, its ocean mask and the prevailing wind; resolve them for the
@@ -3284,7 +3572,7 @@ def derive_water_cycle_model(
         lattice_wind_x, lattice_wind_y = _prevailing_wind_grid(
             [source_v0 + (source_v1 - source_v0) * (y / max(1, height - 1)) for y in range(height)],
             [source_u0 + (source_u1 - source_u0) * (x / max(1, width - 1)) for x in range(width)],
-            map_seed,
+            climate_seed,
         )
         precomputed_winds = [
             list(zip(x_row, y_row))
@@ -3334,8 +3622,8 @@ def derive_water_cycle_model(
         wind_gradient = terrain_arrays["gradient_x"] * wind_x_grid + terrain_arrays["gradient_y"] * wind_y_grid
         windward = np.maximum(0.0, wind_gradient) * 7.0 + relief_arrays["windward_uplift"] * 0.46
         leeward = np.maximum(0.0, -wind_gradient) * 8.5
-        circulation_texture = _wave_noise_grid(map_seed, "climate_circulation", lattice_u, lattice_v)
-        texture = _climate_texture_grid(map_seed, "climate_texture", lattice_u, lattice_v)
+        circulation_texture = _wave_noise_grid(climate_seed, "climate_circulation", lattice_u, lattice_v)
+        texture = _climate_texture_grid(climate_seed, "climate_texture", lattice_u, lattice_v)
         climate_band_latitude_abs = np.clip(
             latitude_abs_grid + (circulation_texture - 0.5) * 0.10 + texture * 0.025, 0.0, 1.0,
         )
@@ -3429,31 +3717,6 @@ def derive_water_cycle_model(
         continentality = 1.0 - shore_grid
         seasonality = (4.0 + latitude_abs_grid * (axial_tilt_deg / 23.44) * (10.0 + continentality * 18.0)) * contrast_factor
         seasonality = seasonality + orbital_temperature_amplitude_k * (0.48 + continentality * 0.52)
-        if isinstance(parent_climate_grid, dict):
-            inherited_temperature = sample_parent_grid(parent_climate_grid.get("temperature_rows_k"))
-            inherited_elevation = sample_parent_grid(parent_climate_grid.get("elevation_rows"))
-            if inherited_temperature is not None:
-                inherited_local_temperature = inherited_temperature
-                if inherited_elevation is not None:
-                    inherited_local_temperature = np.where(
-                        np.isfinite(inherited_elevation),
-                        inherited_temperature - (elevation_grid - inherited_elevation) * 0.0062,
-                        inherited_temperature,
-                    )
-                parent_weight = _edge_locked_parent_weight_grid(inheritance_weights["temperature"], lattice_local_u, lattice_local_v)
-                temperature = np.where(
-                    np.isfinite(inherited_temperature),
-                    inherited_local_temperature * parent_weight + temperature * (1.0 - parent_weight),
-                    temperature,
-                )
-            inherited_seasonality = sample_parent_grid(parent_climate_grid.get("temperature_seasonality_rows_k"))
-            if inherited_seasonality is not None:
-                parent_weight = _edge_locked_parent_weight_grid(inheritance_weights["seasonality"], lattice_local_u, lattice_local_v)
-                seasonality = np.where(
-                    np.isfinite(inherited_seasonality),
-                    inherited_seasonality * parent_weight + seasonality * (1.0 - parent_weight),
-                    seasonality,
-                )
         wind_vector_rows = [
             [[round(wx, 4), round(wy, 4), round(ws, 3)] for wx, wy, ws in zip(wx_row, wy_row, ws_row)]
             for wx_row, wy_row, ws_row in zip(wind_x_grid.tolist(), wind_y_grid.tolist(), wind_speed.tolist())
@@ -3512,15 +3775,15 @@ def derive_water_cycle_model(
                 relief_context = precomputed_relief[y][x]
             else:
                 terrain = _terrain_metrics(rows, ocean_mask, x, y, span)
-                wind_x, wind_y = _prevailing_wind_vector(ny, map_seed, nx=nx)
+                wind_x, wind_y = _prevailing_wind_vector(ny, climate_seed, nx=nx)
                 relief_context = _upwind_relief_context(
                     rows, ocean_mask, x, y, wind_x, wind_y, span,
                 )
             wind_gradient = terrain["gradient_x"] * wind_x + terrain["gradient_y"] * wind_y
             windward = max(0.0, wind_gradient) * 7.0 + relief_context["windward_uplift"] * 0.46
             leeward = max(0.0, -wind_gradient) * 8.5
-            circulation_texture = _wave_noise(map_seed, "climate_circulation", nx, ny)
-            texture = _climate_texture(map_seed, "climate_texture", nx, ny)
+            circulation_texture = _wave_noise(climate_seed, "climate_circulation", nx, ny)
+            texture = _climate_texture(climate_seed, "climate_texture", nx, ny)
             # Large-scale circulation cells meander around their nominal
             # latitudes.  Keeping the astronomical latitude as the dominant
             # control while gently displacing the rain belts prevents climate
@@ -3658,28 +3921,6 @@ def derive_water_cycle_model(
             continentality = 1.0 - shore
             seasonality = (4.0 + latitude_abs * (axial_tilt_deg / 23.44) * (10.0 + continentality * 18.0)) * contrast_factor
             seasonality += orbital_temperature_amplitude_k * (0.48 + continentality * 0.52)
-            inherited_temperature = sample_parent_rows(
-                parent_climate_grid.get("temperature_rows_k"), nx, ny,
-            ) if isinstance(parent_climate_grid, dict) else None
-            inherited_elevation = sample_parent_rows(
-                parent_climate_grid.get("elevation_rows"), nx, ny,
-            ) if isinstance(parent_climate_grid, dict) else None
-            if inherited_temperature is not None:
-                inherited_local_temperature = inherited_temperature
-                if inherited_elevation is not None:
-                    inherited_local_temperature -= (elevation - inherited_elevation) * 0.0062
-                parent_weight = _edge_locked_parent_weight(
-                    inheritance_weights["temperature"], local_nx, local_ny
-                )
-                temperature = inherited_local_temperature * parent_weight + temperature * (1.0 - parent_weight)
-            inherited_seasonality = sample_parent_rows(
-                parent_climate_grid.get("temperature_seasonality_rows_k"), nx, ny,
-            ) if isinstance(parent_climate_grid, dict) else None
-            if inherited_seasonality is not None:
-                parent_weight = _edge_locked_parent_weight(
-                    inheritance_weights["seasonality"], local_nx, local_ny
-                )
-                seasonality = inherited_seasonality * parent_weight + seasonality * (1.0 - parent_weight)
             # Moisture and land-water fields are intentionally not classified
             # in this pass. They are solved iteratively after every cell's
             # energy, wind, topography, and reservoir state is available.
@@ -3727,6 +3968,38 @@ def derive_water_cycle_model(
             zonal_bias=2.4,
         )
 
+    if parent_climate is not None:
+        # The energy pass above is the child's own zonal estimate; what
+        # reaches the moisture solve is the parent's field with the child's
+        # detail on it.
+        if parent_temperature is not None:
+            temperature_rows = _round_rows(conserved_temperature(temperature_rows), 3)
+        parent_seasonality = parent_field("temperature_seasonality_rows_k")
+        if parent_seasonality is not None:
+            seasonality_rows = _round_rows(
+                np.maximum(0.0, parent_climate.offset(parent_seasonality, np.asarray(seasonality_rows, dtype=np.float64))),
+                3,
+            )
+        parent_condensation = parent_field("condensation_efficiency_rows")
+        if parent_condensation is not None:
+            condensation_rows = _round_rows(
+                np.clip(parent_climate.offset(parent_condensation, np.asarray(condensation_rows, dtype=np.float64)), 0.006, 0.46),
+                5,
+            )
+    # Without a scale the parent has not resolved and the air can express,
+    # the child's moisture solve has nothing to add to the parent's fields.
+    inherits_parent_solution = bool(
+        parent_climate is not None
+        and not parent_climate.has_detail
+        and all(
+            parent_field(key) is not None
+            for key in (
+                "temperature_rows_k", "annual_precipitation_rows_mm",
+                "annual_potential_evaporation_rows_mm", "relative_humidity_rows",
+            )
+        )
+    )
+
     solver_initial_climate = (
         (previous_regional_model.get("climate_grid") or {})
         if isinstance(previous_regional_model, dict)
@@ -3737,15 +4010,17 @@ def derive_water_cycle_model(
         if isinstance(solver_initial_climate, dict) and solver_initial_climate
         else "cold_start"
     )
-    if (
+    if inherits_parent_solution:
+        solver_seed_source = "parent_climate_without_local_solve"
+    elif (
         not solver_initial_climate
         and has_parent_climate
     ):
         # A small inland child has no local ocean cell, but it still sits
         # inside the parent atmosphere. Seed the local coupled solve from the
         # parent climate at the child's physical coordinates; otherwise the
-        # no-reservoir guard returns zero precipitation and the later parent
-        # blend collapses the whole region to one nearly uniform value.
+        # no-reservoir guard returns zero precipitation and the child has no
+        # detail of its own to add to the parent's field.
         inherited_solver_climate = {}
         inherited_keys = (
             "temperature_rows_k",
@@ -3780,7 +4055,7 @@ def derive_water_cycle_model(
         )[1]
         for y in range(height)
     ]
-    coupled_climate = _solve_coupled_annual_climate(
+    coupled_climate = {"converged": True} if inherits_parent_solution else _solve_coupled_annual_climate(
         temperature_rows,
         seasonality_rows,
         wind_vector_rows,
@@ -3848,6 +4123,47 @@ def derive_water_cycle_model(
             relative_humidity_rows, 0.16,
         )
 
+    if parent_climate is not None:
+        # The solve re-applies hydrologic cooling and dry-surface warming to a
+        # temperature that already carries the parent's, and balances rain
+        # against evaporation inside one tile; only its pattern is kept.
+        if parent_temperature is not None:
+            temperature_rows = _round_rows(conserved_temperature(temperature_rows), 3)
+        parent_precipitation = parent_field("annual_precipitation_rows_mm")
+        if parent_precipitation is not None:
+            precipitation_rows = _round_rows(
+                np.maximum(0.0, parent_climate.share(parent_precipitation, np.asarray(precipitation_rows, dtype=np.float64))),
+                3,
+            )
+        parent_potential_evaporation = parent_field("annual_potential_evaporation_rows_mm")
+        if parent_potential_evaporation is not None:
+            potential_evaporation_rows = _round_rows(
+                np.maximum(
+                    0.0,
+                    parent_climate.share(parent_potential_evaporation, np.asarray(potential_evaporation_rows, dtype=np.float64)),
+                ),
+                3,
+            )
+        parent_humidity = parent_field("relative_humidity_rows")
+        if parent_humidity is not None:
+            relative_humidity_rows = _round_rows(
+                np.clip(parent_climate.offset(parent_humidity, np.asarray(relative_humidity_rows, dtype=np.float64)), 0.03, 0.98),
+                5,
+            )
+        if parent_precipitation is not None:
+            # Land evaporation follows the conserved rain and demand.
+            solver_evapotranspiration_rows = _round_rows(
+                np.where(
+                    np.asarray(ocean_mask, dtype=bool),
+                    0.0,
+                    _budyko_evapotranspiration_grid(
+                        np.asarray(precipitation_rows, dtype=np.float64),
+                        np.asarray(potential_evaporation_rows, dtype=np.float64),
+                    ),
+                ),
+                3,
+            )
+
     # Rebuild the land water balance and classifications from the converged
     # annual climate. The first pass only established energy, terrain, and
     # atmospheric-transport fields.
@@ -3871,25 +4187,6 @@ def derive_water_cycle_model(
         # Pass two does not clamp the shore term (the distances already are).
         shore_influence = 1.0 - shore_distance_grid
         continentality = 1.0 - shore_influence
-        if isinstance(parent_climate_grid, dict):
-            inherited_temperature = sample_parent_grid(parent_climate_grid.get("temperature_rows_k"))
-            inherited_elevation = sample_parent_grid(parent_climate_grid.get("elevation_rows"))
-            if inherited_temperature is not None:
-                inherited_local_temperature = inherited_temperature
-                if inherited_elevation is not None:
-                    inherited_local_temperature = np.where(
-                        np.isfinite(inherited_elevation),
-                        inherited_temperature - (elevation_grid - inherited_elevation) * 0.0062,
-                        inherited_temperature,
-                    )
-                parent_weight = _edge_locked_parent_weight_grid(inheritance_weights["temperature"], lattice_local_u, lattice_local_v)
-                inherited_cells = np.isfinite(inherited_temperature)
-                mean_temperature = np.where(
-                    inherited_cells,
-                    inherited_local_temperature * parent_weight + mean_temperature * (1.0 - parent_weight),
-                    mean_temperature,
-                )
-                _write_back(temperature_rows, mean_temperature, inherited_cells)
         precipitation = np.maximum(0.0, np.asarray(precipitation_rows, dtype=np.float64))
         potential_evaporation = np.maximum(0.0, np.asarray(potential_evaporation_rows, dtype=np.float64))
         actual_evapotranspiration = np.where(
@@ -3897,23 +4194,7 @@ def derive_water_cycle_model(
             0.0,
             np.maximum(0.0, np.minimum(precipitation, np.asarray(solver_evapotranspiration_rows, dtype=np.float64))),
         )
-        seasonality_texture = _wave_noise_grid(map_seed, "precipitation_seasonality", lattice_u, lattice_v)
-        if isinstance(parent_climate_grid, dict):
-            parent_weight = _edge_locked_parent_weight_grid(inheritance_weights["precipitation"], lattice_local_u, lattice_local_v)
-            inherited_precipitation = sample_parent_grid(parent_climate_grid.get("annual_precipitation_rows_mm"))
-            if inherited_precipitation is not None:
-                inherited_cells = np.isfinite(inherited_precipitation) & (parent_weight > 0.0)
-                precipitation = np.where(
-                    inherited_cells,
-                    inherited_precipitation * parent_weight + precipitation * (1.0 - parent_weight),
-                    precipitation,
-                )
-                _write_back(precipitation_rows, precipitation, inherited_cells)
-                actual_evapotranspiration = np.where(
-                    inherited_cells,
-                    np.where(ocean_grid, 0.0, _budyko_evapotranspiration_grid(precipitation, potential_evaporation)),
-                    actual_evapotranspiration,
-                )
+        seasonality_texture = _wave_noise_grid(climate_seed, "precipitation_seasonality", lattice_u, lattice_v)
         monthly_temperature, monthly_precipitation, northern = _monthly_climate_normals_arrays(
             mean_temperature,
             seasonality,
@@ -4008,30 +4289,6 @@ def derive_water_cycle_model(
             continentality = 1.0 - shore
             mean_temperature = float(temperature_rows[y][x])
             seasonality = float(seasonality_rows[y][x])
-            if isinstance(parent_climate_grid, dict):
-                inherited_temperature = sample_parent_rows(
-                    parent_climate_grid.get("temperature_rows_k"), nx, ny,
-                )
-                inherited_elevation = sample_parent_rows(
-                    parent_climate_grid.get("elevation_rows"), nx, ny,
-                )
-                if inherited_temperature is not None:
-                    inherited_local_temperature = float(inherited_temperature)
-                    if inherited_elevation is not None:
-                        inherited_local_temperature -= (
-                            float(elevation_value or 0.0)
-                            - float(inherited_elevation)
-                        ) * 0.0062
-                    parent_temperature_weight = _edge_locked_parent_weight(
-                        inheritance_weights["temperature"],
-                        local_nx,
-                        local_ny,
-                    )
-                    mean_temperature = (
-                        inherited_local_temperature * parent_temperature_weight
-                        + mean_temperature * (1.0 - parent_temperature_weight)
-                    )
-                    temperature_rows[y][x] = mean_temperature
             precipitation = max(0.0, float(precipitation_rows[y][x]))
             potential_evaporation = max(
                 0.0, float(potential_evaporation_rows[y][x])
@@ -4048,30 +4305,8 @@ def derive_water_cycle_model(
                 )
             )
             circulation_texture = _wave_noise(
-                map_seed, "precipitation_seasonality", nx, ny
+                climate_seed, "precipitation_seasonality", nx, ny
             )
-
-            if isinstance(parent_climate_grid, dict):
-                parent_weight = _edge_locked_parent_weight(
-                    inheritance_weights["precipitation"], local_nx, local_ny
-                )
-                inherited_precipitation = sample_parent_rows(
-                    parent_climate_grid.get("annual_precipitation_rows_mm"), nx, ny,
-                )
-                if inherited_precipitation is not None and parent_weight > 0.0:
-                    precipitation = (
-                        float(inherited_precipitation) * parent_weight
-                        + precipitation * (1.0 - parent_weight)
-                    )
-                    precipitation_rows[y][x] = precipitation
-                    actual_evapotranspiration = (
-                        0.0
-                        if is_ocean
-                        else _budyko_evapotranspiration_mm(
-                            precipitation,
-                            potential_evaporation,
-                        )
-                    )
 
             (
                 monthly_temperature_c,
@@ -4181,6 +4416,28 @@ def derive_water_cycle_model(
         wettest_month_precipitation_rows.append(wettest_month_row)
         summer_precipitation_fraction_rows.append(summer_fraction_row)
 
+    if parent_climate is not None:
+        parent_runoff = parent_field("annual_runoff_rows_mm")
+        if parent_runoff is not None:
+            # Rain and evaporation are the parent's, so the water left over
+            # is too.  How it splits into runoff and recharge follows the
+            # parent as well: the slope term above is relative to the tile's
+            # own relief, which makes a child's micro-relief a mountainside.
+            local_runoff = np.asarray(runoff_rows, dtype=np.float64)
+            available = local_runoff + np.asarray(groundwater_recharge_rows, dtype=np.float64)
+            runoff = np.minimum(available, np.maximum(0.0, parent_climate.share(parent_runoff, local_runoff)))
+            runoff_rows = _round_rows(runoff, 1)
+            groundwater_recharge_rows = _round_rows(available - runoff, 1)
+            parent_infiltration = parent_field("annual_infiltration_rows_mm")
+            if parent_infiltration is not None:
+                infiltration_rows = _round_rows(
+                    np.maximum(
+                        available - runoff,
+                        parent_climate.share(parent_infiltration, np.asarray(infiltration_rows, dtype=np.float64)),
+                    ),
+                    1,
+                )
+
     total_cells = max(1, width * height)
     koppen_classes = []
     for code, count in sorted(
@@ -4240,6 +4497,7 @@ def derive_water_cycle_model(
         driest_month_precipitation_rows=driest_month_precipitation_rows,
         wettest_month_precipitation_rows=wettest_month_precipitation_rows,
         represented_area_m2=represented_area_m2,
+        inflow=_solver_boundary_inflow(heightmap, width, height, represented_area_m2, parent_climate_model),
     ) if drainage_enabled else {"status": "inactive", "rivers": [], "lakes": [], "drainage_basins": []}
     if (
         drainage_enabled
@@ -4296,7 +4554,12 @@ def derive_water_cycle_model(
             "length_km": round(length_m / 1000.0, 1),
             "average_width_m": average_width_m,
             "mouth_width_m": mouth_width_m,
-            "estimated_discharge_m3_s": round(discharge_m3_s, 1),
+            # Small channels keep their discharge: a tenth of a cubic metre
+            # per second is already a stream, and what a rill carries decides
+            # its depth, its water and how wet its banks are.
+            "estimated_discharge_m3_s": (
+                round(discharge_m3_s, 1) if discharge_m3_s >= 1.0 else float(f"{discharge_m3_s:.3g}")
+            ),
             "catchment_area_km2": round(
                 max(
                     0.0,
@@ -4476,6 +4739,7 @@ def derive_water_cycle_model(
         },
         "climate_field_diagnostics": climate_field_diagnostics,
         "map_seed": map_seed,
+        "climate_seed": climate_seed,
         "hydrology_enabled": drainage_enabled,
         "liquid_water_possible": liquid_water,
         "surface_fluid": surface_fluid,
@@ -4571,9 +4835,12 @@ def derive_water_cycle_model(
                 "enabled": isinstance(parent_climate_model, dict),
                 "solver_seed_source": solver_seed_source,
                 "solver_uses_global_latitude": True,
-                "temperature_weight": inheritance_weights["temperature"],
-                "precipitation_weight": inheritance_weights["precipitation"],
-                "seasonality_weight": inheritance_weights["seasonality"],
+                "method": "parent_field_plus_zero_mean_detail_above_atmospheric_response_length",
+                "atmospheric_response_length_m": ATMOSPHERIC_RESPONSE_LENGTH_M,
+                "parent_spacing_cells": (
+                    [round(cells, 3) for cells in parent_climate.parent_cells] if parent_climate is not None else None
+                ),
+                "local_detail": bool(parent_climate is not None and parent_climate.has_detail),
             },
         },
         "ocean_circulation_model": ocean_circulation,

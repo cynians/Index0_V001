@@ -17,6 +17,15 @@ import math
 
 
 SURFACE_EVOLUTION_MODEL_VERSION = "climate-coupled-surface-evolution-v3"
+# Where routed-channel incision enforces a downstream bed gradient across a
+# rise, it breaches at most twice its valley depth or a nearly level saddle
+# (this grade across one cell), whichever is deeper.
+CHANNEL_BREACH_DEPTH_FACTOR = 2.0
+CHANNEL_BREACH_SADDLE_GRADE = 0.03
+
+
+# Deepest cut along a flow line, in cells (see ``derive_surface_evolution_model``).
+FLOW_LINE_CUT_DEPTH_CELLS = 0.35
 
 
 def _clamp(value, low=0.0, high=1.0):
@@ -128,9 +137,30 @@ def _river_grid_path(river, width, height):
             continue
         x = max(0, min(width - 1, int(round(float(point.get("x", 0.0) or 0.0) * max(1, width - 1)))))
         y = max(0, min(height - 1, int(round(float(point.get("y", 0.0) or 0.0) * max(1, height - 1)))))
+        if path:
+            # Every cell between vertices: a sparse polyline (a river brought
+            # from a coarser parent) was carved only at its vertices, a
+            # dotted chain of pits.
+            last_x, last_y = path[-1]
+            steps = max(abs(x - last_x), abs(y - last_y))
+            for step in range(1, steps):
+                cell = (int(round(last_x + (x - last_x) * step / steps)), int(round(last_y + (y - last_y) * step / steps)))
+                if path[-1] != cell:
+                    path.append(cell)
         if not path or path[-1] != (x, y):
             path.append((x, y))
     return path
+
+
+def _regional_extent_m(heightmap):
+    """``(width_m, height_m)`` of a regional patch, ``None`` for a whole planet."""
+    if bool(heightmap.get("wrap_x", True)):
+        return None
+    width_m = float(heightmap.get("region_width_m") or 0.0)
+    height_m = float(heightmap.get("region_height_m") or 0.0)
+    if width_m <= 0.0 or height_m <= 0.0:
+        return None
+    return width_m, height_m
 
 
 def _apply_channel_incision(rows, drainage, heightmap, active_water, declared_strength, wrap_x):
@@ -185,6 +215,19 @@ def _apply_channel_incision(rows, drainage, heightmap, active_water, declared_st
     # fine enough to contain a valley cross-section.
     if cell_spacing_m > 12_000.0:
         return [[value for value in row] for row in rows], incision
+    # From Site scale on, a cell resolves the channel itself: alluvial_channels
+    # carves every channel wide enough with its own section, and the routed
+    # polylines left here are sub-cell streams.  Forcing their beds downhill
+    # cut straight metre-deep trenches wherever a path crossed a rise.
+    # Regional tiles (LOD1+) organise their valleys with the stream-power
+    # dissection (fluvial_relief) and fit their river beds never to rise
+    # (regional_refinement._fit_channel_beds); from Site scale
+    # alluvial_channels carves the channels.  Carving the water cycle's
+    # river polylines there as well cut straight, terrain-independent
+    # trenches across the tile (or, carved at the vertices only, chains of
+    # pits), so it is kept for planet maps.
+    if int(heightmap.get("map_detail_level", 0) or 0) >= 1:
+        return [[value for value in row] for row in rows], incision
     # Valley depth scales with represented cell size, but remains a small
     # fraction of total relief so a coarse planetary channel cannot excavate
     # a continent-scale trench in one feedback pass.
@@ -194,6 +237,7 @@ def _apply_channel_incision(rows, drainage, heightmap, active_water, declared_st
         max(0.25, cell_spacing_m * 0.006),
     )
     minimum_drop_m = min(maximum_depth_m * 0.08, max(0.02, cell_spacing_m * 0.000025))
+    breach_depth_m = max(CHANNEL_BREACH_DEPTH_FACTOR * maximum_depth_m, CHANNEL_BREACH_SADDLE_GRADE * cell_spacing_m)
     channel_floor = [[None for _x in range(width)] for _y in range(height)]
 
     # Large downstream segments establish trunk valleys first; tributaries
@@ -238,7 +282,12 @@ def _apply_channel_incision(rows, drainage, heightmap, active_water, declared_st
             if existing_floor is not None:
                 bed = min(bed, existing_floor)
             if previous_bed is not None:
-                bed = min(bed, previous_bed - minimum_drop_m)
+                # The downstream gradient is enforced only down to a bounded
+                # breach: a path the flood routing carried over a higher sill
+                # (a filled depression, or a tile-edge path) keeps the sill
+                # instead of a trench hundreds of metres deep.
+                floor_limit = float(rows[y][x]) - breach_depth_m
+                bed = min(bed, max(previous_bed - minimum_drop_m, floor_limit))
             channel_floor[y][x] = bed if existing_floor is None else min(existing_floor, bed)
             previous_bed = channel_floor[y][x]
 
@@ -425,7 +474,13 @@ def derive_surface_evolution_model(planet, terrain, heightmap, water_cycle, atmo
     relief_span = max(1.0, max_elevation - min_elevation)
     radius_m = float(heightmap.get("radius_m") or ((terrain.get("map_canvas") or {}).get("radius_m")) or 6_371_000.0)
     circumference_m = float(heightmap.get("circumference_m") or (math.tau * radius_m))
-    dy_m = math.pi * radius_m / max(1, height - 1)
+    regional_extent = _regional_extent_m(heightmap)
+    if regional_extent is not None:
+        # A regional patch is a local metric grid: pole-to-pole spacing (52 km
+        # per row on Earth whatever the tile) flattened its y-gradients.
+        dy_m = regional_extent[1] / max(1, height - 1)
+    else:
+        dy_m = math.pi * radius_m / max(1, height - 1)
     pressure_bar = float(
         atmosphere.get(
             "surface_pressure_bar",
@@ -450,8 +505,11 @@ def derive_surface_evolution_model(planet, terrain, heightmap, water_cycle, atmo
     for y in range(height):
         fluvial_row, weathering_row, aeolian_row, glacial_row = [], [], [], []
         deposition_row, erosion_row, age_row = [], [], []
-        latitude = abs((y / max(1, height - 1)) - 0.5) * math.pi
-        dx_m = max(1.0, circumference_m * max(0.08, math.cos(latitude)) / max(1, width - 1))
+        if regional_extent is not None:
+            dx_m = max(1e-3, regional_extent[0] / max(1, width - 1))
+        else:
+            latitude = abs((y / max(1, height - 1)) - 0.5) * math.pi
+            dx_m = max(1.0, circumference_m * max(0.08, math.cos(latitude)) / max(1, width - 1))
         for x in range(width):
             elevation = original_rows[y][x]
             ocean = sea_level is not None and elevation < sea_level
@@ -511,6 +569,13 @@ def derive_surface_evolution_model(planet, terrain, heightmap, water_cycle, atmo
     # relaxation is applied separately, keeping channels from becoming a
     # salt-and-pepper heightfield at global resolution.
     process_amplitude_m = relief_span * (0.012 + 0.020 * active_water) * declared_strength
+    if regional_extent is not None:
+        # Erosion follows single flow lines one cell wide: a cut that narrow
+        # cannot be deeper than its own sides can stand (repose over half a
+        # cell).  Without the bound a steep parcel, whose relief is large for
+        # its cells, was scored with metre-deep straight trenches.
+        cell_m = min(regional_extent[0] / max(1, width - 1), regional_extent[1] / max(1, height - 1))
+        process_amplitude_m = min(process_amplitude_m, FLOW_LINE_CUT_DEPTH_CELLS * cell_m)
     evolved_rows = [[value for value in row] for row in original_rows]
     for y in range(height):
         for x in range(width):
@@ -546,8 +611,12 @@ def derive_surface_evolution_model(planet, terrain, heightmap, water_cycle, atmo
         wrap_x,
     )
     solver_heightmap = dict(heightmap)
-    solver_heightmap["sample_spacing_x_m"] = circumference_m / max(1, width - 1)
-    solver_heightmap["sample_spacing_y_m"] = math.pi * radius_m / max(1, height - 1)
+    if regional_extent is not None:
+        solver_heightmap["sample_spacing_x_m"] = regional_extent[0] / max(1, width - 1)
+        solver_heightmap["sample_spacing_y_m"] = regional_extent[1] / max(1, height - 1)
+    else:
+        solver_heightmap["sample_spacing_x_m"] = circumference_m / max(1, width - 1)
+        solver_heightmap["sample_spacing_y_m"] = math.pi * radius_m / max(1, height - 1)
     solver_heightmap["sample_grid"] = {
         **(heightmap.get("sample_grid") or {}),
         "width": width,
@@ -582,7 +651,10 @@ def derive_surface_evolution_model(planet, terrain, heightmap, water_cycle, atmo
 
     changed_heightmap = dict(heightmap)
     sample_grid = dict(heightmap.get("sample_grid") or {})
-    sample_grid["rows"] = [[round(value, 2) for value in row] for row in final_rows]
+    from simulations.world_gen.exact_rounding import height_decimals
+
+    height_digits = height_decimals(heightmap.get("sample_spacing_x_m"))
+    sample_grid["rows"] = [[round(value, height_digits) for value in row] for row in final_rows]
     changed_heightmap["sample_grid"] = sample_grid
     changed_heightmap["min_elevation_m"] = round(min(min(row) for row in final_rows), 1)
     changed_heightmap["max_elevation_m"] = round(max(max(row) for row in final_rows), 1)

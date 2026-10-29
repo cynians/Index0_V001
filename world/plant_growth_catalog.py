@@ -70,6 +70,10 @@ PLANT_GROWTH_FORM_CHOICES = (
         "description": "A small non-vascular or bryophyte-like ground-forming plant.",
     },
     {
+        "value": "lichen", "label": "Lichen",
+        "description": "A fungal thallus with a photosynthetic partner; taxonomy remains Fungi.",
+    },
+    {
         "value": "succulent",
         "label": "Succulent",
         "description": "A plant whose body plan is strongly shaped by water-storage tissue.",
@@ -95,6 +99,10 @@ PLANT_GROWTH_BEHAVIOUR_HEADINGS = (
 )
 
 PLANT_GROWTH_BEHAVIOUR_CHOICES = (
+    {
+        "value": "surface_covering", "label": "Surface covering",
+        "description": "An attached body spreads across the supporting surface, without soil roots.",
+    },
     {
         "value": "iterative_indeterminate",
         "label": "Iterative / indeterminate shoot",
@@ -166,6 +174,10 @@ PLANT_GROWTH_BEHAVIOUR_CHOICES = (
         "label": "Fern / fronding",
         "short_label": "Fronding",
         "description": "Repeated fronds rise from a crown or rhizome and carry leaflets along a rachis.",
+    },
+    {
+        "value": "columnar_succulent", "label": "Columnar succulent",
+        "description": "Photosynthetic ribbed stems; persistent columns with optional delayed ascending arms.",
     },
     {
         "value": "basal_succulent_rosette",

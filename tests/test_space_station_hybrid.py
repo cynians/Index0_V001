@@ -129,8 +129,8 @@ class SpaceStationHybridTests(unittest.TestCase):
 
         options = LaunchAffordanceResolver().options_for_entity(station)
 
-        self.assertEqual(["space", "building", "vehicle"], [option["mode"] for option in options])
-        self.assertEqual(["Space", "Interior", "Design"], [option["label"] for option in options])
+        self.assertEqual(["space", "building", "vehicle", "person_create"], [option["mode"] for option in options])
+        self.assertEqual(["Space", "Interior", "Design", "New person born here"], [option["label"] for option in options])
 
     def test_vehicle_designer_loads_authored_station_components(self):
         component = {

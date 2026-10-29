@@ -23,7 +23,7 @@ class PersonReadinessTests(unittest.TestCase):
             "id": "person_test",
             "pretty_name": "Test Person",
             "affiliated_institutions": ["institution_test_lab"],
-            "knowledge_records": [{"entity": "recipe_simple_cooked_meal", "interest": 0.8}],
+            "knowledge_collection": "coll_knowledge_test",
         }
         readiness = assess_person_readiness(person)
         self.assertEqual("sparse", readiness["tier"])
@@ -44,7 +44,7 @@ class PersonReadinessTests(unittest.TestCase):
             "big_five_agreeableness": 0.8,
             "big_five_neuroticism": 0.3,
             "wishes": ["wish_eat_with_friends"],
-            "knowledge_records": [{"entity": "recipe_simple_cooked_meal", "interest": 0.8}],
+            "knowledge_collection": "coll_knowledge_test",
             "affiliated_institutions": ["institution_test_lab"],
             "simulation_site": "location_lumber_test_site",
         }

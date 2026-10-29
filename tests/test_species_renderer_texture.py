@@ -79,6 +79,30 @@ class SpeciesRendererTextureTests(unittest.TestCase):
         self.assertGreater(screen.get_bounding_rect().height, 8)
         self.assertGreater(screen.get_bounding_rect().width, 40)
 
+    def test_oriented_needle_fallback_keeps_millimetre_length(self):
+        renderer = SpeciesRenderer(SimpleNamespace(camera=SimpleNamespace()))
+        leaf = SimpleNamespace(
+            length_m=0.005,
+            radius_m=0.001,
+            visual={"leaf_structure": "needle_like"},
+        )
+        sim = SimpleNamespace(blueprint=SimpleNamespace(module=lambda _kind: leaf))
+        camera = SimpleNamespace(
+            scale=1000.0,
+            world_to_screen=lambda point: (200.0 + point[0] * 1000.0, 200.0 - point[1] * 1000.0),
+        )
+        snapshot = SimpleNamespace(
+            placements=[["leaf", 0, 0.0, 0.0, 0.0, 0.0, 1.0, 1]],
+            placement_orientations={"0": {"forward": [1.0, 0.0, 0.0]}},
+        )
+
+        endpoint = renderer._fallback_leaf_endpoint(
+            camera, sim, snapshot, 0, (200.0, 200.0), 0.0, 1.0,
+        )
+
+        self.assertGreater(endpoint[0] - 200.0, 5.0)
+        self.assertLess(endpoint[0] - 200.0, 10.0)
+
     def test_rosette_leaf_asset_compresses_edge_on_in_side_view(self):
         renderer = SpeciesRenderer(SimpleNamespace(camera=SimpleNamespace()))
         placement = ["leaf", 0, 0.0, 0.0, 0.0, 0.0, 1.0, 1]
@@ -189,6 +213,32 @@ class SpeciesRendererTextureTests(unittest.TestCase):
             self.assertEqual((20, 220, 20), renderer._module_asset(sim, "leaf").get_at((0, 0))[:3])
         finally:
             path.unlink(missing_ok=True)
+
+    def test_needle_shoot_asset_can_render_below_ordinary_leaf_minimum(self):
+        renderer = SpeciesRenderer(SimpleNamespace(camera=SimpleNamespace()))
+        asset = pygame.Surface((8, 24), pygame.SRCALPHA)
+        asset.fill((90, 145, 125, 255))
+        renderer._module_asset = lambda _sim, _kind: asset
+        module = SimpleNamespace(
+            asset_ref="needle_shoot_fixture", length_m=0.09,
+            attachment_point=(0.5, 0.9), growth_axis=(0.0, -1.0),
+            visual={"leaf_structure": "needle_like"},
+        )
+        sim = SimpleNamespace(blueprint=SimpleNamespace(
+            growth={"leaf_structure": "needle_like"}, module=lambda _kind: module,
+        ))
+        camera = SimpleNamespace(world_to_screen=lambda point: (point[0] * 100, point[1] * 100))
+
+        def draw(pixel_budget):
+            screen = pygame.Surface((64, 64), pygame.SRCALPHA)
+            self.assertTrue(renderer._draw_module_asset(
+                screen, sim, camera, "leaf", (32, 40), 0.0, 1.0,
+                unit_length_px=pixel_budget,
+            ))
+            return screen.get_bounding_rect().height
+
+        self.assertEqual(8, draw(8))
+        self.assertEqual(20, draw(20))
 
     def test_species_tint_varies_leaf_colour_deterministically_by_species(self):
         # Without a species-specific pixel asset, every species used to
@@ -337,7 +387,7 @@ class SpeciesRendererTextureTests(unittest.TestCase):
         self.assertIn((225, 177, 48), colors)
         self.assertIn(color, colors)
 
-    def test_forb_panicle_is_greener_and_denser_than_graminoid_panicle(self):
+    def test_forb_and_graminoid_panicles_keep_distinct_colour_and_shape(self):
         renderer = SpeciesRenderer(SimpleNamespace(camera=SimpleNamespace()))
         module = SimpleNamespace(length_m=0.16, visual={})
 
@@ -372,11 +422,57 @@ class SpeciesRendererTextureTests(unittest.TestCase):
             return color, opaque, screen.get_bounding_rect()
 
         forb_color, forb_opaque, forb_bounds = render("forb")
-        grass_color, grass_opaque, _grass_bounds = render("graminoid")
+        grass_color, grass_opaque, grass_bounds = render("graminoid")
         self.assertNotEqual(forb_color, grass_color)
         self.assertGreater(forb_color[1], forb_color[0])
-        self.assertGreater(forb_opaque, grass_opaque)
+        # Both now have substantial terminal clusters; no ecological or
+        # botanical contract requires a forb to have more opaque pixels.
+        self.assertGreater(forb_opaque, 100)
+        self.assertGreater(grass_opaque, 100)
+        self.assertGreater(grass_bounds.width, grass_bounds.height)
         self.assertGreater(forb_bounds.height, forb_bounds.width)
+
+    def test_digitate_spike_cluster_is_a_broad_radiating_fan_not_one_spike(self):
+        renderer = SpeciesRenderer(SimpleNamespace(camera=SimpleNamespace()))
+        module = SimpleNamespace(length_m=0.16, visual={})
+
+        def render(structure):
+            sim = SimpleNamespace(
+                species_id=f"spec_{structure}_test",
+                blueprint=SimpleNamespace(
+                    growth={
+                        "growth_form": "graminoid",
+                        "reproductive_structure": structure,
+                    },
+                    module=lambda _kind: module,
+                ),
+            )
+            color = renderer._color("flower", sim)
+            screen = pygame.Surface((128, 128), pygame.SRCALPHA)
+            renderer._draw_reproductive_fallback(
+                screen,
+                sim,
+                SimpleNamespace(scale=160.0),
+                "flower",
+                (64, 72),
+                0.0,
+                1.0,
+                color,
+            )
+            return color, screen, screen.get_bounding_rect()
+
+        cluster_color, cluster, cluster_bounds = render("digitate_spike_cluster")
+        spike_color, _spike, spike_bounds = render("spike")
+        opaque = sum(
+            cluster.get_at((x, y)).a > 0
+            for x in range(cluster.get_width())
+            for y in range(cluster.get_height())
+        )
+
+        self.assertNotEqual(cluster_color, spike_color)
+        self.assertGreater(cluster_bounds.width, cluster_bounds.height)
+        self.assertGreater(cluster_bounds.width, spike_bounds.width * 2)
+        self.assertGreater(opaque, 45)
 
 
 if __name__ == "__main__":

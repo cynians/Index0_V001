@@ -53,6 +53,8 @@ def _personality_present(person: dict) -> bool:
     nested = person.get("big_five") or person.get("personality_big_five") or {}
     if isinstance(nested, dict) and any(_has_value(nested.get(axis)) for axis in PERSON_BIG_FIVE_AXIS_IDS):
         return True
+    if _has_value(person.get("personality_adjectives")):
+        return True
     return any(_has_value(person.get(f"big_five_{axis}")) for axis in PERSON_BIG_FIVE_AXIS_IDS)
 
 
@@ -61,7 +63,9 @@ def _motivation_present(person: dict) -> bool:
 
 
 def _knowledge_present(person: dict) -> bool:
-    return _has_value(person.get("knowledge_records")) or _has_value(person.get("known_entities"))
+    # Whether the collection actually holds anything is the reader's business
+    # (simulations/person/person_knowledge.py); readiness only asks for one.
+    return _has_value(person.get("knowledge_collection"))
 
 
 def _social_present(person: dict) -> bool:

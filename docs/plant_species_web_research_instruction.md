@@ -19,7 +19,7 @@ I will give you the scientific or common name of one plant species. Research tha
 
 The label before the colon is the field name. The text after it explains what the field represents. **Allowed values** are the only labels I can select.
 
-Exact internal keys, in the same order as the catalogue: `plant_growth_form`, `plant_growth_behaviour`, `plant_lifespan`, `plant_life_form`, `plant_woodiness`, `mature_height_class`, `growth_rate`, `maturity_rate`, `longevity_class`, `leaf_phenology`, `leaf_size_class`, `leaf_structure`, `leaf_arrangement`, `leaf_attachment_pattern`, `leaf_clustering`, `plant_shoot_dimorphism`, `plant_leaf_distribution`, `photosynthesis_pathway`, `root_architecture`, `root_depth_class`, `reproductive_mode`, `seed_size_class`, `clonal_spread`, `resprouting`, `regeneration_strategy`, `nitrogen_fixation`, `nutrition_mode`, `mycorrhizal_type`, `shade_tolerance`, `moisture_preference`, `waterlogging_tolerance`, `salinity_tolerance`.
+Exact internal keys, in the same order as the catalogue: `plant_growth_form`, `plant_growth_behaviour`, `plant_lifespan`, `plant_life_form`, `plant_woodiness`, `mature_height_class`, `growth_rate`, `maturity_rate`, `longevity_class`, `leaf_phenology`, `leaf_size_class`, `leaf_structure`, `leaf_arrangement`, `leaf_attachment_pattern`, `leaf_clustering`, `plant_shoot_dimorphism`, `plant_leaf_distribution`, `photosynthesis_pathway`, `root_architecture`, `root_depth_class`, `reproductive_mode`, `seed_size_class`, `clonal_spread`, `resprouting`, `regeneration_strategy`, `nitrogen_fixation`, `nutrition_mode`, `mycorrhizal_type`, `shade_tolerance`, `moisture_preference`, `waterlogging_tolerance`, `salinity_tolerance`, `thermal_range_coldest`, `thermal_range_warmest`.
 
 ### Primary form and life history
 
@@ -64,6 +64,7 @@ Exact internal keys, in the same order as the catalogue: `plant_growth_form`, `p
 - **Moisture Preference**: typical moisture regime in which the species performs well. **Mesic** means moderately and reliably moist, neither dry nor saturated. Allowed values: **Very dry; Dry; Mesic; Moist; Wet; Aquatic; Other / unknown**.
 - **Waterlogging Tolerance**: ability to survive prolonged saturated, oxygen-poor soil. Allowed values: **Low; Medium; High; Other / unknown**.
 - **Salinity Tolerance**: ability to tolerate saline soil or water. Allowed values: **Low; Medium; High; Other / unknown**.
+- **Coldest Climate It Grows In** (`thermal_range_coldest`) and **Warmest Climate It Grows In** (`thermal_range_warmest`): the coldest and the warmest climate zone in which the species grows wild, read off its native distribution (for a cultivated or introduced range say so). Give the same zone twice for a species that keeps to one. No exact temperatures are needed: a distribution map and the climate of its ends are enough. Allowed values, coldest first: **Frigid (polar, alpine); Cold (boreal); Cool (cool temperate); Mild (warm temperate); Warm (subtropical); Hot (tropical); Very hot (hot desert); Other / unknown**. A mountain plant belongs to the zone its altitude gives it, not to the one at the foot of its mountains.
 
 ## Optional non-dropdown fields
 
@@ -71,7 +72,7 @@ Report these after the dropdown table only when sources support them. These fiel
 
 - **Mature Height** (`mature_height`): normal mature height range as `min_m` and `max_m`, in metres; for example `{ "min_m": 0.4, "max_m": 1.0 }`.
 - **Maximum Root Depth** (`max_root_depth`): documented maximum or defensible range in metres. State whether the number is typical or exceptional; use an object such as `{ "max_m": 2.0 }` or a sourced min/max range if the editor permits it.
-- **Temperature Range** (`temperature_range`): supported physiological or survival range in degrees Celsius, not simply the climate of the native distribution; use explicit keys and explain their meaning.
+- **Temperature Range** (`temperature_range`): supported physiological or survival range in degrees Celsius, not simply the climate of the native distribution (that is the thermal range above); use the keys `min_c`, `optimal_min_c`, `optimal_max_c`, `max_c` for the temperatures of growth and explain any other.
 - **Frost Tolerance** (`frost_tolerance`): documented lower-temperature tolerance in degrees Celsius, for example `{ "min_c": -20 }`.
 - **Soil pH Range** (`soil_ph_range`): supported pH range, for example `{ "min": 5.0, "max": 7.5 }`.
 - **Succulence** (`succulence`): open list naming water-storing organs, such as `leaf`, `stem`, or `root`; leave blank if the species is not meaningfully succulent or evidence is absent.

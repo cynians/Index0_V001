@@ -16,7 +16,9 @@ if str(PROJECT_ROOT) not in sys.path:
 import pygame
 
 from simulations.world_gen.headless_runner import HeadlessWorldGenConfig, HeadlessWorldGenRunner
-from simulations.world_gen.regional_refinement import generate_refined_region
+from simulations.world_gen.regional_refinement import (
+    generate_refined_region, map_physical_dimensions_m, max_refinement_extent_m,
+)
 from world.world_model import WorldModel
 
 
@@ -95,11 +97,14 @@ def main(argv=None):
             u, v = max(0.2, min(0.8, u)), max(0.2, min(0.8, v))
             cx = float(bounds["min_x"]) + width * u
             cy = float(bounds["min_y"]) + height * v
+            # Two fifths of the parent, or as much of that as is still a level finer.
+            limit_m = max_refinement_extent_m(parent)
+            share = min(0.4, 0.9 * limit_m / max(map_physical_dimensions_m(parent))) if limit_m > 0.0 else 0.4
             child_bounds = {
-                "min_x": cx - width * 0.20,
-                "max_x": cx + width * 0.20,
-                "min_y": cy - height * 0.20,
-                "max_y": cy + height * 0.20,
+                "min_x": cx - width * share * 0.5,
+                "max_x": cx + width * share * 0.5,
+                "min_y": cy - height * share * 0.5,
+                "max_y": cy + height * share * 0.5,
             }
             parent = generate_refined_region(
                 world,

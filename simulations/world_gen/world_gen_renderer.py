@@ -2,6 +2,7 @@ import math
 from pathlib import Path
 
 import pygame
+from ui.fonts import get_font
 
 from simulations.world_gen.heightmap import (
     contour_levels_for_heightmap,
@@ -37,6 +38,15 @@ class WorldGenRenderer:
         self._true_color_preview_cache = {}
         self._worldgen_loading_preview_cache = {}
         self._worldgen_loading_fonts = None
+
+    @staticmethod
+    def _ocean_target_text(hydrology):
+        """The terrain seed's ocean row: a set share, or the water the inventory brings."""
+        target = float(hydrology.get("target_ocean_fraction", 0.0) or 0.0)
+        if target <= 0.0 and hydrology.get("coverage_mode") == "derived_from_inventory_and_hypsometry":
+            # The share follows once the heightmap's hypsometry is known.
+            return f"from water, {float(hydrology.get('equivalent_global_water_depth_m', 0.0) or 0.0):.0f} m layer"
+        return f"{target * 100.0:.1f}%"
 
     def _coerce_rgb(self, value, fallback=(122, 176, 232)):
         if isinstance(value, (list, tuple)) and len(value) >= 3:
@@ -625,10 +635,10 @@ class WorldGenRenderer:
         screen.fill((6, 9, 14))
         if self._worldgen_loading_fonts is None:
             self._worldgen_loading_fonts = (
-                pygame.font.SysFont("consolas", 22, bold=True),
-                pygame.font.SysFont("consolas", 16),
-                pygame.font.SysFont("consolas", 14),
-                pygame.font.SysFont("consolas", 12),
+                get_font(22, bold=True),
+                get_font(16),
+                get_font(14),
+                get_font(12),
             )
         label_font, text_font, small_font, tiny_font = self._worldgen_loading_fonts
 
@@ -1737,7 +1747,7 @@ class WorldGenRenderer:
             ("Min elevation", f"{float(heightfield.get('min_elevation_m', 0.0)):.0f} m"),
             ("Max elevation", f"{float(heightfield.get('max_elevation_m', 0.0)):.0f} m"),
             ("Roughness", f"{float(heightfield.get('roughness', 0.0)):.2f}"),
-            ("Ocean target", f"{float(heightfield.get('target_ocean_fraction', 0.0)) * 100.0:.1f}%"),
+            ("Ocean target", self._ocean_target_text(hydrology)),
             ("Ice target", f"{float(hydrology.get('target_ice_fraction', 0.0)) * 100.0:.1f}%"),
         ]
         for label, value in height_rows:

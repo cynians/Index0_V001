@@ -113,7 +113,7 @@ class NavigationBuildingTests(unittest.TestCase):
             "person_simulation_enabled": True,
         }
         modes = [option["mode"] for option in LaunchAffordanceResolver().options_for_entity(entity)]
-        self.assertEqual(["map", "site_people"], modes)
+        self.assertEqual(["map", "site_people", "person_create"], modes)
 
     def test_site_population_launch_uses_separate_tab_context(self):
         controller = self._controller([

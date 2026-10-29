@@ -1,3 +1,4 @@
+from world.entity_references import entity_reference_ids
 from world.periods import (
     TOP_LEVEL_PERIOD_IDS,
     century_entity_id,
@@ -125,8 +126,29 @@ class KnowledgeBrowserModel:
 
         return False
 
+    def _is_registry_hidden_entity(self, entity, dataset_name):
+        """Keep map substrate polygons and species artwork out of the registry."""
+        if not isinstance(entity, dict):
+            return False
+        if dataset_name in {"locations", "spatial_features"}:
+            if entity.get("location_role") == "generated_material_body":
+                return True
+            if any(entity.get(key) == "ground_materials" for key in ("layer_kind", "region_class")):
+                return True
+        if dataset_name == "ideas" and str(entity.get("idea_class") or "").lower() == "illustration":
+            if entity.get("plant_asset_role") or entity.get("plant_asset_target_field"):
+                return True
+            for parent_id in entity_reference_ids(entity.get("parents")):
+                parent = self.world_model.get_entity(parent_id)
+                if isinstance(parent, dict) and (parent.get("_dataset") == "species" or parent.get("type") == "species"):
+                    return True
+        return False
+
     def _matches_browser_filters(self, entity, dataset_name):
         if entity is None:
+            return False
+
+        if self._is_registry_hidden_entity(entity, dataset_name):
             return False
 
         if not self._entity_exists_during_browser_period(entity):
@@ -1157,6 +1179,7 @@ class KnowledgeBrowserModel:
             entity.get("id"): entity
             for entity in raw_location_entities
             if isinstance(entity, dict) and entity.get("id")
+            and not self._is_registry_hidden_entity(entity, entity.get("_dataset") or "locations")
         }
         alias_to_location_id = {
             str(alias): str(canonical_id)
@@ -1535,8 +1558,9 @@ class KnowledgeBrowserModel:
         dataset_names = sorted(name for name in world_model.get_dataset_names() if name != "production")
 
         preferred_order = [
-            "ideas",
             "locations",
+            "cities",
+            "ideas",
             "vehicles",
             "items",
         ]

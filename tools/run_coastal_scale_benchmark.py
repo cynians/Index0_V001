@@ -27,6 +27,7 @@ from simulations.world_gen.coastal_geomorphology import (
 from simulations.world_gen.regional_refinement import (
     DETAIL_LEVELS,
     MAX_DETAIL_LEVEL,
+    refinement_floor_reached,
     generate_refined_region,
     map_physical_dimensions_m,
 )
@@ -587,6 +588,9 @@ def main():
         records.append(_level_record(current, root_assemblage, tracked, 0.0, image_path, next_child_bounds=next_bounds))
 
         for level in range(1, MAX_DETAIL_LEVEL + 1):
+            if refinement_floor_reached(current):
+                # A Plot at 10 cm a sample is the finest map there is.
+                break
             bounds = next_bounds
             started = time.perf_counter()
             current = generate_refined_region(

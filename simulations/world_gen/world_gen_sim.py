@@ -1364,6 +1364,10 @@ class WorldGenSimulation:
             "world_gen_template": self.active_planet_template,
             "body_subclass": body_class,
             "mean_anomaly_deg_at_epoch": round(seed_range(anomaly_seed, "mean_anomaly", 0.0, 360.0), 3),
+            # Orientation, so a system's ellipses do not all point the same
+            # way; the planar space view turns each by node + periapsis.
+            "longitude_of_ascending_node_deg": round(seed_range(anomaly_seed, "ascending_node", 0.0, 360.0), 3),
+            "argument_of_periapsis_deg": round(seed_range(anomaly_seed, "argument_of_periapsis", 0.0, 360.0), 3),
             "map_projection": "equirectangular",
             "map_canvas_width_px": PLANETARY_CANVAS_WIDTH_PX,
             "map_canvas_height_px": PLANETARY_CANVAS_HEIGHT_PX,

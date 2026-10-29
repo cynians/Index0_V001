@@ -277,6 +277,18 @@ FORMATION_CATEGORIES = {
         "local_minimums": {"weathering": 0.26, "drainage": 0.10},
         "valid_scale_levels": [2, 3, 4],
     },
+    "supergene_oxidation": {
+        # Copper (and other chalcophile) minerals left where oxidation of
+        # primary sulfides releases the metal and scarce or buffered water
+        # fixes it: carbonates, silicates, chlorides, sulfates.  Their
+        # planet-scale colour is element_pigments' alteration; as mapped
+        # minerals they appear with the deposits.
+        "process": "oxidation_of_primary_sulfides_and_supergene_precipitation",
+        "spatial_representation": "constituent_abundance",
+        "required_any_planet_tags": ["oxidizing_surface", "weathered_surface"],
+        "local_minimums": {"weathering": 0.05},
+        "valid_scale_levels": [2, 3, 4],
+    },
     "placer_concentration": {
         "process": "erosional_liberation_hydraulic_sorting_and_concentration",
         "spatial_representation": "bounded_deposit",
@@ -370,6 +382,7 @@ PROFILE_FORMATION_CATEGORIES = {
     "bauxite": "residual_bauxite",
     "nickel_laterite": "nickel_laterite",
     "iron_weathering": "iron_weathering",
+    "supergene_oxidation": "supergene_oxidation",
     "duricrust": "duricrust",
     "organic_wetland": "organic_wetland_sediment",
     "glacial_sediment": "glacial_sediment",

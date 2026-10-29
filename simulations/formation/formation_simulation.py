@@ -26,7 +26,8 @@ point-in-time viewing defaulting to year 2400; sparse formation snapshots only
 when a blueprint state changes; faction-owned blueprint creation; creation from
 blueprints; and a visual structure editor for naming, grouping, folding,
 reordering, attaching existing formations, and changing structural command
-parents at any scale. Faction
+parents at any scale. The Deck workspace builds a formation's deck from unit
+cards, WARNO-style, and makes or edits those cards (``deck_builder``). Faction
 ownership is edited separately and survives command-parent moves. Assigned
 vehicles are shown only when linked to a formation and expose side-image and
 grouped crew-role data when available. Legacy wiki formation outlines remain a
@@ -44,6 +45,7 @@ import unicodedata
 
 import pygame
 
+from simulations.formation.deck_builder import DeckBuilder
 from world.item_categories import resolve_category_labels
 from world.temporal import (
     DEFAULT_SIMULATION_YEAR,
@@ -135,6 +137,7 @@ class FormationSimulation:
         self.structure = self._build_structure()
         self.selected_node_id = self.structure["id"]
         self.display_scale = "aggregate"
+        self.deck = DeckBuilder(self)
 
     @property
     def root_name(self):
@@ -579,7 +582,8 @@ class FormationSimulation:
 
     def consumes_global_keydown(self):
         return (
-            self.design_edit is not None
+            (self.workspace_mode == "deck" and self.deck.wants_keys())
+            or self.design_edit is not None
             or self.design_catalog is not None
             or self.design_target_picker is not None
             or self.design_owner_picker_id is not None
@@ -594,6 +598,9 @@ class FormationSimulation:
     def handle_event(self, event):
         if event.type != pygame.KEYDOWN:
             return False
+
+        if self.workspace_mode == "deck" and self.deck.handle_key(event):
+            return True
 
         if self.design_group_naming:
             if event.key == pygame.K_ESCAPE:
@@ -1041,13 +1048,16 @@ class FormationSimulation:
                 return (1, original_positions[child_id], original_positions[child_id])
 
         organization.sort(key=order_key)
-        return {
+        state = {
             "personnel": entity.get("personnel"),
             "blueprint_items": self._relation_ids(entity.get("blueprint_items")),
             "organization": organization,
             "roster_slots": self._normalized_roster_slots(entity),
             "doctrine": str(entity.get("doctrine") or ""),
         }
+        if entity.get("deck_cards"):
+            state["deck_cards"] = [dict(row) for row in entity["deck_cards"] if isinstance(row, dict)]
+        return state
 
     def _blueprint_state_at_view_year(self, entity):
         state = latest_formation_snapshot(entity, self.year)
@@ -1390,12 +1400,14 @@ class FormationSimulation:
         return self._find_node(self.get_design_container_id()) or self.structure
 
     def set_workspace_mode(self, mode):
-        mode = "design" if str(mode) == "design" else "inspect"
+        mode = str(mode) if str(mode) in ("design", "deck") else "inspect"
         if mode == self.workspace_mode:
             return False
         self.workspace_mode = mode
         self.clear_canvas_selection()
         self._reset_marquee()
+        if mode == "deck" and not self.deck.set_target(self.selected_node_id):
+            self.deck.set_target(self.formation_id)
         return True
 
     def set_design_container(self, formation_id):
@@ -2252,6 +2264,8 @@ class FormationSimulation:
                     return self.set_workspace_mode("inspect")
                 if key == "workspace:design":
                     return True
+                if key == "workspace:deck":
+                    return self.set_workspace_mode("deck")
                 if key == "design:add_personnel":
                     target_id = self.get_design_action_target_id()
                     slot_id = self.add_roster_slot("personnel", role="New role", container_id=target_id)
@@ -2425,8 +2439,28 @@ class FormationSimulation:
                     self.dragging_node_id = self.drag_press_node_id
         return False
 
+    def _handle_deck_pointer(self, event, screen_pos):
+        """Deck-workspace clicks. Returns None to let the year and parent
+        controls take the event."""
+        if event.type == pygame.MOUSEBUTTONUP:
+            return True
+        key = next((key for key, rect in reversed(list(self.hitboxes.items())) if rect.collidepoint(screen_pos)), None)
+        if key is None:
+            self.deck.catalog_search_active = False
+            return False
+        if key.startswith("year:") or key == "parent":
+            return None
+        if key.startswith("workspace:"):
+            return self.set_workspace_mode(key[len("workspace:"):])
+        if key.startswith("tree:"):
+            node = self._find_node(key[len("tree:"):])
+            return bool(node and node.get("entity_id") and self.deck.set_target(node["entity_id"]))
+        return self.deck.handle_click(key)
+
     def handle_pointer_event(self, event, camera, screen_pos):
         if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) or event.button != 1:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button in (4, 5) and self.workspace_mode == "deck":
+                return self.deck.handle_wheel(screen_pos, 1 if event.button == 5 else -1, self.hitboxes)
             if event.type == pygame.MOUSEBUTTONDOWN and event.button in (4, 5) and self.workspace_mode == "design":
                 canvas = self.hitboxes.get("design:canvas")
                 if canvas and canvas.collidepoint(screen_pos):
@@ -2446,10 +2480,20 @@ class FormationSimulation:
                 return True
             return False
 
+        if self.workspace_mode == "deck":
+            handled = self._handle_deck_pointer(event, screen_pos)
+            if handled is not None:
+                return handled
+
         if self.workspace_mode == "design":
             handled = self._handle_design_pointer(event, screen_pos)
             if handled is not None:
                 return handled
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            for key, rect in self.hitboxes.items():
+                if key.startswith("workspace:") and rect.collidepoint(screen_pos):
+                    return self.set_workspace_mode(key[len("workspace:"):]) or True
 
         if event.type == pygame.MOUSEBUTTONUP:
             if self.dragging_node_id:

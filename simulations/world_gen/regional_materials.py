@@ -55,6 +55,110 @@ def _sample_mineralization_potential(mineralization_model, profile_id, global_u,
     return best
 
 
+DISTRICT_GRID_NODES = 33
+# A deposit counts as an element's when the element makes up this much of it.
+DISTRICT_ELEMENT_WT_PERCENT = 1.0
+
+
+def _district_grids(tectonic_model, source_uv_bounds, planet_seed):
+    """``{element: {"factor", "contributions", "metallogeny"}}``: each ore-district element on a coarse grid over the tile.
+
+    ``factor`` is the district factor (``metallogeny.enrichment``),
+    ``contributions`` each district type's part of it (rows per type).
+    """
+    if not tectonic_model or planet_seed is None:
+        return {}
+    from simulations.world_gen import metallogeny, natural_materials
+
+    bounds = _normalized_source_bounds(source_uv_bounds)
+    u_values = [bounds["min_u"] + (bounds["max_u"] - bounds["min_u"]) * index / (DISTRICT_GRID_NODES - 1) for index in range(DISTRICT_GRID_NODES)]
+    v_values = [bounds["min_v"] + (bounds["max_v"] - bounds["min_v"]) * index / (DISTRICT_GRID_NODES - 1) for index in range(DISTRICT_GRID_NODES)]
+    grids = {}
+    for card in natural_materials.MATERIAL_BY_ID.values():
+        metallogeny_card = card.get("metallogeny")
+        symbol = str(card.get("element_symbol") or "")
+        if card.get("material_subclass") == "element" and symbol and (metallogeny_card or {}).get("districts"):
+            contributions = metallogeny.district_contributions(u_values, v_values, tectonic_model, metallogeny_card, planet_seed)
+            share = float(metallogeny_card.get("district_share", 0.0) or 0.0)
+            factor = (1.0 - share) + share * sum(contributions.values()) if contributions else [[1.0] * DISTRICT_GRID_NODES] * DISTRICT_GRID_NODES
+            grids[symbol] = {
+                "factor": [list(map(float, row)) for row in factor],
+                "contributions": {name: field.tolist() for name, field in contributions.items()},
+                "metallogeny": metallogeny_card,
+            }
+    return grids
+
+
+def _ore_systems(natural_material_model, district_grids):
+    """``{element: system}`` (``element_pigments.pigment_systems``) for district elements whose ore has a host and styles."""
+    if not district_grids:
+        return {}
+    from simulations.world_gen.element_pigments import pigment_systems
+
+    return {
+        system["element"]: system
+        for system in pigment_systems(natural_material_model)
+        if system["element"] in district_grids and system.get("deposit_host") and system.get("deposit_styles")
+    }
+
+
+def _ore_zone(candidate, ore_systems, ore_hosts):
+    """True for a mineral of an ore system's element that is not the system's host (a zone of it, not a deposit)."""
+    return str(candidate.get("material_id") or "") not in ore_hosts and any(_defined_by(candidate, element) for element in ore_systems)
+
+
+def _ore_system(system, grids, x, y, *, seed, material_id):
+    """The ore system at a deposit: style of the district type gathering the most there, grade and pyrite.
+
+    Outside every district (all contributions zero) the element's largest
+    district share decides the style.
+    """
+    contributions = {name: _sample(rows, x, y, 0.0) for name, rows in (grids.get("contributions") or {}).items()}
+    if contributions and max(contributions.values()) > 0.0:
+        district_type = max(contributions, key=contributions.get)
+    else:
+        shares = (grids.get("metallogeny") or {}).get("districts") or {}
+        district_type = max(shares, key=lambda name: float(shares[name] or 0.0)) if shares else None
+    style = system["deposit_styles"].get(district_type) if district_type else None
+    host = next((host for host in system["primary_hosts"] if host["material_id"] == system["deposit_host"]), None)
+    if style is None or host is None:
+        return None
+    low, high = style["grade_wt_percent"]
+    # Ore cannot hold more of the element than its host mineral does.
+    grade = min(seed_range(seed, f"{material_id}:ore_grade", low, high), 0.95 * float(host["element_wt_percent"]))
+    host_wt = grade * 100.0 / float(host["element_wt_percent"])
+    return {
+        "element": system["element"],
+        "style": style["style"],
+        "district_type": district_type,
+        "host_material_id": host["material_id"],
+        "grade_wt_percent": round(grade, 4),
+        "pyrite_wt_percent": round(min(host_wt * style["pyrite_to_host"], 100.0 - host_wt), 4),
+        "geometry": style["geometry"],
+        "zones": "weathering_products_form_at_the_surface_element_pigments",
+    }
+
+
+def _ore_body(deposit_body, ore_system):
+    """The deposit contract of an ore system: its style, geometry and grade."""
+    if not ore_system:
+        return deposit_body
+    body = copy.deepcopy(deposit_body)
+    body["deposit_type"] = ore_system["style"]
+    body["geometry"]["form"] = ore_system["geometry"]
+    grade = float(ore_system["grade_wt_percent"]) / 100.0
+    body["resource_estimate"]["grade_fraction_range"] = [round(grade * 0.72, 5), round(min(1.0, grade * 1.28), 5)]
+    return body
+
+
+def _defined_by(candidate, element):
+    from simulations.world_gen import natural_materials
+
+    material = natural_materials.MATERIAL_BY_ID.get(str(candidate.get("material_id") or "")) or {}
+    composition = material.get("elemental_composition_wt") or {}
+    return float(composition.get(element, 0.0) or 0.0) >= DISTRICT_ELEMENT_WT_PERCENT
+
+
 def _sample(rows, x, y, default=0.0):
     if not isinstance(rows, list) or not rows or not isinstance(rows[0], list) or not rows[0]:
         return float(default)
@@ -445,8 +549,20 @@ def derive_regional_material_model(
     source_uv_bounds=None,
     root_map_seed=None,
     parent_regional_material_model=None,
+    planet_seed=None,
 ):
-    """Resolve planet-wide chemical possibilities into small regional pockets."""
+    """Resolve planet-wide chemical possibilities into small regional pockets.
+
+    An element with ore districts (``metallogeny``, copper) forms one ore
+    system per tile: its deposit is weighted by the district factor where it
+    would sit (the factor the rock map's element minerals read, with
+    ``planet_seed``, the planet's, not the tile chain's), carried by the
+    planet's main host mineral, styled by the district type gathering the
+    most there (``ore_system``: style, grade, pyrite).  The element's other
+    minerals are that system's zones -- its weathering products, enrichment
+    sulfides and gossans form where it weathers (``element_pigments``) -- and
+    are not placed as deposits of their own.
+    """
     natural_material_model = (
         natural_material_model if isinstance(natural_material_model, dict) else {}
     )
@@ -462,6 +578,7 @@ def derive_regional_material_model(
     mineralization_model = (
         derive_mineralization_potential_model(tectonic_model) if tectonic_model else None
     )
+    district_grids = _district_grids(tectonic_model, source_uv_bounds or heightmap.get("source_uv_bounds"), planet_seed)
     if detail_level <= 0:
         return {
             "status": "deferred_until_regional_refinement",
@@ -598,13 +715,26 @@ def derive_regional_material_model(
         if not can_form_on_this_planet(candidate)
     ]
     candidates = [candidate for candidate in candidates if can_form_on_this_planet(candidate)]
+    ore_systems = _ore_systems(natural_material_model, district_grids)
+    ore_hosts = {system["deposit_host"]: element for element, system in ore_systems.items()}
+    zone_rejections = [
+        {
+            "material_id": str(candidate.get("material_id") or ""),
+            "best_score": 0.0,
+            "formation_category": (candidate.get("formation_contract") or {}).get("category_id"),
+            "spatial_representation": (candidate.get("formation_contract") or {}).get("spatial_representation"),
+            "rejected": "ore_system_zone",
+        }
+        for candidate in candidates if _ore_zone(candidate, ore_systems, ore_hosts)
+    ]
+    candidates = [candidate for candidate in candidates if not _ore_zone(candidate, ore_systems, ore_hosts)]
 
     occurrences = _parent_occurrences_in_bounds(
         parent_regional_material_model,
         source_bounds,
     )
     inherited_occurrence_count = len(occurrences)
-    evaluations = list(prerequisite_rejections)
+    evaluations = list(prerequisite_rejections) + zone_rejections
     sample_count = 14
     truth_seed = str(root_map_seed or map_seed)
     bounds_salt = (
@@ -704,7 +834,11 @@ def derive_regional_material_model(
             suitability = (
                 material_affinity_score(material_id, context) * formation_fit
             )
-            if mineralization_model is not None:
+            # Ore districts decide where an element's deposits lie and how
+            # rich they are: the factor weighs the score, not the local fit.
+            district_elements = [element for element in district_grids if _defined_by(candidate, element)]
+            district = max((_sample(district_grids[element]["factor"], x, y, 1.0) for element in district_elements), default=1.0)
+            if not district_elements and mineralization_model is not None:
                 profile_id = str(
                     (candidate.get("surface_affinity_profile") or {}).get("profile_id")
                     or (material_affinity_profile(material_id) or {}).get("profile_id")
@@ -718,11 +852,12 @@ def derive_regional_material_model(
                 )
                 if mineral_signal > 0.0:
                     suitability *= 0.85 + mineral_signal * 0.6
-            score = suitability * float(candidate.get("confidence", 0.0) or 0.0)
+            score = suitability * float(candidate.get("confidence", 0.0) or 0.0) * district
             if best is None or score > best["score"]:
                 best = {
                     "score": score,
                     "suitability": suitability,
+                    "district": district,
                     "x": x,
                     "y": y,
                     "temperature_k": temperature,
@@ -803,6 +938,13 @@ def derive_regional_material_model(
             if spatial_representation == "bounded_deposit"
             else None
         )
+        ore_system = None
+        if material_id in ore_hosts and deposit_body is not None:
+            ore_system = _ore_system(
+                ore_systems[ore_hosts[material_id]], district_grids[ore_hosts[material_id]], best["x"], best["y"],
+                seed=regional_truth_seed, material_id=material_id,
+            )
+            deposit_body = _ore_body(deposit_body, ore_system)
         material_unit = (
             _unit_geometry(
                 candidate,
@@ -853,7 +995,11 @@ def derive_regional_material_model(
                 f"{occurrence_key}"
             ),
             "material_id": material_id,
-            "name": candidate.get("name") or material_id,
+            "name": (
+                f"{ore_system['style'].replace('_', ' ').capitalize()} ({candidate.get('name') or material_id})"
+                if ore_system else candidate.get("name") or material_id
+            ),
+            **({"ore_system": ore_system} if ore_system else {}),
             "material_subclass": candidate.get("material_subclass"),
             "occurrence_role": occurrence_role,
             "center": {"x": round(best["x"], 6), "y": round(best["y"], 6)},
@@ -863,6 +1009,7 @@ def derive_regional_material_model(
             },
             "estimated_radius_m": round(max(0.05, radius_m), 2),
             "suitability": round(best["suitability"], 3),
+            "ore_district_factor": round(best["district"], 3),
             "confidence": round(float(candidate.get("confidence", 0.0) or 0.0), 3),
             "grade_class": (
                 "high" if best["score"] >= 0.58
@@ -926,7 +1073,7 @@ def derive_regional_material_model(
 
     return {
         "status": "regional_material_occurrences_generated",
-        "model_version": "regional_materials_v005",
+        "model_version": "regional_materials_v006_ore_systems",
         "detail_level": detail_level,
         "distribution_rule": "minor materials and ores resolve only at or below their minimum map detail",
         "truth_contract": "deterministic_parent_conditioned_hidden_truth",

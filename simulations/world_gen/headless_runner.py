@@ -24,6 +24,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pygame
+from ui.fonts import get_font
 
 from engine.camera import Camera
 from simulations.world_gen.crust import TRACE_RESERVE_PERCENT, element_name
@@ -107,6 +108,10 @@ class HeadlessWorldGenConfig:
     # fixture exercise the documented 500-2000 km LOD1 macroregion followed by
     # a 100 km LOD2 region, while ordinary callers retain fractional zoom.
     regional_footprint_schedule_km: tuple = None
+    # Where each finer map sits in the one before it: ((x, y), ...) as
+    # fractions of the parent, for refinements after the first (centred
+    # without it).
+    regional_child_center_fractions: tuple = None
     force_plate_tectonics: bool = False
     earthlike_constraints: bool = False
     render_outputs: bool = True
@@ -580,6 +585,7 @@ class HeadlessWorldGenRunner:
         selection_mode = "nested_visible_fraction"
         focus_longitude = None
         focus_latitude = None
+        child_center = None
         configured_footprint = self._configured_refinement_footprint(
             config, refinement_index,
         )
@@ -606,6 +612,11 @@ class HeadlessWorldGenRunner:
             else:
                 center_x_fraction = max(0.2, min(0.8, float(config.regional_center_x))) if refinement_index == 0 else 0.5
                 center_y_fraction = max(0.2, min(0.8, float(config.regional_center_y))) if refinement_index == 0 else 0.5
+                children = getattr(config, "regional_child_center_fractions", None) or ()
+                if refinement_index >= 1 and refinement_index - 1 < len(children):
+                    center_x_fraction = max(0.1, min(0.9, float(children[refinement_index - 1][0])))
+                    center_y_fraction = max(0.1, min(0.9, float(children[refinement_index - 1][1])))
+                    child_center = (center_x_fraction, center_y_fraction)
             if root.get("location_class") in {"planet", "moon"}:
                 focus_longitude = (float(parent_bounds["min_x"]) + parent_width * center_x_fraction)
                 focus_latitude = -(float(parent_bounds["min_y"]) + parent_height * center_y_fraction)
@@ -613,12 +624,24 @@ class HeadlessWorldGenRunner:
                 target_width_world = parent_width * (configured_footprint[0] * 1000.0) / parent_width_m
                 target_height_world = parent_height * (configured_footprint[1] * 1000.0) / parent_height_m
             else:
-                target_width_world = parent_width * 0.4
-                target_height_world = parent_height * 0.4
+                # Two fifths of the parent, or as much of that as is still a
+                # level finer (``max_refinement_extent_m``).
+                from simulations.world_gen.regional_refinement import max_refinement_extent_m
+
+                limit_m = max_refinement_extent_m(root)
+                share = 0.4
+                if limit_m > 0.0:
+                    share = min(share, 0.9 * limit_m / max(parent_width_m, parent_height_m))
+                target_width_world = parent_width * share
+                target_height_world = parent_height * share
 
         camera = Camera(screen_width, screen_height)
         camera.x = (float(parent_bounds["min_x"]) + float(parent_bounds["max_x"])) * 0.5
         camera.y = (float(parent_bounds["min_y"]) + float(parent_bounds["max_y"])) * 0.5
+        if child_center is not None and root.get("location_class") not in {"planet", "moon"}:
+            # A region parent has no globe focus: the camera itself moves.
+            camera.x = float(parent_bounds["min_x"]) + parent_width * child_center[0]
+            camera.y = float(parent_bounds["min_y"]) + parent_height * child_center[1]
 
         if root.get("location_class") in {"planet", "moon"}:
             # A focused globe is locally compressed in longitude by cos(lat).
@@ -750,7 +773,7 @@ class HeadlessWorldGenRunner:
         camera = Camera(width, height)
         camera.zoom = min(width, height) / (3.4 * WorldGenSimulation.AU_M)
         self._app_view = SimpleNamespace(
-            default_font=pygame.font.SysFont("consolas", 15),
+            default_font=get_font(15),
             camera=camera,
             storage_root=self.repository_root,
         )
@@ -1214,7 +1237,7 @@ class HeadlessWorldGenRunner:
 
         if segments and show_legend:
             font_size = max(12, int(round(min(width / 85.0, height / 28.0))))
-            font = pygame.font.SysFont("consolas", font_size)
+            font = get_font(font_size)
             legend_rows = sorted(counts, key=lambda key: (-counts[key], key))[:6]
             line_height = font.get_linesize() + 3
             panel_width = min(width - 24, max(280, int(width * 0.28)))
@@ -1307,7 +1330,7 @@ class HeadlessWorldGenRunner:
             rows * (tile_h + header_h) + (rows + 1) * gap,
         ))
         sheet.fill((16, 19, 26))
-        font = pygame.font.SysFont("consolas", 18)
+        font = get_font(18)
         for index, layer in enumerate(layers):
             col = index % columns
             row = index // columns
@@ -1340,8 +1363,8 @@ class HeadlessWorldGenRunner:
         row_h = tile_h + 28
         sheet = pygame.Surface((columns * tile_w + (columns + 1) * gap, header_h + len(level_renderings) * (row_h + gap) + gap))
         sheet.fill((12, 16, 23))
-        font = pygame.font.SysFont("consolas", max(12, min(18, tile_w // 18)))
-        small_font = pygame.font.SysFont("consolas", max(10, min(14, tile_w // 22)))
+        font = get_font(max(12, min(18, tile_w // 18)))
+        small_font = get_font(max(10, min(14, tile_w // 22)))
         for column, label in enumerate(representative_labels):
             x = gap + column * (tile_w + gap)
             title = font.render(label, True, (236, 240, 248))

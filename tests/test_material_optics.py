@@ -42,7 +42,7 @@ class MaterialOpticsTests(unittest.TestCase):
             for entry in natural_material_entries()
             if entry.get("material_system_role") == "natural_geologic_material"
         ]
-        self.assertEqual(210, len(entries))
+        self.assertEqual(217, len(entries))
         for entry in entries:
             profile = entry.get("optical_surface_profile")
             self.assertIsInstance(profile, dict, entry["id"])

@@ -734,7 +734,8 @@ class EntityIdUpdateTests(unittest.TestCase):
 
             self.assertTrue(ui._save_pixel_art_editor())
 
-            self.assertEqual("assets/illustrations/idea_rover_pixel_pixel.png", illustration["media_path"])
+            # A vehicle's illustration is saved with the vehicles (world/asset_folders.py).
+            self.assertEqual("assets/vehicles/illustrations/idea_rover_pixel_pixel.png", illustration["media_path"])
             self.assertEqual(4.0, illustration["depicted_size_m"])
             self.assertEqual(120, illustration["pixel_canvas_width"])
             self.assertEqual(75, illustration["pixel_canvas_height"])
@@ -2070,6 +2071,67 @@ class EntityIdUpdateTests(unittest.TestCase):
         self.assertEqual([{"system": "system_beta", "distance_ly": 4.2}], source["stellar_neighbours"])
         self.assertEqual([{"system": "system_alpha", "distance_ly": 4.2}], target["stellar_neighbours"])
         self.assertIsNone(ui.stellar_neighbourhood_prompt)
+
+    def test_linked_star_system_prompts_for_class_and_replaces_missing_reference(self):
+        source = {"id": "planet_source", "type": "location", "_dataset": "locations",
+                  "location_class": "planet", "name": "Source",
+                  "star_system": ["Alpha System", "system_other"]}
+        ui = KnowledgeBrowserHarness({source["id"]: source})
+        source_card = {"entity_id": source["id"], "is_draft_entity": True,
+                       "card_view": EntityCard(source, dataset_name="locations", world_model=ui.world_model)}
+        ui.cards = [source_card]
+        template = {"dataset_name": "locations", "entity_type": "location",
+                    "label": "Star System", "initial_fields": {"location_class": "star_system"}}
+        ui.schema_entry_templates = [template]
+        ui._populate_required_schema_fields = lambda entity, template: None
+        ui._place_new_card_in_canvas_view = lambda card: None
+        ui._save_card_draft = lambda card: True
+
+        def ensure_card(entity, **kwargs):
+            card = {"entity_id": entity["id"], "card_view": SimpleNamespace(entity=entity)}
+            ui.cards.append(card)
+            return card
+
+        ui._ensure_card = ensure_card
+        self.assertTrue(ui._open_relation_target_template_picker(source_card, {
+            "entity_id": "Alpha System", "field_key": "star_system", "target": "entity",
+        }))
+        self.assertTrue(ui._select_template_picker_template(template))
+        self.assertEqual("star_system_class", ui.entry_name_prompt["mode"])
+        self.assertNotIn("system_alpha_system", ui.world_model.loader.entities)
+        ui.entry_name_prompt["buffer"] = "invalid"
+        self.assertTrue(ui._submit_entry_name_prompt())
+        self.assertEqual("star_system_class", ui.entry_name_prompt["mode"])
+        self.assertEqual(["Alpha System", "system_other"], source["star_system"])
+
+        ui.entry_name_prompt["buffer"] = "G2V"
+        self.assertTrue(ui._submit_entry_name_prompt())
+        self.assertIsNone(ui.entry_name_prompt)
+        self.assertEqual(["system_alpha_system", "system_other"], source["star_system"])
+        star = ui.world_model.loader.entities["star_alpha_system_primary"]
+        self.assertEqual("system_alpha_system", star["star_system"])
+        self.assertEqual("G2V", star["spectral_class"])
+
+        from simulations.space.space_simulation import SpaceSimulation
+
+        ui.world_model.get_entities_by_dataset = lambda dataset: [
+            entity for entity in ui.world_model.loader.entities.values()
+            if entity.get("_dataset") == dataset
+        ]
+        simulation = SpaceSimulation(ui.world_model, root_system_id="system_alpha_system")
+        self.assertIn(star["id"], simulation.system.objects_by_id)
+
+    def test_cancelling_linked_system_class_prompt_creates_no_entities(self):
+        ui = KnowledgeBrowserHarness()
+        template = {"dataset_name": "locations", "initial_fields": {"location_class": "star_system"}}
+        ui.pending_new_entry_name = "Alpha System"
+        ui.template_picker_mode = "relation_create"
+        ui.template_picker_context = {"source_entity_id": "idea_source", "field_key": "related"}
+        self.assertTrue(ui._select_template_picker_template(template))
+        self.assertEqual("star_system_class", ui.entry_name_prompt["mode"])
+        ui._handle_entry_name_prompt_keydown(SimpleNamespace(key=pygame.K_ESCAPE))
+        self.assertEqual({}, ui.world_model.loader.entities)
+        self.assertIsNone(ui.entry_name_prompt)
 
     def test_star_system_creation_opens_only_system_card(self):
         ui = KnowledgeBrowserHarness()

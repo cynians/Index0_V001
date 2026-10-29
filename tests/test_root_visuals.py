@@ -1,8 +1,9 @@
 import pygame
+import pytest
 from types import SimpleNamespace
 
 from simulations.species.root_growth import root_profile, build_root_graph
-from simulations.species.root_visuals import root_segment_style
+from simulations.species.root_visuals import root_segment_style, root_visual_profile
 from simulations.species.root_comparison import comparison_entities
 from simulations.species.species_simulation import SpeciesSimulation
 from world.plant_catalogue import PLANTAE_ID
@@ -23,6 +24,18 @@ def test_tissue_widths_and_colours_distinguish_form_order_and_maturity():
     assert root_segment_style(tree, placement(), .05)[0] < coarse
     assert grass_radius < .001  # A grass primary is not several centimetres wide.
     assert root_segment_style(grass, placement(kind='root_support'), 1.)[0] > grass_radius
+
+
+def test_large_tree_root_width_scales_with_height_but_is_bounded_and_optional():
+    default = root_visual_profile({'shape': 'tree', 'plant_woodiness': 'woody'})
+    ordinary = root_visual_profile({'shape': 'tree', 'plant_woodiness': 'woody', 'max_height_m': 20.0})
+    emergent = root_visual_profile({'shape': 'tree', 'plant_woodiness': 'woody', 'max_height_m': 110.3})
+    extreme = root_visual_profile({'shape': 'tree', 'plant_woodiness': 'woody', 'max_height_m': 1000.0})
+
+    assert default['radius_m'] == .035
+    assert ordinary['radius_m'] == .08
+    assert emergent['radius_m'] == pytest.approx(.4412)
+    assert extreme['radius_m'] == .45
 
 
 def test_axes_taper_continuously_and_keep_bounded_graph():

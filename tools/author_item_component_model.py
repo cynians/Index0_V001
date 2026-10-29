@@ -170,6 +170,13 @@ SCHEMA_ITEM_FIELDS = {
     },
     "placeable": {"type": "boolean", "section": "Handling", "optional": True},
     "install_contexts": {"type": "string_list", "section": "Handling", "optional": True},
+    "dispenses_items": {
+        "type": "entity_list", "target": "items", "section": "Handling", "optional": True,
+        "description": (
+            "Items a machine of this kind hands out when operated. General knowledge of "
+            "the kind, not the stock of one installed machine (world/need_tags.py)."
+        ),
+    },
     "descriptive_capabilities": {"type": "string_list", "optional": True},
     "ownership_records": {
         "type": "entity_list", "target": "ownerships",
@@ -178,6 +185,10 @@ SCHEMA_ITEM_FIELDS = {
     "consumable": {"type": "boolean", "section": "Food", "optional": True},
     "food_energy_kcal": {"type": "number", "section": "Food", "optional": True},
     "food_satiation": {"type": "number", "section": "Food", "optional": True},
+    "rest_quality": {
+        "type": "number", "section": "Rest", "optional": True,
+        "description": "0-1: how well a person rests on or in this thing; a bed is 1 (world/need_tags.py).",
+    },
     "inventory_items": {"type": "object_list", "section": "Inventory", "optional": True},
     "default_unit": {"type": "string", "section": "Inventory", "optional": True},
 }
@@ -378,23 +389,11 @@ def build_transaction(datasets):
     return upserts, delete_ids
 
 
-def _backup(store):
-    BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    backup_dir = BACKUP_ROOT / f"backup_{stamp}"
-    backup_dir.mkdir()
-    source = sqlite3.connect(f"file:{store.database_path}?mode=ro", uri=True, check_same_thread=False)
-    dest = sqlite3.connect(str(backup_dir / store.database_path.name))
-    try:
-        source.backup(dest, pages=8192, sleep=0.02)
-    finally:
-        dest.close()
-        source.close()
-    if store.manifest_path.exists():
-        shutil.copy2(store.manifest_path, backup_dir / store.manifest_path.name)
-    if store.ontology_path.exists():
-        shutil.copy2(store.ontology_path, backup_dir / store.ontology_path.name)
-    return backup_dir
+def _backup(store, upserts, remove_entity_ids=()):
+    """Keep what this run replaces or removes, not a copy of the whole store (``tools/ontology_backup.py``)."""
+    from tools.ontology_backup import backup_entities
+
+    return backup_entities(store, BACKUP_ROOT, upserts, remove_entity_ids)
 
 
 def _validate(store, delete_ids):
@@ -434,7 +433,7 @@ def main(argv=None):
     if args.dry_run:
         return
 
-    backup_dir = _backup(store)
+    backup_dir = _backup(store, upserts, delete_ids)
     print(f"backup: {backup_dir}")
     started = time.perf_counter()
     result = store.apply_changes(entities=upserts, remove_entity_ids=delete_ids)

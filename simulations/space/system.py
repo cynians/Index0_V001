@@ -3,6 +3,7 @@ import hashlib
 import math
 
 from world.year_utils import parse_year
+from world.entity_references import entity_reference_ids, first_entity_reference
 
 
 class CelestialSystem:
@@ -27,8 +28,9 @@ class CelestialSystem:
         return Path(__file__).resolve().parents[2]
 
     def _resolve_entity_id(self, world_model, entity_id):
-        if not entity_id:
-            return entity_id
+        entity_id = first_entity_reference(entity_id)
+        if entity_id is None:
+            return None
         loader = getattr(world_model, "loader", None)
         aliases = getattr(loader, "entity_aliases", {}) if loader is not None else {}
         return aliases.get(entity_id, entity_id)
@@ -37,13 +39,11 @@ class CelestialSystem:
         if not entity_id or not entity:
             return False
         resolved_entity_id = self._resolve_entity_id(world_model, entity_id)
-        candidates = {
-            entity.get("id"),
-            entity.get("legacy_system_entity_id"),
-            entity.get("derived_from_system_body"),
-            entity.get("location_entity"),
-        }
-        return resolved_entity_id in candidates or entity_id in candidates
+        candidates = set(entity_reference_ids([
+            entity.get("id"), entity.get("legacy_system_entity_id"),
+            entity.get("derived_from_system_body"), entity.get("location_entity"),
+        ]))
+        return resolved_entity_id in candidates or first_entity_reference(entity_id) in candidates
 
     def _generated_location_id_for_body(self, body_entity):
         body_id = body_entity.get("id", "")
@@ -178,8 +178,8 @@ class CelestialSystem:
                 source_entity.get("derived_from_system_body"),
                 source_entity.get("location_entity"),
             ):
-                if source_entity_id:
-                    self.objects_by_id[source_entity_id] = obj
+                for reference_id in entity_reference_ids(source_entity_id):
+                    self.objects_by_id[reference_id] = obj
 
     def get_entries(self):
         """
@@ -274,13 +274,16 @@ class CelestialSystem:
             class_key = str(entity.get("location_class") or "").strip().lower()
             return class_key in orbital_location_classes and bool(entity.get("star_system"))
 
+        resolved_root_system_id = self._resolve_entity_id(world_model, root_system_id)
         bodies = [
             entity for entity in active_entities
             if entity.get("_dataset") == "locations"
             and entity.get("type") == "location"
             and is_orbital_body(entity)
-            and self._resolve_entity_id(world_model, entity.get("star_system"))
-            == self._resolve_entity_id(world_model, root_system_id)
+            and resolved_root_system_id in {
+                self._resolve_entity_id(world_model, system_id)
+                for system_id in entity_reference_ids(entity.get("star_system"))
+            }
         ]
 
         if root_body_id is None:
@@ -404,7 +407,7 @@ class CelestialSystem:
         """
         from simulations.space.object import SpaceObject
 
-        entity_id = entity.get("location_entity") or entity.get("id")
+        entity_id = first_entity_reference(entity.get("location_entity")) or entity.get("id")
 
         obj = SpaceObject(
             name=entity.get("name", entity.get("id")),
@@ -474,20 +477,35 @@ class CelestialSystem:
         unit = int.from_bytes(digest[:8], "big") / float(2**64 - 1)
         return unit * math.tau
 
-    def _create_orbiting_object(self, entity, parent_obj):
+    def _periapsis_longitude_radians_for_entity(self, entity):
+        """
+        The sim is planar: the orbit is turned by ascending node + argument of
+        periapsis, the usual projection for small inclinations.
+        """
+        total = 0.0
+        for key in ("longitude_of_ascending_node_deg", "argument_of_periapsis_deg"):
+            try:
+                total += float(entity.get(key) or 0.0)
+            except (TypeError, ValueError):
+                pass
+        return math.radians(total)
+
+    def _create_orbiting_object(self, entity, parent_obj, time_seconds=0.0):
         """
         Create a body orbiting an already-instantiated parent body.
         """
         from simulations.space.object import SpaceObject
         from simulations.space.orbit import KeplerOrbit
 
-        entity_id = entity.get("location_entity") or entity.get("id")
+        entity_id = first_entity_reference(entity.get("location_entity")) or entity.get("id")
 
         orbit = KeplerOrbit(
             parent=parent_obj,
             a=float(entity.get("semi_major_axis_m", 0.0) or 0.0),
             e=float(entity.get("eccentricity", 0.0) or 0.0),
             M0=self._mean_anomaly_radians_for_entity(entity),
+            varpi=self._periapsis_longitude_radians_for_entity(entity),
+            t=time_seconds,
         )
 
         obj = SpaceObject(
@@ -499,7 +517,7 @@ class CelestialSystem:
         obj.source_system_entity_id = entity.get("legacy_system_entity_id") or entity.get("id")
         return obj
 
-    def populate_from_world_model(self, world_model, year, root_system_id, root_body_id=None):
+    def populate_from_world_model(self, world_model, year, root_system_id, root_body_id=None, time_seconds=0.0):
         """
         Populate the celestial system from active system-role locations.
 
@@ -508,6 +526,9 @@ class CelestialSystem:
         * location_class: star/planet/moon/spacecraft/etc.
         * star_system: <root system id>
         * optional root_body_id: include only that body and direct children
+
+        time_seconds is the date, in seconds since the orbit epoch, at which
+        the bodies are placed.
         """
         self._entries = []
         self.objects_by_id = {}
@@ -564,7 +585,7 @@ class CelestialSystem:
                 if parent_obj is None:
                     continue
 
-                obj = self._create_orbiting_object(entity, parent_obj)
+                obj = self._create_orbiting_object(entity, parent_obj, time_seconds=time_seconds)
                 layers = self._create_layers_for_entity(entity)
                 self.add(
                     obj,
@@ -585,6 +606,9 @@ class CelestialSystem:
                 break
 
             stalled_last_round = True
+
+        # Place every body at the date; parents come before their children.
+        self.update(0.0)
 
     def update(self, dt):
         """

@@ -34,7 +34,11 @@ SPECIES_BEHAVIOUR_FIELDS = {
     "simulation_tier_default",
 }
 
-SPECIES_PLANT_FIELDS = set(PLANT_TRAIT_FIELDS)
+SPECIES_PLANT_FIELDS = set(PLANT_TRAIT_FIELDS) - {"surface_growth_profile", "fungal_growth_profile",
+    "fungal_body_module_ref", "fungal_cap_module_ref", "fungal_module_anchors", "plant_root_profile",
+    "plant_leaf_palette"}
+# A species' detailed thallus measurements and reference calibration are a
+# recipe, not a consensus attribute to propagate to its fungal relatives.
 
 SPECIES_INHERITABLE_FIELDS = SPECIES_BEHAVIOUR_FIELDS | SPECIES_PLANT_FIELDS
 
@@ -292,7 +296,18 @@ def resolve_species_field(loader, entity, field_key):
         parent = entities.get(parent_id)
         if not isinstance(parent, dict) or _is_blank(parent.get(field_key)):
             continue
-        parent_candidates.append((parent_id, parent.get(field_key), _inference_sources(parent).get(field_key)))
+        marker = _inference_sources(parent).get(field_key)
+        if isinstance(marker,dict) and marker.get("kind")=="offspring_consensus":
+            # An engineered descendant is not evidence about its natural
+            # relatives, and natural stock is not evidence of a construct's
+            # unreviewed traits. Authored parent facts remain eligible.
+            target_origin=str(entity.get("origin_type") or "natural")
+            sources=marker.get("source_ids") or []
+            matching=[sid for sid in sources if str(entities.get(sid,{}).get("origin_type") or "natural")==target_origin]
+            if sources and not matching:
+                continue
+            marker={**marker,"source_ids":matching}
+        parent_candidates.append((parent_id, parent.get(field_key), marker))
 
     if not parent_candidates:
         return {"value": entity.get(field_key), "provenance": "unknown"}

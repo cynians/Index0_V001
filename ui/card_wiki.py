@@ -2,6 +2,8 @@ import os
 import re
 
 import pygame
+from engine import asset_files
+from ui.fonts import get_font
 
 
 class CardWikiRenderer:
@@ -48,7 +50,7 @@ class CardWikiRenderer:
     @staticmethod
     def _scaled_font(font, scale=1.0, bold=False):
         size = max(10, int(round(font.get_linesize() * scale)))
-        return pygame.font.SysFont("consolas", size, bold=bold)
+        return get_font(size, bold=bold)
 
     @staticmethod
     def _coerce_color(value, fallback):
@@ -252,17 +254,15 @@ class CardWikiRenderer:
             candidate_paths.append(os.path.normpath(os.path.join(os.getcwd(), normalized_path)))
 
         for candidate in candidate_paths:
-            if not os.path.exists(candidate):
-                continue
             cache_path = os.path.abspath(candidate)
-            try:
-                cache_key = (cache_path, os.path.getmtime(cache_path))
-            except OSError:
+            revision = asset_files.revision(cache_path)
+            if revision is None:
                 continue
+            cache_key = (cache_path, revision)
             if cache_key in cls.IMAGE_SURFACE_CACHE:
                 return cls.IMAGE_SURFACE_CACHE[cache_key]
             try:
-                surface = pygame.image.load(candidate).convert_alpha()
+                surface = asset_files.load_image(cache_path).convert_alpha()
             except Exception:
                 return None
             if len(cls.IMAGE_SURFACE_CACHE) >= cls.MAX_IMAGE_CACHE_ITEMS:

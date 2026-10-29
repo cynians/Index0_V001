@@ -69,7 +69,7 @@ class MaterialFormationSystemTests(unittest.TestCase):
             for entry in natural_material_entries()
             if entry.get("material_system_role") == "natural_geologic_material"
         ]
-        self.assertEqual(210, len(entries))
+        self.assertEqual(217, len(entries))
         for entry in entries:
             self.assertIn(entry["formation_category"], FORMATION_CATEGORIES)
             self.assertIn(

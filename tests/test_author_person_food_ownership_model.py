@@ -44,7 +44,7 @@ class AuthorPersonFoodOwnershipModelTests(unittest.TestCase):
         )
 
         person = by_id["person_lab_worker"]
-        self.assertEqual("recipe_simple_cooked_meal", person["knowledge_records"][0]["entity"])
+        self.assertEqual("coll_knowledge_mara_voss", person["knowledge_collection"])
         self.assertIn("institution_person_sim_lab", person["affiliated_institutions"])
 
         pantry = by_id["location_person_test_pantry"]

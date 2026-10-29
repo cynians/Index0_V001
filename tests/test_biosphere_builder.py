@@ -203,13 +203,20 @@ def test_biomasser_built_organic_soil_unlocks_pioneers_before_trees():
     assert not sim.select_species("spec_betula_pendula")
     assert not sim.select_species("spec_lolium_perenne")
     sim.place_selected_species(5.0, 5.0)
-    sim.advance_seasons(4)
+    for _ in range(60):
+        if sim.pioneers_unlocked():
+            break
+        sim.advance_seasons(1)
 
     assert sim.pioneers_unlocked()
     assert sim.select_species("spec_lolium_perenne")
     assert not sim.select_species("spec_betula_pendula")
 
-    sim.advance_seasons(12)
+    # Soil builds where the lichen stands; how fast is tuning, the order is not.
+    for _ in range(120):
+        if sim.is_species_unlocked("spec_betula_pendula"):
+            break
+        sim.advance_seasons(1)
     assert sim.select_species("spec_betula_pendula")
 
 

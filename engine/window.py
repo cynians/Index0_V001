@@ -1,6 +1,7 @@
 import math
 import time
 import pygame
+from ui.fonts import get_font
 
 from engine.camera import Camera
 from engine.input_controller import InputController
@@ -32,7 +33,7 @@ class SimWindow:
         self.show_grid = True
         self.show_fps = True
 
-        self.default_font = pygame.font.SysFont("consolas", 16)
+        self.default_font = get_font()
 
     # --------------------------------------------------
     # MAIN LOOP
@@ -189,6 +190,10 @@ class SimWindow:
         """
         Draw a lower-right map-style scale bar for the current zoom level.
         """
+        # A view that does not draw through the camera shows its own scale.
+        active = getattr(self, "get_active_simulation", lambda: None)()
+        if getattr(active, "draws_own_scale", False):
+            return
         target_px = 160.0
         world_length = self._nice_step(target_px / max(self.camera.zoom, 1e-18))
         pixel_length = int(round(world_length * self.camera.zoom))
@@ -314,4 +319,6 @@ class SimWindow:
         if self.show_fps:
             fps = int(self.clock.get_fps())
             text = self.default_font.render(f"FPS: {fps}", True, (200, 200, 200))
-            self.screen.blit(text, (10, 10))
+            # Bottom-left. At the top-left it sat under the tab strip with
+            # only its first letter showing.
+            self.screen.blit(text, (10, self.height - text.get_height() - 1))

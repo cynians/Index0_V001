@@ -70,6 +70,12 @@ class CameraController:
             zoom = minimum
         self.camera.zoom = max(minimum, min(maximum, zoom))
 
+        # A simulation can keep the camera on something that moves, e.g. a craft on its journey.
+        focus = getattr(sim, "get_camera_focus", lambda: None)()
+        if focus is not None:
+            self.camera.x, self.camera.y = focus
+            return
+
         if getattr(sim, "free_camera_pan", False):
             return
 

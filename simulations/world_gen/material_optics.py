@@ -304,6 +304,7 @@ FORMATION_OPTICAL_FAMILIES = {
     "placer_concentration": "crystalline_mineral",
     "kimberlitic_diamond": "ultramafic_rock",
     "iron_weathering": "ferric",
+    "supergene_oxidation": "crystalline_mineral",
     "duricrust": "weathered_clay",
     "organic_wetland_sediment": "carbonaceous",
     "glacial_sediment": "glacial_sediment",

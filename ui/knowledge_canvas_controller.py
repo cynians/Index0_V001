@@ -1,6 +1,7 @@
 import time
 
 import pygame
+from ui.fonts import get_font
 
 from engine.performance_debug import performance_debug
 from ui.card import EntityCard
@@ -34,6 +35,8 @@ class KnowledgeCanvasController:
         "toolbelt_rect",
         "header_drag_rect",
         "close_rect",
+        "minimize_rect",
+        "expand_rect",
         "template_button_rect",
         "resize_handle_rect",
         "canvas_relation_add_rect",
@@ -268,11 +271,12 @@ class KnowledgeCanvasController:
             rect_x = right_rect.x + self.canvas_offset_x + int(card.get("canvas_x", 24) * zoom)
             rect_y = right_rect.y + self.canvas_offset_y + int(card.get("canvas_y", 84) * zoom)
 
-            if compact_mode:
+            card["allow_minimize"] = True
+            if card.get("is_minimized", False) or (compact_mode and not card.get("expanded_at_compact_zoom", False)):
                 card_h = max(260, min(self.MAX_CARD_CANVAS_H, requested_h))
                 self._layout_compact_card(card, rect_x, rect_y, card_w, card_h, zoom)
-                max_right = max(max_right, card.get("canvas_x", 24) + card_w)
-                max_bottom = max(max_bottom, card.get("canvas_y", 84) + card_h)
+                max_right = max(max_right, card.get("canvas_x", 24) + card["rect"].width / zoom)
+                max_bottom = max(max_bottom, card.get("canvas_y", 84) + card["rect"].height / zoom)
                 continue
 
             approximate_h = max(260, min(self.MAX_CARD_CANVAS_H, requested_h))
@@ -368,6 +372,8 @@ class KnowledgeCanvasController:
         card["toolbelt_rect"] = None
         card["header_drag_rect"] = rect
         card["close_rect"] = None
+        card["minimize_rect"] = None
+        card["expand_rect"] = None
         card["template_button_rect"] = None
         card["timeline_focus_rect"] = None
         card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
@@ -378,19 +384,31 @@ class KnowledgeCanvasController:
 
     def _layout_compact_card(self, card, rect_x, rect_y, card_w, card_h, zoom):
         compact_w = max(150, min(260, int(round(card_w * zoom))))
-        compact_h = 72
+        compact_font = self.font_for_layout or get_font(14)
+        compact_h = max(64, compact_font.get_linesize() * 3 + 12)
         rect = pygame.Rect(rect_x, rect_y, compact_w, compact_h)
         close_rect = pygame.Rect(rect.right - 22, rect.y + 6, 16, 16)
+        # Remove the expanded card's controls, including stale editor/launch
+        # hitboxes, before assigning the two compact-card buttons.
+        for key, value in list(card.items()):
+            if isinstance(value, pygame.Rect):
+                card[key] = None
+            elif key.endswith("_hitboxes"):
+                card[key] = []
+        for key in self.CARD_DRAG_LAYOUT_COLLECTION_KEYS:
+            card[key] = []
         card["is_compact_canvas_card"] = True
         card["layout_skipped_offscreen"] = False
-        card["layout_font"] = self.font_for_layout or pygame.font.SysFont("consolas", 14)
+        card["layout_font"] = compact_font
         card["rect"] = rect
         card["toolbelt_rect"] = None
         card["header_drag_rect"] = rect
         card["close_rect"] = close_rect
+        card["expand_rect"] = pygame.Rect(rect.right - 44, rect.y + 6, 16, 16)
+        card["minimize_rect"] = None
         card["template_button_rect"] = None
         card["timeline_focus_rect"] = None
-        card["resize_handle_rect"] = pygame.Rect(rect.right - 12, rect.bottom - 12, 10, 10)
+        card["resize_handle_rect"] = None
         self._clear_card_canvas_hitboxes(card)
         card["canvas_relation_add_rect"] = None
         card["screen_scale"] = zoom
@@ -460,6 +478,9 @@ class KnowledgeCanvasController:
     def _relayout_single_card(self, card):
         if not isinstance(card, dict):
             return False
+        if card.get("is_compact_canvas_card", False):
+            self._layout_all_cards()
+            return True
         card_view = card.get("card_view")
         rect = card.get("rect")
         if card_view is None or rect is None:
@@ -476,7 +497,7 @@ class KnowledgeCanvasController:
             base_size = max(8, int(round(self.font_for_layout.get_linesize() * 0.84)))
         cached_font = self.card_font_cache.get(base_size)
         if cached_font is None:
-            cached_font = pygame.font.SysFont("consolas", base_size)
+            cached_font = get_font(base_size)
             self.card_font_cache[base_size] = cached_font
         return cached_font
 
@@ -511,6 +532,9 @@ class KnowledgeCanvasController:
             card_rect = card.get("rect")
             if card_rect is None or not card_rect.collidepoint(mouse_pos):
                 continue
+
+            if card.get("is_compact_canvas_card", False):
+                return True
 
             max_scroll = max(0, int(card.get("scroll_max_y", 0) or 0))
             if max_scroll <= 0:
@@ -1540,6 +1564,13 @@ class KnowledgeCanvasController:
         self.template_picker_context = {}
         self.template_picker_status = ""
         self._build_template_picker_hitboxes()
+        if self._is_star_system_template(template):
+            return self._open_entry_name_prompt(
+                template,
+                mode="star_system_class",
+                context={"system_name": entry_name, **context},
+                label=f"Star Class for {entry_name}",
+            )
         return self._open_entry_description_prompt(template, entry_name, context=context)
 
 
@@ -1553,6 +1584,24 @@ class KnowledgeCanvasController:
             close_rect = card.get("close_rect")
             if close_rect is not None and close_rect.collidepoint(mouse_pos):
                 self._close_card_at_index(index)
+                return "__ui_consumed__"
+
+            minimize_rect = card.get("minimize_rect")
+            expand_rect = card.get("expand_rect")
+            if (
+                (minimize_rect is not None and minimize_rect.collidepoint(mouse_pos))
+                or (expand_rect is not None and expand_rect.collidepoint(mouse_pos))
+            ):
+                card_obj = self._bring_card_to_front(index)
+                minimizing = minimize_rect is not None and minimize_rect.collidepoint(mouse_pos)
+                card_obj["is_minimized"] = minimizing
+                card_obj["expanded_at_compact_zoom"] = not minimizing
+                self._close_wiki_link_picker(card_obj)
+                self._close_relation_picker(card_obj)
+                self._clear_timeline_edit_target()
+                if self.canvas_relation_link_source_id == card_obj.get("entity_id"):
+                    self._clear_canvas_relation_link()
+                self._relayout_cards()
                 return "__ui_consumed__"
 
             if card.get("is_compact_canvas_card", False):
@@ -1976,7 +2025,7 @@ class KnowledgeCanvasController:
                         remove_rect is not None
                         and remove_rect.collidepoint(mouse_pos)
                         and card.get("is_edit_mode", False)
-                        and card.get("active_edit_field") == "tags"
+                        and card_view._is_tag_edit_field(card.get("active_edit_field"))
                     ):
                         card_obj = self._bring_card_to_front(index)
                         if hasattr(card_obj.get("card_view"), "remove_tag_value"):
@@ -1993,7 +2042,7 @@ class KnowledgeCanvasController:
                         suggestion_rect is not None
                         and suggestion_rect.collidepoint(mouse_pos)
                         and card.get("is_edit_mode", False)
-                        and card.get("active_edit_field") == "tags"
+                        and card_view._is_tag_edit_field(card.get("active_edit_field"))
                     ):
                         card_obj = self._bring_card_to_front(index)
                         if self._insert_tag_suggestion_into_card(card_obj, suggestion_info.get("tag")):
@@ -2016,7 +2065,7 @@ class KnowledgeCanvasController:
                         continue
                     card_obj = self._bring_card_to_front(index)
                     if card_obj.get("is_edit_mode", False):
-                        card_obj["card_view"].begin_edit_field(card_obj, "tags")
+                        card_obj["card_view"].begin_edit_field(card_obj, tag_info.get("row_key") or "tags")
                         self._close_relation_picker(card_obj)
                         self._relayout_cards()
                         return "__ui_consumed__"

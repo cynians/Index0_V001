@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from engine import asset_files
 from world.plant_growth_catalog import (
     canonical_plant_growth_behaviour,
     canonical_plant_growth_form,
@@ -183,6 +184,28 @@ def is_plant_species_entity(entity: dict[str, Any] | None, plant_catalogue=None)
                 and plant_catalogue.is_species(entity.get("id")))
 
 
+def is_surface_species_entity(entity, entities):
+    """Verified fungal growth-lab eligibility, without changing Plantae."""
+    if not isinstance(entity,dict) or entity.get("plant_growth_form") != "lichen":
+        return False
+    if entity.get("plant_growth_behaviour") != "surface_covering" or not entity.get("surface_growth_profile"):
+        return False
+    from world.plant_catalogue import PlantCatalogue
+    return PlantCatalogue.build(entities or {},root_id="cladis_fungi").is_species(entity.get("id"))
+
+
+def is_fungal_growth_species_entity(entity, entities):
+    if not isinstance(entity, dict) or not entity.get("fungal_growth_profile"):
+        return False
+    from world.fungal_traits import validate_fungal_profile
+    from world.plant_catalogue import PlantCatalogue
+    try:
+        validate_fungal_profile(entity["fungal_growth_profile"])
+    except (ValueError, TypeError):
+        return False
+    return PlantCatalogue.build(entities or {}, root_id="cladis_fungi").is_species(entity.get("id"))
+
+
 def _safe_id(value: str, fallback: str = "plant") -> str:
     text = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(value or "").strip())
     return text.strip("._-") or fallback
@@ -222,7 +245,7 @@ def pixel_asset_depicted_size_m(asset_ref: str | None) -> float | None:
         asset_path = _PROJECT_ROOT / asset_path
     document_path = asset_path.with_suffix(".layers.json.gz")
     try:
-        with gzip.open(document_path, "rt", encoding="utf-8") as handle:
+        with asset_files.open_gzip_text(document_path) as handle:
             document = json.load(handle)
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return None
@@ -280,7 +303,8 @@ class PlantModule:
             asset_ref=value.get("asset_ref"),
             texture_set_ref=value.get("texture_set_ref"),
             length_m=float(value.get("length_m", 0.1) or 0.1),
-            radius_m=float(value.get("radius_m", 0.01) or 0.01),
+            # Zero is an explicit absent stalk, not a missing dimension.
+            radius_m=float(0.01 if value.get("radius_m") is None else value["radius_m"]),
             sockets=tuple(str(item) for item in value.get("sockets", ("base", "tip"))),
             attachment_point=_tuple2(value.get("attachment_point")),
             growth_axis=_tuple2(value.get("growth_vector") or value.get("growth_axis"), (0.0, -1.0)),
@@ -338,6 +362,9 @@ class PlantBlueprint:
     def from_species_entity(cls, entity: dict[str, Any], species_id: str | None = None) -> "PlantBlueprint":
         """Build a safe starter blueprint, including for sparsely annotated plants."""
         species_id = str(species_id or entity.get("id") or "unknown_species")
+        if entity.get("fungal_growth_profile"):
+            from simulations.species.fungal_growth import fungal_blueprint
+            return fungal_blueprint(entity, species_id)
         display_name = str(
             entity.get("common_name")
             or entity.get("binomial_name")
@@ -492,10 +519,14 @@ class PlantBlueprint:
             phyllotaxis = 90.0
         elif leaf_arrangement == "distichous":
             phyllotaxis = 180.0
-        if str(entity.get("leaf_attachment_pattern") or "").lower() == "basal_rosette" and not is_aquatic:
+        if str(entity.get("leaf_attachment_pattern") or "").lower() == "basal_rosette" and not is_aquatic and form != 'succulent':
             shape = "rosette"
             behaviour = "rosette_short_internode"
-            max_height, internode, branch_probability = 0.45, 0.16, 0.0
+            # A basal attachment may select this grammar for an otherwise
+            # unclassified herb. It must not discard a sourced stature.
+            max_height = max(0.1, mature_height) if mature_height is not None else 0.45
+            internode = max(0.02, 0.16 * max_height / 0.45)
+            branch_probability = 0.0
 
         leaves_per_node = 2 if shape in {"tree", "shrub", "subshrub", "climber"} else 1
         if leaf_arrangement in {"alternate", "distichous"}:
@@ -510,14 +541,34 @@ class PlantBlueprint:
         leaf_size = str(entity.get("leaf_size_class") or "").lower().replace("-", "_")
         leaf_structure = str(entity.get("leaf_structure") or "simple").lower().replace("-", "_").replace(" ", "_")
         leaf_division_order = max(1, min(4, round(quantitative_plant_trait(entity.get("leaf_division_order"), 1, 1, 4))))
-        leaf_length = {
+        leaf_size_lengths = {
             "very_small": 0.06,
             "small": 0.10,
             "medium": 0.15,
             "large": 0.24,
             "very_large": 0.38,
-        }.get(leaf_size, 0.22)
+        }
+        leaf_length = leaf_size_lengths.get(leaf_size, 0.22)
+        scaled_tree_leaf_default = False
+        if (is_tree and leaf_size not in leaf_size_lengths
+                and entity.get("leaf_length") in (None, "", {}, [])
+                and not entity.get("plant_leaf_module_ref")):
+            # Unknown dimensions need a conservative placeholder on small
+            # trees: the old 22 cm leaf also drove shoot lengths, overwhelming
+            # a low/dwarf crown. This is a qualitative runtime coefficient,
+            # never an authored measurement or a change to known leaf sizes.
+            bounded_default = min(leaf_length, max(0.002, max_height * 0.05))
+            scaled_tree_leaf_default = bounded_default < leaf_length
+            leaf_length = bounded_default
         leaf_length = quantitative_plant_trait(entity.get("leaf_length"), leaf_length, 0.002, 100.0)
+        upper_bound_frond = (form == "fern" and isinstance(entity.get("leaf_length"), dict)
+                             and entity["leaf_length"].get("status") == "reported_upper_bound_not_typical"
+                             and not entity["leaf_length"].get("typical_m"))
+        if upper_bound_frond:
+            # A reported extreme does not say all ordinary mature fronds
+            # attain it. This labelled display default is not an authored
+            # typical measurement; the maximum remains on the species card.
+            leaf_length *= .65
         leaf_cluster_size = max(1, round(quantitative_plant_trait(entity.get("leaf_cluster_size"), 3, 1, 200)))
         leaflet_count = max(0, round(quantitative_plant_trait(entity.get("leaflet_count"), 0, 0, 2000)))
         leaflet_length = quantitative_plant_trait(entity.get("leaflet_length"), leaf_length * 0.24, 0.001, 20.0)
@@ -573,6 +624,25 @@ class PlantBlueprint:
         # species get the existing fixed height-fraction trunk radius
         # completely unchanged.
         trunk_girth = normalised_plant_trait(entity.get("plant_trunk_girth"), 0.0)
+        trunk_straightness = normalised_plant_trait(entity.get("plant_trunk_straightness"), 0.0)
+        from simulations.species.leaf_development import authored_leaf_attachment_angle
+        leaf_attachment_angle = authored_leaf_attachment_angle(entity.get("plant_leaf_attachment_angle"))
+        from simulations.species.lateral_shoots import (
+            LATERAL_SHOOT_FIELDS, LATERAL_SHOOT_VERSION,
+            authored_shoot_control, supports_lateral_shoot_controls,
+        )
+        lateral_controls = {field: authored_shoot_control(entity.get(field))
+                            if supports_lateral_shoot_controls(entity) else None
+                            for field in LATERAL_SHOOT_FIELDS}
+        primary_controls_supported = is_tree and bool(
+            entity.get("plant_leaf_distribution") or entity.get("leaf_attachment_pattern") == "along_stem")
+        primary_branch_density = (authored_shoot_control(entity.get("plant_primary_branch_density"))
+                                  if primary_controls_supported else None)
+        primary_branch_length = (authored_shoot_control(entity.get("plant_primary_branch_length"))
+                                 if primary_controls_supported else None)
+        from simulations.species.bloom_cohorts import supports_bloom_cohorts
+        bloom_density = (authored_shoot_control(entity.get("plant_bloom_density"))
+                         if supports_bloom_cohorts(entity) else None)
         # ``fascicled`` selects the shared-socket grammar; the explicit count
         # carries the biology.  This is deliberately independent of canopy
         # density so two-, three-, and five-needle pines can reuse the same
@@ -593,15 +663,27 @@ class PlantBlueprint:
                     "plant_branch_angle_gradient": branch_angle_gradient,
                     "plant_crown_openness": crown_openness,
                     "plant_leaf_spacing_bias": leaf_spacing_bias,
+                    "plant_leaf_attachment_angle": leaf_attachment_angle,
+                    **lateral_controls,
                     "plant_leaf_depth_gradient": leaf_depth_gradient,
                     "plant_fine_twig_density": fine_twig_density,
                     "plant_leaf_cluster_density": leaf_cluster_density,
                     "plant_apical_control": apical_control,
                     "plant_crown_taper": crown_taper,
                     "plant_trunk_girth": trunk_girth,
+                    "plant_trunk_straightness": trunk_straightness,
+                    "plant_primary_branch_density": primary_branch_density,
+                    "plant_primary_branch_length": primary_branch_length,
+                    "plant_bloom_density": bloom_density,
                 }[field_name],
             )
             for field_name in PLANT_ARCHITECTURE_RANGE_FIELDS
+            if field_name != "plant_trunk_straightness" or entity.get(field_name) not in (None, "", {}, [])
+            if field_name != "plant_leaf_attachment_angle" or leaf_attachment_angle is not None
+            if field_name not in lateral_controls or lateral_controls[field_name] is not None
+            if field_name != "plant_primary_branch_density" or primary_branch_density is not None
+            if field_name != "plant_primary_branch_length" or primary_branch_length is not None
+            if field_name != "plant_bloom_density" or bloom_density is not None
         }
 
         def architecture_category(field_name):
@@ -685,13 +767,417 @@ class PlantBlueprint:
             "longevity_class": str(entity.get("longevity_class") or ""),
             "life_history": life_history,
         }
+        from simulations.species.leaf_palette import leaf_palette
+        authored_leaf_palette = leaf_palette(entity.get("plant_leaf_palette"))
+        if authored_leaf_palette:
+            growth["leaf_palette"] = authored_leaf_palette
+        if scaled_tree_leaf_default:
+            growth["leaf_length_source"] = "runtime_tree_height_default"
+        from simulations.species.seasonal_rhizomes import seasonal_rhizome_profile
+        seasonal_rhizome = seasonal_rhizome_profile(entity.get('plant_shoot_profile'))
+        if (seasonal_rhizome and form == 'forb' and behaviour == 'rhizomatous_clonal'
+                and growth['plant_woodiness'] == 'herbaceous'):
+            growth['seasonal_rhizome_profile'] = seasonal_rhizome
+            growth['seasonal_rhizome_version'] = seasonal_rhizome['version']
+        from simulations.species.creeping_uprights import creeping_upright_profile
+        upright = creeping_upright_profile(entity.get('plant_shoot_profile'))
+        if upright and behaviour in {'stoloniferous_clonal', 'rhizomatous_clonal', 'creeping_prostrate'}:
+            growth['creeping_upright_profile'] = upright
+            growth['creeping_upright_version'] = upright['version']
+        from simulations.species.terminal_rosettes import terminal_rosette_profile
+        from simulations.species.offset_rosettes import offset_rosette_profile
+        offsets=offset_rosette_profile(entity.get('plant_shoot_profile'))
+        if offsets and form=='succulent' and behaviour=='basal_succulent_rosette':
+            growth['offset_rosette_profile']=offsets
+            growth['offset_rosette_version']=offsets['version']
+        terminal = terminal_rosette_profile(entity.get("plant_shoot_profile"))
+        if terminal and form in {"tree", "shrub", "succulent", "other_unknown"}:
+            growth["terminal_rosette_profile"] = terminal
+            growth["terminal_rosette_version"] = terminal["version"]
+        if is_tree:
+            growth["tree_leader_foliage_version"] = 1
+            subpattern = architecture_category("plant_branching_subpattern")
+            if subpattern == 'planar_foliage_sprays':
+                from simulations.species.planar_sprays import planar_spray_profile
+                spray = planar_spray_profile(entity.get('plant_shoot_profile'))
+                if spray and leaf_structure in {'needle_like','scale_like'}:
+                    growth['branching_subpattern'] = subpattern
+                    growth['branching_subpattern_version'] = spray['version']
+                    growth['planar_spray_version'] = spray['version']
+                    growth['planar_spray_profile'] = spray
+            if subpattern in {"decurrent_scaffold", "tiered_conifer", "pendant_branchlets"}:
+                growth["branching_subpattern"] = subpattern
+                growth["branching_subpattern_version"] = 1
+                if subpattern == 'tiered_conifer' and primary_branch_density is not None and primary_branch_density > 0:
+                    growth['branching_subpattern_version'] = 2
+                if subpattern == 'pendant_branchlets':
+                    from simulations.species.pendant_branchlets import PENDANT_BRANCHLET_VERSION
+                    growth['pendant_branchlet_version'] = PENDANT_BRANCHLET_VERSION
+            from simulations.species.woody_axes import woody_axes_profile
+            axes = woody_axes_profile(entity.get("plant_shoot_profile"))
+            if axes:
+                growth["woody_axes_profile"] = axes
+                growth["woody_axes_version"] = axes["version"]
+            if (growth["branching_rhythm"] == "rhythmic"
+                    and growth["crown_shape"] == "conical"
+                    and growth["shoot_distribution_grammar"]):
+                growth["young_conical_crown_version"] = 1
+        if form == "graminoid" and growth["plant_woodiness"] == "woody":
+            from simulations.species.woody_graminoid_shoots import GRAMMAR_VERSION
+            growth["woody_graminoid_grammar_version"] = GRAMMAR_VERSION
+        if (form == "graminoid" and growth["plant_woodiness"] != "woody"
+                and growth["leaf_attachment_pattern"] not in {"basal", "basal_tuft"}):
+            growth["graminoid_leaf_angle_grammar_version"] = 1
+        if (form == "forb" and growth["plant_woodiness"] == "herbaceous"
+                and behaviour in {"suckering_clonal", "rhizomatous_clonal", "stoloniferous_clonal"}
+                and growth["leaf_attachment_pattern"] == "along_stem"):
+            growth["clonal_forb_shoot_grammar_version"] = 1
+            growth["forb_leaf_placement_version"] = 1
+            from simulations.species.clonal_forb_profiles import clonal_forb_profile
+            shoot_profile = clonal_forb_profile(entity.get("plant_shoot_profile"))
+            if shoot_profile:
+                growth["clonal_forb_profile"] = shoot_profile
+                growth["clonal_forb_profile_version"] = shoot_profile["version"]
+            from simulations.species.leaf_development import LEAF_DEVELOPMENT_VERSION
+            growth["forb_leaf_development_version"] = LEAF_DEVELOPMENT_VERSION
+            leaf_upper = (entity.get("leaf_length") or {}).get("max_m") if isinstance(entity.get("leaf_length"), dict) else None
+            upper_scale = 1.45
+            if isinstance(leaf_upper, (int, float)) and not isinstance(leaf_upper, bool) and math.isfinite(leaf_upper) and leaf_upper > 0:
+                upper_scale = leaf_upper / max(.002, leaf_length)
+            growth["forb_leaf_length_upper_scale"] = max(.1, min(1.55, upper_scale))
+        if upper_bound_frond:
+            growth["leaf_length_source"] = "runtime_upper_bound_illustration_fraction"
+            growth["leaf_length_upper_bound_fraction"] = .65
+        if "trunk_straightness" in architecture_ranges:
+            growth["trunk_straightness"] = trunk_straightness
+        if primary_branch_density is not None:
+            growth["primary_branch_density"] = primary_branch_density
+        if primary_branch_length is not None:
+            growth["primary_branch_length"] = primary_branch_length
+        if bloom_density is not None:
+            growth["bloom_density"] = bloom_density
+        if leaf_attachment_angle is not None:
+            growth["leaf_attachment_angle"] = leaf_attachment_angle
+            growth["leaf_attachment_angle_version"] = 1
+            if (behaviour == "rhizomatous_clonal" and leaf_distribution == "terminal_cluster"
+                    and leaf_structure == "pinnately_compound"):
+                from simulations.species.pinnate_crowns import PINNATE_CROWN_VERSION
+                growth["pinnate_crown_version"] = PINNATE_CROWN_VERSION
+        for field, value in lateral_controls.items():
+            if value is not None:
+                growth[field.removeprefix("plant_")] = value
+                growth["lateral_shoot_geometry_version"] = LATERAL_SHOOT_VERSION
+        if entity.get("frond_pinna_arrangement"):
+            growth["frond_pinna_arrangement"] = str(entity["frond_pinna_arrangement"])
+        if form == "fern" and behaviour == "fern_fronding":
+            from simulations.species.fern_fronds import FERN_FROND_GRAMMAR_VERSION
+            growth["fern_frond_grammar_version"] = FERN_FROND_GRAMMAR_VERSION
+        if shape == "aquatic":
+            from simulations.species.floating_leaves import AQUATIC_ROSETTE_VERSION
+            from simulations.species.emergent_rosettes import emergent_rosette_profile
+            emergent = emergent_rosette_profile(entity.get("plant_shoot_profile"))
+            if emergent:
+                growth["emergent_rosette_profile"] = emergent
+                growth["emergent_rosette_version"] = emergent["version"]
+            else:
+                growth["aquatic_rosette_version"] = AQUATIC_ROSETTE_VERSION
+        if behaviour == "surface_covering":
+            from simulations.species.surface_growth import normalise_surface_profile, SURFACE_GRAMMAR_VERSION
+            growth["surface_growth_profile"] = normalise_surface_profile(entity.get("surface_growth_profile"))
+            # Carry authored population mass into the portable surface recipe.
+            # Keep existing surface bodies' small area proxy when absent.
+            biosphere = entity.get('biosphere_growth_profile')
+            if isinstance(biosphere, dict):
+                from simulations.species.surface_atmosphere import finite_number
+                density = finite_number(biosphere.get('carrying_biomass_kg_m2'))
+                if density is not None and density >= 0:
+                    growth['surface_biomass_kg_m2'] = min(20., density)
+            growth["max_height_m"] = (growth["surface_growth_profile"]["tuft_height_m"]
+                                      if growth["surface_growth_profile"]["thallus_form"] == "fruticose"
+                                      else growth["surface_growth_profile"]["thickness_m"])
+            growth["surface_grammar_version"] = SURFACE_GRAMMAR_VERSION
+            growth["shape"] = "lichen" if form == "lichen" else "moss"
+        from simulations.species.columnar_succulents import columnar_profile
+        columnar = columnar_profile(entity.get('plant_shoot_profile'))
+        if form == 'succulent' and behaviour == 'columnar_succulent' and columnar:
+            growth['columnar_profile'] = columnar
+            growth['columnar_version'] = columnar['version']
+            leaf_length = columnar['spine_size_m']
+            growth['leaf_length_m'] = leaf_length
+            height_data=entity.get('mature_height')
+            typical=height_data.get('typical_m') if isinstance(height_data,dict) else None
+            if (isinstance(typical,(int,float)) and not isinstance(typical,bool)
+                    and math.isfinite(typical) and .01 <= typical <= 100.):
+                growth['max_height_m'] = float(typical)
+                growth['columnar_height_source'] = 'authored_typical_height'
+        elif form == 'succulent' and behaviour == 'columnar_succulent':
+            growth['columnar_model_status'] = 'unresolved_missing_shoot_profile'
+        from simulations.species.root_growth import shallow_radial_profile
+        radial = shallow_radial_profile(entity.get('plant_root_profile'))
+        if radial and growth.get('root_architecture') == 'mixed':
+            growth['shallow_radial_profile'] = radial
         growth["root_profile"] = root_profile(growth)
+        from simulations.species.basal_fan_shoots import basal_fan_profile
+        fan_profile = basal_fan_profile(entity.get("plant_shoot_profile"))
+        if (fan_profile and form == "forb" and behaviour == "determinate_sympodial"
+                and growth["plant_woodiness"] == "herbaceous"
+                and growth["leaf_attachment_pattern"] == "mixed"):
+            growth["basal_fan_profile"] = fan_profile
+            leaf_length = fan_profile["basal_leaf_length_m"]
+            growth["leaf_length_m"] = leaf_length
+            growth["basal_fan_leaf_length_m"] = leaf_length
+        if (form == "forb" and behaviour == "rosette_short_internode"
+                and growth["leaf_attachment_pattern"] == "mixed"):
+            from simulations.species.rosette_shoots import ROSETTE_SHOOT_GRAMMAR_VERSION, rosette_shoot_profile
+            growth["rosette_shoot_grammar_version"] = ROSETTE_SHOOT_GRAMMAR_VERSION
+            rosette_profile = rosette_shoot_profile(entity.get("plant_shoot_profile"))
+            if rosette_profile is not None:
+                growth["rosette_shoot_profile"] = rosette_profile
+        if (form == 'forb' and behaviour == 'determinate_sympodial'
+                and growth['plant_woodiness'] == 'herbaceous'
+                and growth['leaf_attachment_pattern'] in {'along_stem', 'mixed'}):
+            from simulations.species.sympodial_herbs import sympodial_herb_profile
+            from simulations.species.flower_terminated_forks import fork_profile
+            fork=fork_profile(entity.get('plant_shoot_profile'))
+            if (fork and entity.get('plant_branching_subpattern')=='flower_terminated_forks'
+                    and growth['reproductive_structure']=='flower' and growth['flowering_position']=='terminal'):
+                growth['flower_fork_profile']=fork
+                growth['flower_fork_version']=fork['version']
+                growth['branching_subpattern']='flower_terminated_forks'
+                growth['forb_leaf_placement_version']=1
+            herb_profile = sympodial_herb_profile(entity.get('plant_shoot_profile'))
+            if herb_profile:
+                growth['sympodial_herb_profile'] = herb_profile
+                growth['sympodial_herb_version'] = herb_profile['version']
+                growth['forb_leaf_placement_version'] = 1
+            if growth['reproductive_structure']=='flower' and growth['flowering_position']=='terminal':
+                from simulations.species.cyme_herbs import cyme_herb_profile
+                cyme_profile=cyme_herb_profile(entity.get('plant_shoot_profile'))
+                if cyme_profile:
+                    growth['cyme_herb_profile']=cyme_profile
+                    growth['cyme_herb_version']=cyme_profile['version']
+                    growth['forb_leaf_placement_version']=1
+        from simulations.species.plant_reproduction import reproductive_profile
+        if (form=='forb' and behaviour=='rosette_short_internode'
+                and canonical_plant_growth_behaviour(entity.get('plant_growth_behaviour'))=='rosette_short_internode'
+                and growth['plant_woodiness']=='herbaceous'
+                and growth['leaf_attachment_pattern']=='basal_rosette'
+                and growth['reproductive_structure']=='panicle'):
+            from simulations.species.paniculate_rosettes import paniculate_rosette_profile
+            pan_rosette=paniculate_rosette_profile(entity.get('plant_shoot_profile'))
+            if pan_rosette:
+                growth['paniculate_rosette_profile']=pan_rosette
+                growth['paniculate_rosette_version']=pan_rosette['version']
+                growth['forb_leaf_placement_version']=1
+                # The basal attachment shortcut above resets legacy rosettes
+                # to 45 cm. This explicit metric recipe retains authored
+                # stature and the root fallback derived from that stature.
+                if mature_height is not None:
+                    growth['max_height_m']=max(.1,mature_height)
+                    growth['root_profile']=root_profile(growth)
+        if (form=='graminoid' and behaviour=='tussock_tillering'
+                and growth['plant_woodiness']=='herbaceous'
+                and growth['leaf_attachment_pattern'] in {'basal','basal_tuft'}
+                and growth['reproductive_structure']=='spike'):
+            from simulations.species.mixed_tillers import mixed_tiller_profile
+            mixed=mixed_tiller_profile(entity.get('plant_shoot_profile'))
+            if mixed:
+                growth['mixed_tiller_profile']=mixed
+                growth['mixed_tiller_version']=mixed['version']
+        if (form == 'graminoid' and behaviour == 'tussock_tillering'
+                and growth['plant_woodiness'] == 'herbaceous'
+                and growth['leaf_attachment_pattern'] == 'basal_tuft'
+                and growth['reproductive_structure'] == 'digitate_spike_cluster'):
+            from simulations.species.tufted_sedges import tufted_sedge_profile
+            sedge_profile = tufted_sedge_profile(entity.get('plant_shoot_profile'))
+            if sedge_profile:
+                growth['tufted_sedge_profile'] = sedge_profile
+                growth['tufted_sedge_version'] = sedge_profile['version']
+        seasonal_profile = reproductive_profile(entity.get("plant_reproductive_profile"))
+        if seasonal_profile is not None:
+            growth["reproductive_profile"] = seasonal_profile
+            if (is_tree and growth.get("shoot_distribution_grammar")
+                    and growth.get("leaf_phenology") in {"deciduous", "drought_deciduous"}
+                    and "leaf_out_start" in seasonal_profile):
+                growth["tree_leaf_season_version"] = 1
+            if is_climber and growth.get("leaf_attachment_pattern") == "along_stem":
+                growth["vine_organ_geometry_version"] = 1
+                if growth['plant_woodiness']=='woody':
+                    from simulations.species.vine_organs import branched_vine_profile
+                    vine_shoots=branched_vine_profile(entity.get('plant_shoot_profile'))
+                    if vine_shoots:
+                        growth['branched_vine_profile']=vine_shoots
+                        growth['branched_vine_version']=vine_shoots['version']
+        from simulations.species.inflorescences import inflorescence_profile
+        cluster_profile = inflorescence_profile(entity.get("plant_inflorescence_profile"))
+        expected_cluster = {"compound_umbel": "compound_umbel", "capitulum_cluster": "capitulum", "raceme": "flower", "umbellate_head": "flower"}.get(
+            (cluster_profile or {}).get("form"), "panicle")
+        if cluster_profile is not None and growth.get("reproductive_structure") == expected_cluster:
+            growth["inflorescence_profile"] = cluster_profile
+            if cluster_profile.get("form") == "umbellate_head":
+                growth["umbellate_head_version"] = cluster_profile["version"]
+        if (form == "forb" and behaviour == "rosette_short_internode"
+                and growth["plant_woodiness"] == "herbaceous"
+                and growth["leaf_attachment_pattern"] == "basal_rosette"
+                and (growth.get("inflorescence_profile") or {}).get("form") == "raceme"):
+            from simulations.species.rosette_racemes import rosette_raceme_profile
+            rosette_raceme = rosette_raceme_profile(entity.get("plant_shoot_profile"))
+            if rosette_raceme:
+                growth["rosette_raceme_profile"] = rosette_raceme
+                growth["rosette_raceme_version"] = rosette_raceme["version"]
+        if (form == "forb" and behaviour == "rosette_short_internode"
+                and growth["plant_woodiness"] == "herbaceous"
+                and growth["leaf_attachment_pattern"] == "basal_rosette"
+                and growth["flowering_position"] == "terminal"
+                and growth["reproductive_structure"] == "capitulum"):
+            from simulations.species.scape_rosettes import scape_rosette_profile
+            scape = scape_rosette_profile(entity.get("plant_shoot_profile"))
+            if scape:
+                growth["scape_rosette_profile"] = scape
+                growth["scape_rosette_version"] = scape["version"]
+        if (form == "forb" and behaviour == "rosette_short_internode"
+                and growth["plant_woodiness"] == "herbaceous"
+                and growth["leaf_attachment_pattern"] == "basal_rosette"
+                and growth["flowering_position"] == "lateral"
+                and growth["reproductive_structure"] == "flower"):
+            growth["lateral_rosette_scapes_version"] = 1
+        if (form == "forb" and growth["plant_woodiness"] == "herbaceous"
+                and behaviour == "unbranched_single_axis"
+                and shoot_dimorphism == "long_and_short_shoots"
+                and leaf_distribution == "mixed_long_short_shoots"):
+            from simulations.species.dimorphic_herbs import dimorphic_herb_profile
+            dimorphic_profile = dimorphic_herb_profile(entity.get("plant_shoot_profile"))
+            if dimorphic_profile:
+                growth["dimorphic_herb_profile"] = dimorphic_profile
+                growth["dimorphic_herb_profile_version"] = dimorphic_profile["version"]
+                growth["structural_raceme_version"] = 1
+                growth["forb_leaf_placement_version"] = 1
+        if (growth.get("clonal_forb_shoot_grammar_version") and seasonal_profile
+                and growth["reproductive_structure"] == "capitulum"
+                and growth["flowering_position"] == "terminal"):
+            growth["clonal_forb_reproduction_version"] = 1
+            if "leaf_out_start" in seasonal_profile:
+                growth["clonal_forb_leaf_season_version"] = 1
+        if (form == 'subshrub' and behaviour == 'branched_woody'
+                and growth['plant_woodiness'] == 'woody'
+                and growth['leaf_structure'] == 'pinnately_compound'):
+            from simulations.species.cushion_subshrubs import cushion_profile
+            cushion = cushion_profile(entity.get('plant_shoot_profile'))
+            if cushion:
+                growth['cushion_profile'] = cushion
+                growth['cushion_version'] = cushion['version']
+                growth['cushion_height_m'] = quantitative_plant_trait(
+                    entity.get('mature_height'), max_height, .01, max_height)
+        if (form == "subshrub" and behaviour == "iterative_indeterminate"
+                and lifespan in {"annual", "short_lived_perennial"}
+                and growth["leaf_attachment_pattern"] == "along_stem"
+                and growth["leaf_distribution"] == "along_shoot"
+                and growth["reproductive_structure"] == "capitulum"
+                and growth["flowering_position"] == "terminal"):
+            growth["short_lived_subshrub_shoot_version"] = 1
+            growth["forb_leaf_placement_version"] = 1
+        if (form == "forb" and behaviour == "iterative_indeterminate"
+                and growth["plant_woodiness"] == "herbaceous"
+                and growth["leaf_distribution"] == "along_shoot"):
+            from simulations.species.basal_herbs import basal_herb_profile
+            herb = basal_herb_profile(entity.get("plant_shoot_profile"))
+            if herb:
+                growth["basal_herb_profile"] = herb
+                growth["basal_herb_version"] = herb["version"]
+                if "upper_leaf_arrangement" in herb:
+                    growth["leaf_arrangement_transition_version"] = 1
+                growth["basal_herb_height_m"] = quantitative_plant_trait(
+                    entity.get("mature_height"), max_height, .1, max_height)
+                growth["forb_leaf_placement_version"] = 1
+        if (form == "subshrub" and behaviour == "iterative_indeterminate"
+                and growth["plant_woodiness"] == "woody"
+                and growth["leaf_distribution"] == "along_shoot"):
+            from simulations.species.basal_subshrubs import basal_subshrub_profile
+            basal = basal_subshrub_profile(entity.get("plant_shoot_profile"))
+            if basal:
+                growth["basal_subshrub_profile"] = basal
+                growth["basal_subshrub_version"] = basal["version"]
+                growth["basal_subshrub_height_m"] = quantitative_plant_trait(
+                    entity.get("mature_height"), max_height, .1, max_height)
+                growth["forb_leaf_placement_version"] = 1
+        if (form == "forb" and growth["plant_woodiness"] == "herbaceous"
+                and behaviour == "iterative_indeterminate"
+                and growth["reproductive_structure"] == "compound_umbel"
+                and growth["leaf_attachment_pattern"] == "along_stem"):
+            growth["umbellifer_forb_grammar_version"] = 1
+            growth["forb_leaf_placement_version"] = 1
+            from simulations.species.leaf_development import LEAF_DEVELOPMENT_VERSION
+            growth["forb_leaf_development_version"] = LEAF_DEVELOPMENT_VERSION
+            growth["forb_leaf_length_upper_scale"] = 1.25
+        if (form == "forb" and growth["plant_woodiness"] == "herbaceous"
+                and behaviour == "iterative_indeterminate"
+                and not growth.get("umbellifer_forb_grammar_version")):
+            growth["iterative_forb_cohort_version"] = 1
+        if growth.get("growth_behaviour") == "creeping_prostrate":
+            growth["creeping_grammar_version"] = 2
+            if is_shrub and growth["plant_woodiness"] == "woody":
+                from simulations.species.creeping_woody import creeping_woody_profile
+                woody_profile = creeping_woody_profile(entity.get("plant_shoot_profile"))
+                if woody_profile:
+                    growth["creeping_woody_profile"] = woody_profile
+                    growth["creeping_woody_profile_version"] = woody_profile["version"]
+                    growth["creeping_woody_height_m"] = quantitative_plant_trait(
+                        entity.get("mature_height"), max_height, .02, min(1., max_height))
+            if form == "forb" and growth["plant_woodiness"] == "herbaceous":
+                from simulations.species.creeping_herbs import creeping_herb_profile
+                creeping_profile = creeping_herb_profile(entity.get("plant_shoot_profile"))
+                if creeping_profile:
+                    if leaf_arrangement == "distichous":
+                        creeping_profile["version"] = max(3, creeping_profile["version"])
+                    growth["creeping_herb_profile"] = creeping_profile
+                    growth["creeping_herb_profile_version"] = creeping_profile["version"]
+                    growth["forb_leaf_placement_version"] = 1
+        if (is_shrub and behaviour == "branched_woody"
+                and growth["crown_shape"] in {"irregular", "spreading", "ovoid"}
+                and growth["lateral_axis_orientation"] in {"orthotropic", "plagiotropic", "mixed", "pendent"}):
+            growth["shrub_cane_grammar_version"] = 1
+            growth["shrub_height_m"] = quantitative_plant_trait(
+                entity.get("mature_height"), max_height, 0.1, max_height)
+            growth["shrub_height_source"] = "authored_typical_or_range_midpoint"
+            if leaf_arrangement == "fascicled":
+                growth["shrub_fascicle_grammar_version"] = 1
+            if growth["crown_shape"] == "spreading":
+                growth["shrub_crown_envelope_version"] = 1
+        if (growth.get("shrub_cane_grammar_version")
+                and form in {"shrub", "subshrub"}
+                and growth["plant_woodiness"] == "woody"
+                and growth["shoot_dimorphism"] == "long_and_short_shoots"
+                and growth["flowering_position"] in {"lateral", "mixed"}):
+            from simulations.species.woody_spurs import woody_spur_profile
+            spurs = woody_spur_profile(entity.get("plant_shoot_profile"))
+            if spurs:
+                growth["woody_spur_profile"] = spurs
+                growth["woody_spur_version"] = 1
+        from simulations.species.renewing_canes import renewing_cane_profile
+        renewing = renewing_cane_profile(entity.get('plant_shoot_profile'))
+        if (renewing and growth.get('shrub_cane_grammar_version')
+                and growth['plant_woodiness'] == 'woody'):
+            growth['renewing_cane_profile'] = renewing
+            growth['renewing_cane_version'] = renewing['version']
+        if form == 'moss' and behaviour == 'moss_mat':
+            from simulations.species.moss_turfs import moss_turf_profile
+            moss_profile = moss_turf_profile(entity.get('plant_shoot_profile'))
+            if moss_profile:
+                growth['moss_turf_profile'] = moss_profile
+                growth['moss_turf_version'] = moss_profile['version']
+                growth['max_height_m'] = moss_profile['shoot_length_m']
         from simulations.species.root_visuals import root_visual_profile
         growth["root_visual_profile"] = root_visual_profile(growth)
         flower_asset_ref = str(entity.get("plant_flower_module_ref") or "") or None
         fruit_asset_ref = str(entity.get("plant_fruit_module_ref") or "") or None
         flower_depicted_size = depicted_size(flower_anchor, flower_asset_ref)
         fruit_depicted_size = depicted_size(fruit_anchor, fruit_asset_ref)
+        if seasonal_profile:
+            flower_depicted_size = flower_depicted_size or seasonal_profile["flower_size_m"]
+            fruit_depicted_size = fruit_depicted_size or seasonal_profile["fruit_size_m"]
+        if growth.get("basal_fan_profile"):
+            flower_depicted_size = flower_depicted_size or fan_profile["flower_size_m"]
+            fruit_depicted_size = fruit_depicted_size or fan_profile["fruit_size_m"]
         modules = [
             # Life-form modules are present in the portable recipe but are
             # instantiated only when the corresponding growth grammar needs
@@ -711,12 +1197,31 @@ class PlantBlueprint:
                 length_m=0.16, radius_m=0.05, sockets=("tip",),
             ),
             PlantModule(
-                "stem_section", "stem_section", length_m=internode, radius_m=0.035,
+                "stem_section", "stem_section", length_m=internode,
+                radius_m=(growth["emergent_rosette_profile"]["petiole_radius_m"] if growth.get("emergent_rosette_profile")
+                          else growth["dimorphic_herb_profile"]["stem_radius_m"] if growth.get("dimorphic_herb_profile")
+                          else growth["creeping_woody_profile"]["stem_radius_m"] if growth.get("creeping_woody_profile")
+                          else growth["creeping_herb_profile"]["stem_radius_m"] if growth.get("creeping_herb_profile")
+                          else growth["clonal_forb_profile"]["stem_radius_m"] if growth.get("clonal_forb_profile")
+                          else growth['scape_rosette_profile']['scape_radius_m'] if growth.get('scape_rosette_version')
+                          else 0.0015 if growth.get('lateral_rosette_scapes_version')
+                          else growth['paniculate_rosette_profile']['stem_radius_m'] if growth.get('paniculate_rosette_version')
+                          else growth['flower_fork_profile']['stem_radius_m'] if growth.get('flower_fork_version')
+                          else growth['sympodial_herb_profile']['stem_radius_m'] if growth.get('sympodial_herb_version')
+                          else fan_profile["stem_radius_m"] if growth.get("basal_fan_profile") else 0.035),
                 asset_ref=str(entity.get("plant_stem_module_ref") or "") or None,
                 texture_set_ref=str(entity.get("plant_stem_texture_set_ref") or entity.get("plant_bark_texture_set_ref") or "") or None,
             ),
             PlantModule(
-                "branch_section", "branch_section", length_m=internode * 0.8, radius_m=0.022,
+                "branch_section", "branch_section", length_m=internode * 0.8,
+                radius_m=(growth["dimorphic_herb_profile"]["stem_radius_m"]*.65 if growth.get("dimorphic_herb_profile")
+                          else growth["creeping_woody_profile"]["stem_radius_m"]*.65 if growth.get("creeping_woody_profile")
+                          else growth["creeping_herb_profile"]["stem_radius_m"]*.65 if growth.get("creeping_herb_profile")
+                          else growth["clonal_forb_profile"]["stem_radius_m"]*.65 if growth.get("clonal_forb_profile")
+                          else growth['paniculate_rosette_profile']['stem_radius_m']*.65 if growth.get('paniculate_rosette_version')
+                          else growth['flower_fork_profile']['stem_radius_m'] if growth.get('flower_fork_version')
+                          else growth['sympodial_herb_profile']['stem_radius_m']*.65 if growth.get('sympodial_herb_version')
+                          else fan_profile["stem_radius_m"]*.65 if growth.get("basal_fan_profile") else 0.022),
                 asset_ref=str(entity.get("plant_branch_module_ref") or "") or None,
                 texture_set_ref=str(entity.get("plant_branch_texture_set_ref") or entity.get("plant_bark_texture_set_ref") or "") or None,
             ),
@@ -726,18 +1231,37 @@ class PlantBlueprint:
                 asset_ref=str(entity.get("plant_leaf_module_ref") or "") or None,
                 length_m=leaf_length,
                 radius_m=(
-                    0.06 if form == "succulent"
+                    growth['offset_rosette_profile']['leaf_width_m']*.5 if growth.get('offset_rosette_version')
+                    else
+                    growth['terminal_rosette_profile']['leaf_width_m']*.5 if growth.get('terminal_rosette_version')
+                    else growth['columnar_profile']['spine_size_m']*.5 if growth.get('columnar_version')
+                    else growth["creeping_woody_profile"]["leaf_width_m"]*.5 if growth.get("creeping_woody_profile")
+                    else 0.06 if form == "succulent"
                     else 0.001 if leaf_structure == "needle_like"
                     else 0.003 if leaf_structure == "scale_like"
                     else max(0.012, min(0.08, leaflet_width * 0.35)) if leaf_structure in {"pinnately_compound", "frond_like"}
-                    else 0.012
+                    else growth["dimorphic_herb_profile"]["leaf_width_m"]*.5 if growth.get("dimorphic_herb_profile")
+                    else growth["clonal_forb_profile"]["leaf_width_m"]*.5 if growth.get("clonal_forb_profile", {}).get("leaf_width_m")
+                    else growth["creeping_herb_profile"]["leaf_width_m"]*.5 if growth.get("creeping_herb_profile")
+                    else growth['paniculate_rosette_profile']['leaf_width_m']*.5 if growth.get('paniculate_rosette_version')
+                    else growth['flower_fork_profile']['leaf_width_m']*.5 if growth.get('flower_fork_version')
+                    else growth['sympodial_herb_profile']['leaf_width_m']*.5 if growth.get('sympodial_herb_version')
+                    else fan_profile["leaf_width_m"]*.5 if growth.get("basal_fan_profile") else 0.012
                 ),
                 sockets=("base",),
                 attachment_point=_tuple2(leaf_anchor.get("attachment_point")),
                 growth_axis=_tuple2(leaf_anchor.get("growth_vector") or leaf_anchor.get("growth_axis"), (0.0, -1.0)),
                 visual={
                     "leaf_structure": leaf_structure,
+                    **({'visual_unit':'spine_cluster','depicted_size_m':leaf_anchor.get('depicted_size_m')}
+                       if growth.get('columnar_version') and leaf_anchor.get('visual_unit') == 'spine_cluster' else {}),
                     "leaf_arrangement": leaf_arrangement,
+                    **({"frond_pinna_arrangement": growth["frond_pinna_arrangement"]}
+                       if "frond_pinna_arrangement" in growth else {}),
+                    **({"visual_unit": "pinnule", "depicted_size_m": leaf_anchor.get("depicted_size_m")}
+                       if leaf_structure == "frond_like" and leaf_anchor.get("visual_unit") == "pinnule" else {}),
+                    **({"visual_unit": "leaflet", "depicted_size_m": leaf_anchor.get("depicted_size_m")}
+                       if growth.get("pinnate_crown_version") and leaf_anchor.get("visual_unit") == "leaflet" else {}),
                     "leaf_division_order": leaf_division_order,
                     "leaflet_count": leaflet_count,
                     "leaflet_length_m": leaflet_length,
@@ -762,8 +1286,8 @@ class PlantBlueprint:
                 "flower",
                 "flower",
                 asset_ref=flower_asset_ref,
-                length_m=0.16,
-                radius_m=0.018,
+                length_m=(flower_depicted_size or 0.16) if (growth.get("shrub_cane_grammar_version") or growth.get("basal_fan_profile") or growth.get("aquatic_rosette_version") or growth.get("emergent_rosette_version") or growth.get("clonal_forb_reproduction_version") or growth.get("creeping_woody_profile_version") or growth.get("creeping_herb_profile_version") or growth.get("structural_raceme_version") or growth.get('sympodial_herb_version') or growth.get('flower_fork_version') or growth.get('paniculate_rosette_version') or growth.get('scape_rosette_version') or growth.get('lateral_rosette_scapes_version') or growth.get('columnar_version') or growth.get('terminal_rosette_version') or growth.get('offset_rosette_version')) else 0.16,
+                radius_m=flower_depicted_size*.5 if (growth.get("basal_fan_profile") or growth.get("creeping_woody_profile_version") or growth.get("creeping_herb_profile_version") or growth.get("structural_raceme_version") or growth.get('sympodial_herb_version') or growth.get('flower_fork_version') or growth.get('paniculate_rosette_version') or growth.get('lateral_rosette_scapes_version') or growth.get('columnar_version') or growth.get('terminal_rosette_version') or growth.get('offset_rosette_version')) and flower_depicted_size else 0.018,
                 sockets=("base",),
                 attachment_point=_tuple2(flower_anchor.get("attachment_point")),
                 growth_axis=_tuple2(flower_anchor.get("growth_vector") or flower_anchor.get("growth_axis"), (0.0, -1.0)),
@@ -772,17 +1296,145 @@ class PlantBlueprint:
             PlantModule(
                 "fruit", "fruit",
                 asset_ref=fruit_asset_ref,
-                length_m=0.1, radius_m=0.025, sockets=("base",),
+                length_m=(fruit_depicted_size or 0.1) if (growth.get("shrub_cane_grammar_version") or growth.get("basal_fan_profile") or growth.get("emergent_rosette_version") or growth.get("clonal_forb_reproduction_version") or growth.get("creeping_woody_profile_version") or growth.get("structural_raceme_version") or growth.get('sympodial_herb_version') or growth.get('flower_fork_version') or growth.get('paniculate_rosette_version') or growth.get('scape_rosette_version') or growth.get('lateral_rosette_scapes_version') or growth.get('columnar_version') or growth.get('terminal_rosette_version')) else 0.1,
+                radius_m=fruit_depicted_size*.5 if (growth.get("basal_fan_profile") or growth.get("creeping_woody_profile_version") or growth.get("creeping_herb_profile_version") or growth.get("structural_raceme_version") or growth.get('sympodial_herb_version') or growth.get('flower_fork_version') or growth.get('paniculate_rosette_version') or growth.get('lateral_rosette_scapes_version') or growth.get('columnar_version') or growth.get('terminal_rosette_version')) and fruit_depicted_size else 0.025, sockets=("base",),
                 attachment_point=_tuple2(fruit_anchor.get("attachment_point")),
                 growth_axis=_tuple2(fruit_anchor.get("growth_vector") or fruit_anchor.get("growth_axis"), (0.0, -1.0)),
                 visual={"depicted_size_m": fruit_depicted_size} if fruit_depicted_size else {},
             ),
         ]
+        if growth.get("basal_subshrub_profile") or growth.get("basal_herb_profile"):
+            from dataclasses import replace
+            p = growth.get("basal_subshrub_profile") or growth["basal_herb_profile"]
+            modules = [replace(m, radius_m=p["stem_radius_m"] * (1 if m.id == "stem_section" else .5))
+                       if m.id in {"stem_section", "branch_section"} else
+                       replace(m, radius_m=p["leaf_width_m"] * .5) if m.id == "leaf" else
+                       replace(m, length_m=flower_depicted_size or .02, radius_m=(flower_depicted_size or .02)*.5) if m.id == "flower" else
+                       replace(m, length_m=fruit_depicted_size or .02, radius_m=(fruit_depicted_size or .02)*.5) if m.id == "fruit" else m
+                       for m in modules]
+        if growth.get("rosette_raceme_profile"):
+            from dataclasses import replace
+            radius = growth["rosette_raceme_profile"]["stem_radius_m"]
+            modules = [replace(m, radius_m=radius) if m.id == "stem_section" else
+                       replace(m, length_m=flower_depicted_size, radius_m=flower_depicted_size * .5)
+                       if m.id == "flower" and flower_depicted_size else
+                       replace(m, length_m=fruit_depicted_size, radius_m=fruit_depicted_size * .5)
+                       if m.id == "fruit" and fruit_depicted_size else m
+                       for m in modules]
+        if growth.get('cyme_herb_version'):
+            from dataclasses import replace
+            p=growth['cyme_herb_profile']
+            modules=[replace(module,radius_m=p['shoot_radius_m'] if module.id=='stem_section' else p['shoot_radius_m']*.4)
+                     if module.id in {'stem_section','branch_section'} else
+                     replace(module,radius_m=p['leaf_width_m']*.5) if module.id=='leaf' else
+                     replace(module,length_m=(flower_depicted_size or .0021) if module.id=='flower' else (fruit_depicted_size or .0032),
+                             radius_m=((flower_depicted_size or .0021) if module.id=='flower' else (fruit_depicted_size or .0032))*.5)
+                     if module.id in {'flower','fruit'} else module for module in modules]
+        if (form == 'forb' and behaviour == 'rhizomatous_clonal'
+                and growth['plant_woodiness'] == 'herbaceous' and growth['flowering_position'] == 'terminal'
+                and growth['reproductive_structure'] == 'flower' and growth['leaf_attachment_pattern'] == 'along_stem'):
+            from simulations.species.rhizome_racemes import rhizome_raceme_profile
+            p = rhizome_raceme_profile(entity.get('plant_shoot_profile'))
+            if p:
+                from dataclasses import replace
+                growth['rhizome_raceme_profile'] = p
+                growth['rhizome_raceme_version'] = p['version']
+                modules = [replace(m,radius_m=p['stem_radius_m']) if m.id=='stem_section' else
+                           replace(m,radius_m=p['rhizome_radius_m']) if m.id=='branch_section' else
+                           replace(m,radius_m=p['leaf_width_m']*.5) if m.id=='leaf' else
+                           replace(m,length_m=p['flower_size_m'],radius_m=p['flower_size_m']*.5) if m.id=='flower' else
+                           replace(m,length_m=p['capsule_length_m'],radius_m=.002) if m.id=='fruit' else m for m in modules]
+        if growth.get('woody_axes_profile',{}).get('leaf_width_m'):
+            from dataclasses import replace
+            width=growth['woody_axes_profile']['leaf_width_m']
+            modules=[replace(m,radius_m=width*.5) if m.id=='leaf' else m for m in modules]
+        if growth.get('mixed_tiller_version'):
+            from dataclasses import replace
+            p=growth['mixed_tiller_profile']
+            modules=[replace(m,radius_m=p['culm_radius_m']) if m.id in {'stem_section','branch_section'}
+                     else replace(m,radius_m=p['leaf_width_m']*.5) if m.id=='leaf'
+                     else replace(m,length_m=p['spike_length_m'],radius_m=p['spike_width_m']*.5,
+                                  visual={**m.visual,'visual_unit':'whole_spike'}) if m.id=='flower'
+                     else m for m in modules]
+        if growth.get('tufted_sedge_version'):
+            from dataclasses import replace
+            p = growth['tufted_sedge_profile']
+            radii = {'stem_section':p['culm_radius_m'],'branch_section':p['culm_radius_m']*.35,'leaf':p['leaf_width_m']*.5}
+            modules = [replace(module,radius_m=radii[module.id]) if module.id in radii else module for module in modules]
+            modules = [replace(module,length_m=p['spikelet_length_m'],radius_m=p['spikelet_width_m']*.5,
+                               visual={**module.visual,'visual_unit':'multi_floret_spikelet'})
+                       if module.id in {'flower','fruit'} else module for module in modules]
+        if growth.get("woody_spur_version"):
+            from dataclasses import replace
+            p = growth["woody_spur_profile"]
+            radii = {"stem_section":p["stem_radius_m"], "branch_section":p["branch_radius_m"], "leaf":p["leaf_width_m"]*.5}
+            modules = [replace(m, radius_m=radii[m.id]) if m.id in radii else m for m in modules]
+        calyx = (seasonal_profile or {}).get("persistent_calyx_display")
+        if calyx and growth.get("woody_spur_version"):
+            growth["persistent_calyx_version"] = 1
+            calyx_anchor = (entity.get("plant_module_anchors") or {}).get("calyx", {})
+            modules.append(PlantModule("calyx", "calyx",
+                asset_ref=str(entity.get("plant_calyx_module_ref") or "") or None,
+                length_m=calyx["calyx_size_m"], radius_m=calyx["calyx_size_m"]*.5,
+                attachment_point=tuple(calyx_anchor.get("attachment_point", (.5,.5))),
+                visual={"depicted_size_m":calyx["calyx_size_m"]}))
+        if behaviour == "surface_covering":
+            body_module = "moss_patch" if form == "moss" else "thallus"
+            modules = [
+                PlantModule(body_module, body_module, sockets=("surface", "apothecium")),
+                PlantModule("apothecium", "apothecium", sockets=("surface",)),
+            ]
+            if growth["surface_growth_profile"]["thallus_form"] == "fruticose":
+                modules.extend(PlantModule(kind, kind, sockets=("surface",)) for kind in
+                               ("pseudopodetium", "phyllocladium", "cephalodium", "soralium"))
+        if growth.get('moss_turf_version'):
+            from dataclasses import replace
+            moss_profile = growth['moss_turf_profile']
+            modules = [replace(m, radius_m=moss_profile['stem_radius_m'] * (1. if m.kind == 'stem_section' else .65))
+                       if m.kind in {'stem_section', 'branch_section'} else
+                       replace(m, radius_m=moss_profile['leaf_width_m'] * .5) if m.kind == 'leaf' else m
+                       for m in modules if m.id in {'stem_section', 'branch_section', 'leaf'}]
+        if growth.get('pendant_branchlet_version'):
+            from dataclasses import replace
+            modules = [replace(m, length_m=flower_depicted_size, radius_m=flower_depicted_size*.12)
+                       if m.id == 'flower' and flower_depicted_size else m for m in modules]
+        if growth.get('seasonal_rhizome_version'):
+            from dataclasses import replace
+            p = growth['seasonal_rhizome_profile']
+            modules = [replace(module, length_m=flower_depicted_size or .025,
+                               radius_m=(flower_depicted_size or .025)*.5)
+                       if module.id == 'flower' else
+                       replace(module, length_m=p['fruit_head_size_m'],
+                               radius_m=p['fruit_head_size_m']*.5,
+                               visual={**module.visual, 'visual_unit': 'achene_head'})
+                       if module.id == 'fruit' else module for module in modules]
+        if growth.get('creeping_upright_version'):
+            from dataclasses import replace
+            p = growth['creeping_upright_profile']
+            modules = [replace(module, radius_m=p['leaf_width_m']*.5)
+                       if module.id == 'leaf' else module for module in modules]
+            anchor = module_anchors.get('strobilus', {})
+            anchor = anchor if isinstance(anchor, dict) else {}
+            modules.append(PlantModule('strobilus', 'strobilus',
+                asset_ref=str(entity.get('plant_strobilus_module_ref') or '') or None,
+                length_m=p['strobilus_length_m'], radius_m=p['strobilus_width_m']*.5,
+                sockets=('base',), attachment_point=_tuple2(anchor.get('attachment_point')),
+                growth_axis=_tuple2(anchor.get('growth_vector') or anchor.get('growth_axis'), (0., -1.)),
+                visual={'depicted_size_m': p['strobilus_length_m']}))
+        if growth.get('planar_spray_version') and growth.get('shoot_dimorphism')=='axial_and_peripheral_shoots':
+            variant = (leaf_anchor.get('variants') or {}).get('axial') or {}
+            modules.append(PlantModule('axial_leaf','leaf',asset_ref=variant.get('asset_ref'),
+                length_m=growth['planar_spray_profile']['axial_leaf_length_m'],
+                radius_m=growth['planar_spray_profile']['axial_leaf_width_m']*.5,
+                attachment_point=_tuple2(variant.get('attachment_point'),(.5,.9)),
+                visual={'visual_unit':'appressed_scale_leaf_shoot','depicted_size_m':variant.get('depicted_size_m',.06)}))
         return cls(
             species_id=species_id,
             display_name=display_name,
             modules=modules,
             growth=growth,
+            **({"root_module_id": body_module} if behaviour == "surface_covering" else
+               {"root_module_id": "stem_section"} if growth.get('moss_turf_version') else {}),
             lod_policy={"0": "skeleton", "1": "major_leaves", "2": "full"},
         )
 
@@ -928,7 +1580,7 @@ class PlantAssetStore:
     def load_blueprint(self, species_id: str) -> PlantBlueprint | None:
         path = self.blueprint_path(species_id)
         try:
-            with gzip.open(path, "rt", encoding="utf-8") as handle:
+            with asset_files.open_gzip_text(path) as handle:
                 return PlantBlueprint.from_dict(json.load(handle))
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return None

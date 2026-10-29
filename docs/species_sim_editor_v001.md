@@ -1,5 +1,7 @@
 # Species Editor v001
 
+Historical species-run previews and evidence files were removed during the 2026-10-13 artifact cleanup. Statements below about retained evidence describe the original run; those artifact paths are no longer available. Authored species and assets remain in the project.
+
 ## Purpose
 
 Species Editor is the visual calibration workspace between a new plant Species

@@ -3,6 +3,7 @@ import unittest
 import pygame
 
 from simulations.person.person_simulation import PersonSimulation
+from world.personality import birth_baseline
 
 
 class _WorldStub:
@@ -28,7 +29,6 @@ class PersonSimulationTests(unittest.TestCase):
             "type": "person",
             "pretty_name": "Test Person",
             "affiliated_institutions": ["institution_test_lab"],
-            "knowledge_records": [{"entity": "recipe_simple_cooked_meal", "interest": 0.8}],
         }
         fixtures = {
             self.person["id"]: self.person,
@@ -58,11 +58,13 @@ class PersonSimulationTests(unittest.TestCase):
             "location_person_test_kitchen": {
                 "id": "location_person_test_kitchen", "type": "location",
                 "ownership_records": ["ownership_test_kitchen"],
+                "operated_by": ["producer_person_test_kitchen"],
             },
             "producer_person_test_kitchen": {
                 "id": "producer_person_test_kitchen", "type": "producer",
                 "production_technologies": ["tech_cooking", "tech_electric_oven"],
                 "assigned_components": ["component_kitchen_sink", "component_electric_oven"],
+                "produced_items": ["item_cooked_meal"],
                 "production_lines": [{
                     "product_id": "item_cooked_meal",
                     "recipe_ids": ["recipe_simple_cooked_meal"],
@@ -83,7 +85,19 @@ class PersonSimulationTests(unittest.TestCase):
             },
         }
         self.world = _WorldStub(fixtures)
+        self._know({"member": "recipe_simple_cooked_meal", "interest": 0.8})
         self.sim = PersonSimulation(self.world, self.person["id"], year=2400)
+
+    def _know(self, *records, person=None):
+        """Give a fixture person a personal knowledge collection holding these member records."""
+        person = person or self.person
+        collection_id = f"coll_knowledge_{person['id']}"
+        self.world.entities[collection_id] = {
+            "id": collection_id, "_dataset": "collections", "collection_class": "personal_knowledge",
+            "includes": [record["member"] for record in records],
+            "member_records": [dict(record) for record in records],
+        }
+        person["knowledge_collection"] = collection_id
 
     def test_starts_on_six_point_map_with_autonomous_queue(self):
         self.assertEqual("autonomous", self.sim.control_mode)
@@ -277,7 +291,7 @@ class PersonSimulationTests(unittest.TestCase):
         self.assertEqual(0, self.sim.runtime_inventory.get("item_cooked_meal", 0))
         self.assertEqual(5, self.sim.container_inventories["food"]["item_food_ingredients"])
         self.assertEqual(
-            ["consumed as food", "produced by recipe", "consumed by recipe", "collected for recipe"],
+            ["consumed as food", "produced by recipe", "consumed by recipe", "taken from store"],
             [entry["reason"] for entry in self.sim.inventory_history[:4]],
         )
         self.assertEqual("completed", self.sim.decision_history[0]["lifecycle_state"])
@@ -335,7 +349,7 @@ class PersonSimulationTests(unittest.TestCase):
         self.assertEqual("person record", model["wishes"][0]["source"])
         self.assertEqual("Build a secure home", model["goals"][0]["label"])
 
-    def test_personality_panel_reads_authored_big_five_and_marks_missing_axes(self):
+    def test_personality_panel_reads_authored_big_five_and_draws_missing_axes_from_birth(self):
         self.person.update({
             "big_five_openness": 72,
             "big_five_conscientiousness": 0.81,
@@ -349,7 +363,8 @@ class PersonSimulationTests(unittest.TestCase):
         self.assertAlmostEqual(0.72, axes["openness"]["value"])
         self.assertTrue(axes["conscientiousness"]["authored"])
         self.assertFalse(axes["neuroticism"]["authored"])
-        self.assertEqual(0.5, axes["neuroticism"]["value"])
+        self.assertEqual("birth", axes["neuroticism"]["baseline_source"])
+        self.assertAlmostEqual(birth_baseline(self.person["id"], "neuroticism"), axes["neuroticism"]["value"])
         self.assertFalse(model["all_authored"])
 
     def test_knowledge_panel_groups_any_card_type_and_sorts_by_interest(self):
@@ -361,11 +376,11 @@ class PersonSimulationTests(unittest.TestCase):
             known_place["id"]: known_place,
             known_belief["id"]: known_belief,
         })
-        self.person["knowledge_records"] = [
-            {"entity": "loc_harbor", "interest": 0.42, "familiarity": 0.9},
-            {"entity": "person_friend", "interest": 0.91, "familiarity": 0.8},
-            {"entity": "idea_pacifism", "interest": 0.76, "conviction": 0.94},
-        ]
+        self._know(
+            {"member": "loc_harbor", "interest": 0.42, "familiarity": 0.9},
+            {"member": "person_friend", "interest": 0.91, "familiarity": 0.8},
+            {"member": "idea_pacifism", "interest": 0.76, "conviction": 0.94},
+        )
 
         model = self.sim.get_knowledge_panel_model()
         grouped = {category["label"]: category["entries"] for category in model["categories"]}
@@ -409,11 +424,7 @@ class PersonSimulationTests(unittest.TestCase):
             },
         }
         self.world.entities[belief["id"]] = belief
-        self.person["knowledge_records"] = [{
-            "entity": belief["id"],
-            "interest": 0.9,
-            "conviction": 0.97,
-        }]
+        self._know({"member": belief["id"], "interest": 0.9, "conviction": 0.97})
         task_id = self.sim.assign_external_task(
             "target",
             label="Fire on enemy",
@@ -489,12 +500,8 @@ class PersonSimulationTests(unittest.TestCase):
         self.person.update({
             "simulation_site": "location_known_site",
             "site_position": [-4, 0],
-            "knowledge_records": [{
-                "entity": "location_known_building",
-                "navigation_knowledge": "route",
-                "familiarity": 0.9,
-            }],
         })
+        self._know({"member": "location_known_building", "navigation_knowledge": "route", "familiarity": 0.9})
         self.world.entities.update({
             "location_known_site": {
                 "id": "location_known_site", "type": "location",
@@ -519,12 +526,8 @@ class PersonSimulationTests(unittest.TestCase):
         self.person.update({
             "simulation_site": "location_known_site",
             "site_position": [-4, 0],
-            "knowledge_records": [{
-                "entity": "location_known_building",
-                "navigation_knowledge": "route",
-                "familiarity": 0.9,
-            }],
         })
+        self._know({"member": "location_known_building", "navigation_knowledge": "route", "familiarity": 0.9})
         self.world.entities.update({
             "location_known_site": {
                 "id": "location_known_site", "type": "location",
@@ -554,12 +557,8 @@ class PersonSimulationTests(unittest.TestCase):
             "site_position": [0, 0],
             "big_five_extraversion": 0.7,
             "big_five_agreeableness": 0.7,
-            "knowledge_records": [{
-                "entity": "location_direction_goal",
-                "navigation_knowledge": "direction",
-                "direction_hint": [1, 0],
-            }],
         })
+        self._know({"member": "location_direction_goal", "navigation_knowledge": "direction", "direction_hint": [1, 0]})
         self.world.entities.update({
             "location_direction_site": {
                 "id": "location_direction_site", "type": "location",
@@ -570,9 +569,12 @@ class PersonSimulationTests(unittest.TestCase):
             "person_guide": {
                 "id": "person_guide", "type": "person", "pretty_name": "Local Guide",
                 "site_position": [3, 2],
-                "knowledge_records": [{"entity": "location_direction_goal", "navigation_knowledge": "route"}],
             },
         })
+        self._know(
+            {"member": "location_direction_goal", "navigation_knowledge": "route"},
+            person=self.world.entities["person_guide"],
+        )
         sim = PersonSimulation(self.world, self.person["id"], year=2400)
 
         self.assertTrue(sim._begin_knowledge_navigation((16.0, 0.0), "location_direction_goal"))

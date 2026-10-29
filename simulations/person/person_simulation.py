@@ -1,3 +1,4 @@
+import copy
 import heapq
 import math
 
@@ -12,7 +13,18 @@ from simulations.person.person_assets import (
     placeable_asset_catalog,
 )
 from simulations.person.person_genetics import appearance_from_person
+from simulations.person.person_knowledge import PERSONAL_KNOWLEDGE, knowledge_collection, knowledge_records
 from world.item_categories import resolve_category_labels
+from world.need_tags import brief, explain, most_direct, need_links, need_tag_index
+from world.personality import (
+    action_index,
+    character,
+    exclusion,
+    label as trait_label,
+    person_traits,
+    personality,
+    trait_index,
+)
 from world.ownership_resolver import OwnershipResolver
 from world.year_utils import parse_year
 
@@ -120,6 +132,7 @@ class PersonSimulation:
             "position": (-12.0, -6.0),
             "color": (102, 145, 196),
             "need": "rest",
+            "asset_id": "item_bed",
             "maslow_tier": "physiological",
             "duration": 5.0,
             "tags": ("Rest",),
@@ -144,8 +157,6 @@ class PersonSimulation:
             "maslow_tier": "physiological",
             "duration": 5.0,
             "asset_id": "location_person_test_kitchen",
-            "producer_id": "producer_person_test_kitchen",
-            "recipe_id": "recipe_simple_cooked_meal",
             "tags": ("Eating Comfort",),
         },
         {
@@ -245,6 +256,15 @@ class PersonSimulation:
         # yet. Left as a documented stub rather than guessed at.
         self.habits = []
 
+        # Need satisfaction (docs/person_simulation_concept_v001.md section 5):
+        # where things really are in this run, and what the person learned
+        # about them, staged until save_learned_knowledge().
+        self.runtime_seconds = 0.0
+        self.spots = {}
+        self._thing_serial = 0
+        self.learned_beliefs = {}
+        self._need_index_cache = None
+
         self.control_mode = self.CONTROL_AUTONOMOUS
         self.position = [0.0, 0.0]
         self.move_speed_m_per_second = 3.2
@@ -268,6 +288,11 @@ class PersonSimulation:
         self.container_inventories = {}
         self.inventory_history = []
         self.decision_history = []
+        # Goals as the task panel shows them: one episode per pursuit of a
+        # need or duty, with every attempt made in it (_track_goal).
+        self.goal_episodes = []
+        # Decisions the person's character excludes, refused once each.
+        self._refused_task_ids = set()
         self.last_task_comparison = []
         self._task_serial = 0
         self.direct_target = None
@@ -280,8 +305,12 @@ class PersonSimulation:
         self.asset_palette = placeable_asset_catalog(self.TEST_POINT_DEFINITIONS)
         self.placement_mode = False
         self.placement_selected_asset_id = None
+        # Whose runtime this is: a person made in the editor later has none.
+        self._person_runtime_loaded_for = person_entity_id
+        self._pending_navigation_action = None
         self._load_site_model()
         self._load_authored_inventories()
+        self._load_spots()
         self._refresh_job_point_label()
         self._load_authored_task_allocations()
         self._fill_autonomous_queue()
@@ -536,8 +565,7 @@ class PersonSimulation:
         if event.type != pygame.KEYDOWN:
             return
         if self.person_view == self.VIEW_EDITOR:
-            if event.key == pygame.K_ESCAPE:
-                self.set_person_view(self.VIEW_SIMULATION)
+            self._handle_editor_key(event)
             return
         if event.key == pygame.K_ESCAPE:
             if self.placement_mode:
@@ -548,6 +576,38 @@ class PersonSimulation:
             if index < len(self.asset_palette):
                 self.select_asset_for_placement(self.asset_palette[index]["id"])
 
+    def _handle_editor_key(self, event):
+        from simulations.person import person_editor as editor
+        state = self._ensure_person_editor()
+        if event.key == pygame.K_ESCAPE:
+            if state.get("focus"):
+                state["focus"] = None
+            else:
+                self.set_person_view(self.VIEW_SIMULATION)
+        elif state.get("focus") is None:
+            return
+        elif event.key == pygame.K_BACKSPACE:
+            editor.erase_text(state, self.world_model)
+        elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_TAB):
+            state["focus"] = None
+        else:
+            editor.type_text(state, getattr(event, "unicode", ""), self.world_model)
+        self._follow_editor_draft()
+
+    def handle_pre_camera_event(self, event):
+        """In the editor the wheel scrolls the list under the pointer, never the camera."""
+        if self.person_view != self.VIEW_EDITOR:
+            return False
+        if event.type == pygame.MOUSEWHEEL:
+            from simulations.person.person_editor import scroll
+            position = pygame.mouse.get_pos()
+            for hitbox in reversed(self._person_editor_hitboxes):
+                if hitbox.get("kind") == "scroll_area" and hitbox["rect"].collidepoint(position):
+                    scroll(self._ensure_person_editor(), hitbox["key"], -3 * int(getattr(event, "y", 0)))
+                    break
+            return True
+        return False
+
     def update(self, dt):
         if self.person_view == self.VIEW_EDITOR:
             return
@@ -555,6 +615,9 @@ class PersonSimulation:
 
     def set_person_view(self, view):
         if view not in {self.VIEW_SIMULATION, self.VIEW_EDITOR}:
+            return False
+        if view == self.VIEW_SIMULATION and (self.person_editor or {}).get("is_new"):
+            self.person_editor["status"] = "Save the new person before simulating them."
             return False
         self.person_view = view
         if view == self.VIEW_EDITOR:
@@ -567,8 +630,26 @@ class PersonSimulation:
     def _ensure_person_editor(self):
         if self.person_editor is None:
             from simulations.person.person_editor import new_person_editor_state
-            self.person_editor = new_person_editor_state(self.get_person())
+            self.person_editor = new_person_editor_state(self.get_person(), self.world_model)
         return self.person_editor
+
+    def start_new_person(self, birth_location=None, seed=None):
+        """Open the editor on a person not yet made; Save writes them."""
+        from simulations.person.person_editor import new_person_state
+        self.person_editor = new_person_state(self.world_model, self.year, birth_location, seed)
+        self.person_view = self.VIEW_EDITOR
+        self._follow_editor_draft()
+        return True
+
+    def _follow_editor_draft(self):
+        """A new person's id comes from their name; the simulation follows it until they are saved."""
+        state = self.person_editor
+        if state is not None and state.get("is_new"):
+            self.person_entity_id = state["draft"].get("id")
+
+    def set_editor_step(self, step_id):
+        from simulations.person.person_editor import set_step
+        return set_step(self._ensure_person_editor(), step_id)
 
     def set_person_editor_hitboxes(self, hitboxes):
         self._person_editor_hitboxes = list(hitboxes or [])
@@ -586,7 +667,8 @@ class PersonSimulation:
         return select_clothing(self._ensure_person_editor(), clothing_id)
 
     def get_person_editor_clothing(self):
-        clothing_id = self._ensure_person_editor().get("working_clothing_id")
+        from simulations.person.person_editor import working_clothing_id
+        clothing_id = working_clothing_id(self._ensure_person_editor())
         return self.get_person(clothing_id) if clothing_id else None
 
     def _equipped_clothing_entity(self, person):
@@ -597,30 +679,73 @@ class PersonSimulation:
         return self.get_person(clothing_id) if clothing_id else None
 
     def save_person_editor(self):
+        """Write the editor's draft: a new person whole, a stored one field by field."""
+        from simulations.person.person_editor import mark_saved, save_plan
         state = self._ensure_person_editor()
-        person = self.get_person()
-        if not isinstance(person, dict):
-            state["status"] = "This person is unavailable in the repository."
+        plan = save_plan(state, self.world_model)
+        if isinstance(plan, str):
+            state["status"] = plan
             return False
-        person["genetic_dna"] = state["working_dna"]
-        clothing_id = state.get("working_clothing_id")
-        person["equipped_clothing"] = [clothing_id] if clothing_id else []
         loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
-        if loader is not None and not loader.persist_entity_fields(person, ("genetic_dna", "equipped_clothing")):
-            state["status"] = "Could not save appearance to the ontology."
-            return False
+        for entity, fields in plan:
+            if fields is None:
+                if loader is None or not hasattr(loader, "persist_entity") or not loader.persist_entity(entity):
+                    state["status"] = f"Could not save {entity.get('id')} to the repository."
+                    return False
+                continue
+            stored = self.world_model.get_entity(entity["id"]) if self.world_model is not None else None
+            if not isinstance(stored, dict):
+                state["status"] = "This person is unavailable in the repository."
+                return False
+            for field in fields:
+                if entity.get(field) is None:
+                    stored.pop(field, None)
+                else:
+                    stored[field] = copy.deepcopy(entity[field])
+            if loader is not None and not loader.persist_entity_fields(stored, fields):
+                state["status"] = "Could not save the person to the ontology."
+                return False
         if self.world_model is not None and hasattr(self.world_model, "mark_repository_changed"):
             self.world_model.mark_repository_changed()
-        state["original_dna"] = state["working_dna"]
-        state["original_clothing_id"] = clothing_id
-        state["dirty"] = False
-        state["status"] = "Saved DNA and clothing to the live person record."
+        was_new = state["is_new"]
+        mark_saved(state)
+        self.person_entity_id = state["draft"]["id"]
+        state["status"] = (
+            f"Saved {state['draft'].get('pretty_name')} as {self.person_entity_id}."
+            if was_new else "Saved the changes to the person."
+        )
         return True
 
     def revert_person_editor(self):
         from simulations.person.person_editor import revert_person_editor
-        revert_person_editor(self._ensure_person_editor(), self.person_entity_id)
+        revert_person_editor(self._ensure_person_editor(), self.world_model)
+        self._follow_editor_draft()
         return True
+
+    def _editor_click(self, hitbox):
+        from simulations.person.person_editor import click
+        state = self._ensure_person_editor()
+        action = click(state, hitbox, self.world_model, self.year)
+        if action == "save":
+            self.save_person_editor()
+        elif action == "revert":
+            self.revert_person_editor()
+        elif action == "new":
+            self.start_new_person(state["draft"].get("birth_location"))
+        elif action == "simulation" and not state["is_new"]:
+            if self._person_runtime_loaded_for != self.person_entity_id:
+                # Made here: the runtime was never loaded for them, so they get their own tab.
+                self._pending_navigation_action = {
+                    "id": "knowledge_launch_mode", "entity_id": self.person_entity_id, "launch_mode": "person",
+                }
+            else:
+                self.set_person_view(self.VIEW_SIMULATION)
+        self._follow_editor_draft()
+
+    def consume_pending_navigation_action(self):
+        action = self._pending_navigation_action
+        self._pending_navigation_action = None
+        return action
 
     def _update_runtime(self, dt):
         try:
@@ -630,6 +755,7 @@ class PersonSimulation:
         if dt <= 0.0:
             return
 
+        self.runtime_seconds += dt
         self._decay_needs(dt)
         if self.control_mode == self.CONTROL_DIRECT:
             self._update_direct_control(dt)
@@ -735,10 +861,583 @@ class PersonSimulation:
             relations = [relations]
         return [(item_id, 1.0) for item_id in relations if isinstance(item_id, str) and item_id]
 
+    # -- Need satisfaction (docs/person_simulation_concept_v001.md section 5) --
+    #
+    # Spots are the truth of a run: where a thing is and what it really holds.
+    # A person chooses from beliefs (their knowledge, plus the places of their
+    # own site), acts, and learns what they find. Learned beliefs are staged
+    # until save_learned_knowledge() writes them to the knowledge collection.
+
+    # Beliefs that make a source unlikely to deliver until it is checked again.
+    UNAVAILABLE_BELIEFS = frozenset({"empty", "not found"})
+    HARVEST_QUANTITY = 3
+    HARVEST_REACH_M = 6.0
+    STEP_SECONDS = {
+        "take": 1.5, "operate": 1.5, "ask": 2.0, "harvest": 4.0, "cook": 5.0, "eat": 2.0,
+        "rest": 5.0, "talk": 4.0,
+    }
+    # Needs the loop serves: the pressure each puts on a decision (label,
+    # weight, urgency exponent) and its Maslow tier.
+    LOOP_NEEDS = {
+        "food": ("Hunger", 270.0, 1.72, "physiological"),
+        "rest": ("Fatigue", 235.0, 1.8, "physiological"),
+        "belonging": ("Loneliness", 120.0, 1.6, "belonging"),
+    }
+    # Rest a use of a thing gives at rest_quality 1, and belonging an hour
+    # with someone gives at full closeness.
+    REST_PER_USE = 62.0
+    BELONGING_PER_VISIT = 40.0
+    TALK_REACH_M = 3.0
+    # Below these a need asks for a task; at or above them a goal is met.
+    NEED_THRESHOLDS = {"food": 72.0, "rest": 58.0, "belonging": 55.0}
+    GOAL_TITLES = {
+        "food": "Find food",
+        "rest": "Find rest",
+        "belonging": "Find company",
+        "job": "Work",
+        "target": "Leisure",
+    }
+    OBTAIN_REASONS = {
+        "take": "taken from store",
+        "operate": "got from machine",
+        "ask": "given",
+        "harvest": "harvested",
+    }
+
+    def _load_spots(self):
+        """Where things are in this run and what they really hold: the truth beliefs are checked against."""
+        self.spots = {}
+        for point_id, point in self.test_points.items():
+            if point.get("asset_id"):
+                self.spots[f"point:{point_id}"] = {
+                    "id": f"point:{point_id}",
+                    "entity_id": point["asset_id"],
+                    "point_id": point_id,
+                    "label": point.get("label", point_id),
+                }
+        for resident in self.site_people:
+            entity_id = resident.get("entity_id")
+            if resident.get("controlled") or not entity_id:
+                continue
+            self.spots[f"person:{entity_id}"] = {
+                "id": f"person:{entity_id}",
+                "entity_id": entity_id,
+                "label": resident.get("label") or entity_id,
+                "position": tuple(resident.get("position") or (0.0, 0.0)),
+                "stock": dict(self._inventory_entries(self.get_person(entity_id))),
+            }
+
+    def place_thing(self, entity_id, position, *, stock=None, label=None):
+        """Put a thing into this run at a position: a machine, a stall keeper, a berry patch."""
+        entity = self.get_person(entity_id) or {}
+        self._thing_serial += 1
+        spot_id = f"thing:{self._thing_serial}"
+        self.spots[spot_id] = {
+            "id": spot_id,
+            "entity_id": entity_id,
+            "placed": True,
+            "label": label or self._display_entity_value(entity_id) or entity_id,
+            "position": (float(position[0]), float(position[1])),
+            "stock": {item_id: float(quantity) for item_id, quantity in (stock or {}).items()},
+            "kind": entity.get("_dataset") or entity.get("type") or "thing",
+        }
+        return spot_id
+
+    def lose_item(self, item_id, quantity=None, reason="lost"):
+        """Something outside the person's control takes what they carry, e.g. a theft."""
+        held = self._item_quantity(item_id)
+        amount = held if quantity is None else min(held, float(quantity))
+        if amount <= 0.0:
+            return 0.0
+        self._change_inventory(item_id, -amount, reason, source=self.person_entity_id, destination="lost")
+        self.last_status = f"{self._display_entity_value(item_id) or item_id} {reason}"
+        return amount
+
+    def _spot_position(self, spot):
+        point = self.test_points.get(spot.get("point_id"))
+        return tuple(point["position"]) if point is not None else tuple(spot["position"])
+
+    def _spot_stock(self, spot):
+        if spot.get("point_id"):
+            return self.container_inventories.setdefault(spot["point_id"], {})
+        return spot.setdefault("stock", {})
+
+    def _spot_for(self, entity_id, near=None):
+        """The nearest spot of an entity in this run, if it is anywhere."""
+        near = tuple(near or self.position)
+        spots = [spot for spot in self.spots.values() if entity_id and spot.get("entity_id") == entity_id]
+        return min(spots, key=lambda spot: math.dist(near, self._spot_position(spot)), default=None)
+
+    def _need_index(self):
+        revision = getattr(self.world_model, "repository_revision", 0)
+        if self._need_index_cache is None or self._need_index_cache[0] != revision:
+            self._need_index_cache = (revision, need_tag_index(self.world_model))
+        return self._need_index_cache[1]
+
+    def _learn(self, entity_id, **fields):
+        """Stage a belief the person formed this run."""
+        belief = self.learned_beliefs.setdefault(entity_id, {})
+        belief.update(fields)
+        belief["checked_at"] = {"year": self.year, "second": round(self.runtime_seconds, 1)}
+
+    def has_unsaved_knowledge(self):
+        return bool(self.learned_beliefs)
+
+    def _believed_records(self, person):
+        """The person's knowledge with what they learned this run laid over it: the run's beliefs win."""
+        records = knowledge_records(person, self.world_model)
+        if person.get("id") != self.person_entity_id or not self.learned_beliefs:
+            return records
+        by_entity = {record["entity"]: record for record in records}
+        for entity_id, learned in self.learned_beliefs.items():
+            record = by_entity.get(entity_id)
+            if record is None:
+                record = by_entity[entity_id] = {"entity": entity_id, "source": "learned this run"}
+                records.append(record)
+            record.update(copy.deepcopy(learned))
+        return records
+
+    def save_learned_knowledge(self):
+        """The staged Save: write this run's beliefs into the person's knowledge collection."""
+        if not self.learned_beliefs:
+            return False
+        person = self.get_person()
+        loader = getattr(self.world_model, "loader", None) if self.world_model is not None else None
+        if loader is None or not hasattr(loader, "persist_entity") or not isinstance(person, dict):
+            self.last_status = "Could not save what was learned: no repository"
+            return False
+        existing = knowledge_collection(person, self.world_model)
+        name = self.get_person_name()
+        collection = copy.deepcopy(existing) if existing else {
+            "id": f"coll_knowledge_{self.person_entity_id}",
+            "_dataset": "collections",
+            "type": "collection",
+            "name": f"Knowledge of {name}",
+            "pretty_name": f"Knowledge of {name}",
+            "collection_class": PERSONAL_KNOWLEDGE,
+        }
+        includes = list(collection.get("includes") or [])
+        rows = [dict(row) for row in collection.get("member_records") or [] if isinstance(row, dict)]
+        by_member = {row.get("member"): row for row in rows}
+        for entity_id, learned in self.learned_beliefs.items():
+            row = by_member.get(entity_id)
+            if row is None:
+                row = by_member[entity_id] = {"member": entity_id}
+                rows.append(row)
+            row.update(copy.deepcopy(learned))
+            if entity_id not in includes:
+                includes.append(entity_id)
+        collection["includes"] = includes
+        collection["member_records"] = rows
+        if not loader.persist_entity(collection):
+            self.last_status = "Could not save what was learned"
+            return False
+        if existing is None and not self._persist_person_updates(person, {"knowledge_collection": collection["id"]}):
+            self.last_status = "Saved the knowledge collection but could not link it to the person"
+            return False
+        if hasattr(self.world_model, "mark_repository_changed"):
+            self.world_model.mark_repository_changed()
+        self.last_status = f"Saved {len(self.learned_beliefs)} learned beliefs to {collection.get('pretty_name') or collection['id']}"
+        self.learned_beliefs = {}
+        return True
+
+    def _need_value(self, need, entity_id, records):
+        """What one use gives a need as the person expects it: what it did last time, else what it is said to give."""
+        entity = self.get_person(entity_id) or {}
+        if need == "food" and entity.get("consumable") is False:
+            return 0.0
+        experienced = (records.get(entity_id) or {}).get("experienced") or {}
+        if need in experienced:
+            return max(0.0, self._bounded_number(experienced[need]))
+        if need == "food":
+            return max(0.0, self._bounded_number(entity.get("food_satiation")))
+        if need == "rest":
+            return self.REST_PER_USE * self._bounded_score(entity.get("rest_quality"), default=0.5)
+        if need == "belonging":
+            return self.BELONGING_PER_VISIT * self._closeness(records.get(entity_id))
+        return 0.0
+
+    @staticmethod
+    def _bounded_number(value):
+        try:
+            return float(value or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _closeness(self, record):
+        """How much someone means to the person: how well they know them and how much they care."""
+        record = record or {}
+        return (
+            self._bounded_score(record.get("familiarity"), default=0.35)
+            + self._bounded_score(record.get("interest"), default=0.5)
+        ) / 2.0
+
+    def _availability(self, record):
+        """How likely the person thinks a source is to deliver: low once seen empty, else by familiarity."""
+        if str((record or {}).get("believed_state") or "").casefold() in self.UNAVAILABLE_BELIEFS:
+            return 0.02
+        return 0.5 + 0.5 * self._bounded_score((record or {}).get("familiarity"), default=0.6)
+
+    def _need_candidates(self):
+        """What the person could turn to: everything they know, plus the places and people of their own site."""
+        records = {record["entity_id"]: record for record in self._knowledge_records()}
+        for spot in self.spots.values():
+            if spot.get("point_id"):
+                records.setdefault(spot["entity_id"], {
+                    "entity_id": spot["entity_id"], "familiarity": 0.8, "source": "own site",
+                })
+            elif spot["id"].startswith("person:"):
+                records.setdefault(spot["entity_id"], {
+                    "entity_id": spot["entity_id"], "familiarity": 0.5, "interest": 0.4, "source": "lives here",
+                })
+        return records
+
+    def _need_options(self, need):
+        """Every way the person sees to meet a need, the most expected relief per second first."""
+        records = self._need_candidates()
+        index = self._need_index()
+        options = []
+        if need == "food":
+            for item_id, quantity in self.runtime_inventory.items():
+                unit = self._need_value("food", item_id, records)
+                if quantity > 0.0 and unit > 0.0:
+                    options.append(self._priced_option("food", "carries", None, item_id, 1.0, unit, 1.0, []))
+        for entity_id, record in records.items():
+            entity = self.get_person(entity_id)
+            if not isinstance(entity, dict) or entity_id == self.person_entity_id:
+                continue
+            for link in need_links(entity, self.world_model, need=need, index=index):
+                option = self._option_for_link(need, link, record, records)
+                if option is not None:
+                    options.append(option)
+        unique = {}
+        for option in options:
+            unique.setdefault(option["key"], option)
+        return sorted(unique.values(), key=lambda option: (-option["rate"], option["label"]))
+
+    def _option_for_link(self, need, link, record, records):
+        if need == "rest":
+            return self._rest_option(link, record, records)
+        if need == "belonging":
+            return self._company_option(link, record, records)
+        if need != "food":
+            return None
+        if link.relation == "produces":
+            return self._cook_option(link, record, records)
+        if link.relation not in ("carries", "dispenses", "gives", "bears"):
+            return None
+        holder_id, item_id = link.path[0], link.thing
+        unit = self._need_value("food", item_id, records)
+        if unit <= 0.0:
+            return None
+        if link.relation == "bears":
+            spot = self._spot_for(record.get("believed_location")) or self._spot_for(holder_id)
+        else:
+            spot = self._spot_for(holder_id)
+        if spot is None:
+            return None
+        holder = self.get_person(holder_id) or {}
+        # Food another person carries is asked for, not taken.
+        action = "ask" if link.relation == "carries" and holder.get("type") == "person" else link.action
+        quantity = float(self.HARVEST_QUANTITY) if link.relation == "bears" else 1.0
+        step = {"action": action, "spot_id": spot["id"], "holder_id": holder_id, "item_id": item_id, "quantity": quantity}
+        if link.relation == "carries" and holder.get("type") != "person":
+            step["asset_id"] = holder_id
+        return self._priced_option(
+            "food", link.relation, holder_id, item_id, quantity, unit, self._availability(record), [step], link,
+        )
+
+    def _rest_option(self, link, record, records):
+        """Rest on a thing where it stands, or on what a place keeps: a bed in the barracks."""
+        if link.relation not in ("is", "carries"):
+            return None
+        place_id, thing_id = link.path[0], link.thing
+        spot = self._spot_for(place_id)
+        unit = self._need_value("rest", thing_id, records)
+        if spot is None or unit <= 0.0:
+            return None
+        step = {"action": "rest", "spot_id": spot["id"], "holder_id": place_id, "item_id": thing_id}
+        return self._priced_option("rest", link.relation, place_id, thing_id, 1.0, unit, self._availability(record), [step], link)
+
+    def _company_option(self, link, record, records):
+        """Spend time with someone the person knows or lives beside, if they are anywhere in this run."""
+        person_id = link.path[0]
+        spot = self._spot_for(person_id)
+        unit = self._need_value("belonging", person_id, records)
+        if link.relation != "is" or spot is None or unit <= 0.0:
+            return None
+        step = {"action": "talk", "spot_id": spot["id"], "holder_id": person_id, "item_id": person_id}
+        return self._priced_option(
+            "belonging", "is", person_id, person_id, 1.0, unit, self._availability(record), [step], link,
+        )
+
+    def _cook_option(self, link, record, records):
+        """Make food at a known place: get the recipe's inputs, cook, eat."""
+        if len(link.path) < 3:
+            return None
+        place_id, producer_id, item_id = link.path[0], link.path[1], link.thing
+        producer = self.get_person(producer_id) or {}
+        recipe_id = next((rid for rid in self._producer_recipes(producer, item_id) if rid in records), None)
+        kitchen = self._spot_for(place_id)
+        unit = self._need_value("food", item_id, records)
+        if recipe_id is None or kitchen is None or unit <= 0.0:
+            return None
+        recipe = self.get_person(recipe_id) or {}
+        steps = []
+        availability = self._availability(record)
+        for input_id, quantity in self._recipe_amounts(recipe, "input_requirements", "input_items"):
+            if self._item_quantity(input_id) >= quantity:
+                continue
+            source = self._input_source(input_id, records)
+            if source is None:
+                return None
+            spot, source_record = source
+            availability = min(availability, self._availability(source_record))
+            steps.append({
+                "action": "take", "spot_id": spot["id"], "holder_id": spot["entity_id"],
+                "item_id": input_id, "quantity": quantity, "asset_id": spot["entity_id"],
+            })
+        output = next(
+            (quantity for output_id, quantity in self._recipe_amounts(recipe, "output_yields", "output_items")
+             if output_id == item_id),
+            1.0,
+        )
+        steps.append({
+            "action": "cook", "spot_id": kitchen["id"], "holder_id": place_id, "item_id": item_id,
+            "producer_id": producer_id, "recipe_id": recipe_id, "asset_id": place_id,
+        })
+        return self._priced_option("food", "produces", place_id, item_id, output, unit, availability, steps, link)
+
+    def _producer_recipes(self, producer, item_id):
+        recipe_ids = []
+        for line in producer.get("production_lines") or []:
+            if isinstance(line, dict) and str(line.get("product_id") or "") == item_id:
+                recipe_ids.extend(self._relation_ids(line.get("recipe_ids") or line.get("recipes")))
+        recipe_ids.extend(self._relation_ids(producer.get("production_recipes")))
+        return recipe_ids
+
+    def _input_source(self, item_id, records):
+        """The nearest place the person believes holds an input: a known holder that lists it."""
+        best = None
+        for entity_id, record in records.items():
+            if item_id not in dict(self._inventory_entries(self.get_person(entity_id))):
+                continue
+            spot = self._spot_for(entity_id)
+            if spot is None:
+                continue
+            distance = math.dist(self.position, self._spot_position(spot))
+            if best is None or distance < best[0]:
+                best = (distance, spot, record)
+        return None if best is None else best[1:]
+
+    def _step_label(self, step):
+        item = self._display_entity_value(step.get("item_id")) or "food"
+        holder = self._display_entity_value(step.get("holder_id")) or "someone"
+        return {
+            "rest": f"Rest at {holder}",
+            "talk": f"Spend time with {holder}",
+            "eat": f"Eat {item}",
+            "take": f"Take {item} from {holder}",
+            "operate": f"Get {item} from {holder}",
+            "ask": f"Ask {holder} for {item}",
+            "harvest": f"Harvest {item} from {holder}",
+            "cook": f"Cook {item} at {holder}",
+        }[step["action"]]
+
+    def _priced_option(self, need, relation, holder_id, item_id, quantity, unit, availability, steps, link=None):
+        """Price a way to meet a need: expected relief, how likely it works, and the seconds it takes."""
+        steps = [dict(step) for step in steps]
+        if need == "food":
+            steps.append({"action": "eat", "item_id": item_id, "quantity": quantity})
+        cursor = tuple(self.position)
+        travel = 0.0
+        effort = 0.0
+        for step in steps:
+            spot = self.spots.get(step.get("spot_id"))
+            if spot is not None:
+                position = self._spot_position(spot)
+                travel += math.dist(cursor, position)
+                cursor = position
+                step["point_id"] = spot.get("point_id")
+                step["destination_entity_id"] = spot["entity_id"]
+            step["id"] = step["action"]
+            step["duration"] = self.STEP_SECONDS[step["action"]]
+            step["label"] = self._step_label(step)
+            effort += step["duration"]
+        seconds = travel / max(0.1, self.move_speed_m_per_second) + effort
+        deficit = max(1.0, 100.0 - self.needs.get(need, 0.0))
+        gain = min(unit * quantity, deficit)
+        main_step = next((step for step in steps if step["action"] == "cook"), steps[0])
+        return {
+            "key": (need, relation, tuple(step.get("spot_id") for step in steps), item_id),
+            "relation": relation,
+            "holder_id": holder_id,
+            "item_id": item_id,
+            "steps": steps,
+            "spot_ids": [step["spot_id"] for step in steps if step.get("spot_id")],
+            "label": main_step["label"],
+            "gain": round(gain, 2),
+            "availability": round(availability, 2),
+            "seconds": round(seconds, 1),
+            "rate": availability * gain / max(1.0, seconds),
+            "reason": explain(link, self.world_model) if link is not None else f"{need}: carried",
+        }
+
+    def _need_task(self, need, source="autonomous", priority=0.0, spot_id=None, **metadata):
+        """One task for a need: the best known way to meet it, or the best one that uses a given spot."""
+        options = self._need_options(need)
+        if spot_id is not None:
+            options = [option for option in options if spot_id in option["spot_ids"]]
+        if not options:
+            return None
+        best = options[0]
+        task = {
+            "id": metadata.pop("id", f"{source}:{need}"),
+            "need": need,
+            "point_id": next((step.get("point_id") for step in best["steps"] if step.get("point_id")), None),
+            "label": best["label"],
+            "target": tuple(self.position),
+            "duration": 0.0,
+            "maslow_tier": self.LOOP_NEEDS[need][3],
+            "source": source,
+            "priority": float(priority),
+            "base_priority": float(priority),
+            "phase": "moving",
+            "lifecycle_state": "proposed",
+            "elapsed": 0.0,
+            "steps": [dict(step) for step in best["steps"]],
+            "need_choice": self._need_choice_text(need, best, options[1:3]),
+        }
+        task.update(metadata)
+        self._set_task_step(task, 0, selected=False)
+        return task
+
+    @staticmethod
+    def _need_choice_text(need, best, alternatives):
+        text = (
+            f"Chose {best['label']}: {best['reason']}; about {best['gain']:.0f} {need} in "
+            f"{best['seconds']:.0f} s, {best['availability'] * 100:.0f}% likely"
+        )
+        if alternatives:
+            text += "; over " + ", ".join(option["label"] for option in alternatives)
+        return text + "."
+
+    def _complete_obtain(self, step):
+        """Take, get from a machine, be given or pick an item at a spot, and learn what was there."""
+        action = step["action"]
+        holder_id = step.get("holder_id")
+        item_id = step.get("item_id")
+        quantity = float(step.get("quantity", 1.0) or 1.0)
+        holder_label = self._display_entity_value(holder_id) or holder_id
+        item_label = self._display_entity_value(item_id) or item_id
+        spot = self.spots.get(step.get("spot_id"))
+        if action == "harvest":
+            # The plant is wherever it really grows, if it grows within reach at all.
+            spot = self._spot_for(holder_id)
+            if spot is None or math.dist(self.position, self._spot_position(spot)) > self.HARVEST_REACH_M:
+                self._learn(holder_id, believed_state="not found")
+                return False, f"no {holder_label} found here"
+        if spot is None:
+            return False, f"{holder_label} is not here"
+        stock = self._spot_stock(spot)
+        available = self._item_quantity(item_id, stock)
+        if available <= 0.0 or (action != "harvest" and available < quantity):
+            self._learn(holder_id, believed_state="empty")
+            return False, f"{holder_label} has no {item_label} left"
+        taken = min(quantity, available)
+        stock[item_id] = available - taken
+        self._change_inventory(
+            item_id, taken, self.OBTAIN_REASONS[action], source=holder_id, destination=self.person_entity_id,
+        )
+        self._learn(holder_id, believed_state="empty" if stock[item_id] <= 0.0 else "stocked")
+        return True, ""
+
+    def _complete_cook(self, step):
+        recipe = self.get_person(step.get("recipe_id")) or {}
+        inputs = self._recipe_amounts(recipe, "input_requirements", "input_items")
+        outputs = self._recipe_amounts(recipe, "output_yields", "output_items")
+        missing = [
+            (item_id, quantity - self._item_quantity(item_id))
+            for item_id, quantity in inputs
+            if self._item_quantity(item_id) < quantity
+        ]
+        if missing:
+            return False, "missing recipe item: " + ", ".join(
+                f"{item_id} x{self._clean_quantity(quantity)}" for item_id, quantity in missing
+            )
+        for item_id, quantity in inputs:
+            self._change_inventory(
+                item_id, -quantity, "consumed by recipe",
+                source=self.person_entity_id, destination=step.get("producer_id"),
+            )
+        for item_id, quantity in outputs:
+            self._change_inventory(
+                item_id, quantity, "produced by recipe",
+                source=step.get("producer_id"), destination=self.person_entity_id,
+            )
+        return True, ""
+
+    def _complete_rest(self, step):
+        """Rest on the thing for the step's time; how well depends on the thing, and the person remembers."""
+        thing_id = step.get("item_id")
+        quality = self._bounded_score((self.get_person(thing_id) or {}).get("rest_quality"), default=0.5)
+        gain = self.REST_PER_USE * quality
+        self.needs["rest"] = min(100.0, self.needs["rest"] + gain)
+        self.needs["safety"] = min(100.0, self.needs["safety"] + 4.0 * quality)
+        self._learn(thing_id, experienced={"rest": round(gain, 1)})
+        return True, ""
+
+    def _complete_talk(self, step):
+        """Spend time with someone, if they are really there; closeness decides how much it helps."""
+        person_id = step.get("holder_id")
+        label = self._display_entity_value(person_id) or person_id
+        spot = self._spot_for(person_id)
+        if spot is None or math.dist(self.position, self._spot_position(spot)) > self.TALK_REACH_M:
+            self._learn(person_id, believed_state="not found")
+            return False, f"{label} is not here"
+        record = self._need_candidates().get(person_id) or {}
+        gain = self.BELONGING_PER_VISIT * self._closeness(record)
+        self.needs["belonging"] = min(100.0, self.needs["belonging"] + gain)
+        # Time together makes people a little more familiar.
+        self._learn(
+            person_id,
+            experienced={"belonging": round(gain, 1)},
+            familiarity=round(min(1.0, self._bounded_score(record.get("familiarity"), default=0.35) + 0.05), 3),
+            interest=self._bounded_score(record.get("interest"), default=0.5),
+        )
+        return True, ""
+
+    def _complete_eat(self, step):
+        item_id = step.get("item_id")
+        item = self.get_person(item_id) or {}
+        label = self._display_entity_value(item_id) or item_id
+        held = self._item_quantity(item_id)
+        if held <= 0.0:
+            return False, f"no {label} held"
+        if item.get("consumable") is False:
+            return False, f"{label} is not food"
+        try:
+            unit = max(0.0, float(item.get("food_satiation", 0.0) or 0.0))
+        except (TypeError, ValueError):
+            unit = 0.0
+        if unit <= 0.0:
+            return False, f"{label} has no food value"
+        eaten = min(held, float(step.get("quantity", 1.0) or 1.0))
+        self._change_inventory(item_id, -eaten, "consumed as food", source=self.person_entity_id, destination="consumed")
+        self.needs["food"] = min(100.0, self.needs["food"] + unit * eaten)
+        self._learn(item_id, experienced={"food": unit})
+        return True, ""
+
     def _task_for_point(self, point_id, source="autonomous", priority=0.0, **metadata):
         point = self.test_points.get(point_id)
         if point is None:
             return None
+        if point.get("need") in self.LOOP_NEEDS:
+            # A place for a need: the best known way to meet it that uses this place.
+            task = self._need_task(point["need"], source, priority, spot_id=f"point:{point_id}", **dict(metadata))
+            if task is not None:
+                task["point_id"] = point_id
+                return task
         task = {
             "id": metadata.pop("id", f"{source}:{point_id}"),
             "point_id": point_id,
@@ -754,45 +1453,7 @@ class PersonSimulation:
             "elapsed": 0.0,
         }
         task.update(metadata)
-        if point_id == "food":
-            recipe_id = self.test_points["kitchen"].get("recipe_id")
-            recipe = self.get_person(recipe_id) or {}
-            recipe_inputs = self._recipe_amounts(recipe, "input_requirements", "input_items")
-            recipe_outputs = self._recipe_amounts(recipe, "output_yields", "output_items")
-            ingredient_id, ingredient_quantity = recipe_inputs[0] if recipe_inputs else ("item_food_ingredients", 1.0)
-            meal_id, _meal_quantity = recipe_outputs[0] if recipe_outputs else ("item_cooked_meal", 1.0)
-            task["label"] = "Prepare and eat a meal"
-            task["steps"] = [
-                {
-                    "id": "collect_ingredients",
-                    "label": "Collect ingredients",
-                    "point_id": "food",
-                    "duration": 1.5,
-                    "asset_id": self.test_points["food"].get("asset_id"),
-                    "item_id": ingredient_id,
-                    "quantity": ingredient_quantity,
-                },
-                {
-                    "id": "cook_meal",
-                    "label": "Cook meal",
-                    "point_id": "kitchen",
-                    "duration": 5.0,
-                    "asset_id": self.test_points["kitchen"].get("asset_id"),
-                    "producer_id": self.test_points["kitchen"].get("producer_id"),
-                    "recipe_id": recipe_id,
-                },
-                {
-                    "id": "eat_meal",
-                    "label": "Eat cooked meal",
-                    "point_id": "kitchen",
-                    "duration": 2.0,
-                    "asset_id": meal_id,
-                    "item_id": meal_id,
-                },
-            ]
-            task["step_index"] = 0
-            self._set_task_step(task, 0, selected=False)
-        elif point_id == "lumber_dropoff":
+        if point_id == "lumber_dropoff":
             point = self.test_points["lumber_dropoff"]
             cargo_item_id = point.get("cargo_item_id") or "item_raw_lumber"
             remaining_quantity = float(point.get("remaining_quantity", 0.0) or 0.0)
@@ -824,13 +1485,11 @@ class PersonSimulation:
         if not steps or step_index < 0 or step_index >= len(steps):
             return False
         step = steps[step_index]
-        point = self.test_points.get(step.get("point_id"))
-        if point is None:
-            return False
+        point = self.test_points.get(step.get("point_id")) or {}
         task["step_index"] = step_index
         task["interaction_point_id"] = step.get("point_id")
         task["action_label"] = step.get("label") or task.get("label")
-        task["target"] = tuple(point["position"])
+        task["target"] = self._step_target(step)
         task["duration"] = float(step.get("duration", point.get("duration", 0.0)) or 0.0)
         task["phase"] = "moving"
         if selected:
@@ -839,6 +1498,16 @@ class PersonSimulation:
             self._clear_navigation()
             task["lifecycle_state"] = "travelling"
         return True
+
+    def _step_target(self, step):
+        point = self.test_points.get(step.get("point_id"))
+        if point is not None:
+            return tuple(point["position"])
+        spot = self.spots.get(step.get("spot_id"))
+        if spot is not None:
+            return self._spot_position(spot)
+        # A step bound to no place happens where the person stands, e.g. eating.
+        return tuple(self.position)
 
     def _current_task_step(self, task):
         steps = list((task or {}).get("steps") or [])
@@ -891,17 +1560,16 @@ class PersonSimulation:
         if not step:
             return {"allowed": True, "reason": "no owned asset required"}
         asset_id = step.get("asset_id")
-        if step.get("id") == "eat_meal":
-            item_id = step.get("item_id") or asset_id
-            return {
-                "allowed": self._item_quantity(item_id) > 0,
-                "reason": "cooked meal held by person" if self._item_quantity(item_id) > 0 else "cooked meal is not in inventory",
-            }
+        if step.get("action") == "eat":
+            item_id = step.get("item_id")
+            label = self._display_entity_value(item_id) or item_id
+            held = self._item_quantity(item_id) > 0
+            return {"allowed": held, "reason": f"{label} held" if held else f"no {label} held"}
         if asset_id:
             report = self.ownership.access_report(self.person_entity_id, asset_id)
             if not report["allowed"]:
                 return report
-        if step.get("id") == "cook_meal":
+        if step.get("action") == "cook":
             allowed, reason = self._kitchen_recipe_report(step.get("recipe_id"), step.get("producer_id"))
             return {"allowed": allowed, "reason": reason, "asset_id": asset_id}
         return {"allowed": True, "reason": "ownership permits use", "asset_id": asset_id}
@@ -909,78 +1577,23 @@ class PersonSimulation:
     def _complete_multi_step_action(self, step):
         """Apply the concrete consequence of one step of a multi-step task.
 
-        Dispatches on step id rather than task/point id because every
-        multi-step task (food preparation, lumber unloading, ...) shares this
-        single completion hook from _advance_active_task.
+        Food steps dispatch on their action (take, operate, ask, harvest,
+        cook, eat); the lumber steps still on their id. Every multi-step task
+        shares this single completion hook from _advance_active_task.
         """
+        action = (step or {}).get("action")
+        if action in self.OBTAIN_REASONS:
+            return self._complete_obtain(step)
+        if action == "cook":
+            return self._complete_cook(step)
+        if action == "eat":
+            return self._complete_eat(step)
+        if action == "rest":
+            return self._complete_rest(step)
+        if action == "talk":
+            return self._complete_talk(step)
         step_id = (step or {}).get("id")
-        if step_id == "collect_ingredients":
-            item_id = step.get("item_id") or "item_food_ingredients"
-            quantity = float(step.get("quantity", 1.0) or 1.0)
-            container = self.container_inventories.setdefault("food", {})
-            available = self._item_quantity(item_id, container)
-            if available < quantity:
-                return False, f"ingredient store has only {self._clean_quantity(available)} available"
-            container[item_id] = available - quantity
-            self._change_inventory(
-                item_id,
-                quantity,
-                "collected for recipe",
-                source=self.test_points["food"].get("asset_id"),
-                destination=self.person_entity_id,
-            )
-        elif step_id == "cook_meal":
-            recipe_id = step.get("recipe_id")
-            recipe = self.get_person(recipe_id) or {}
-            inputs = self._recipe_amounts(recipe, "input_requirements", "input_items")
-            outputs = self._recipe_amounts(recipe, "output_yields", "output_items")
-            missing = [
-                (item_id, quantity - self._item_quantity(item_id))
-                for item_id, quantity in inputs
-                if self._item_quantity(item_id) < quantity
-            ]
-            if missing:
-                return False, "missing recipe item: " + ", ".join(
-                    f"{item_id} x{self._clean_quantity(quantity)}" for item_id, quantity in missing
-                )
-            for item_id, quantity in inputs:
-                self._change_inventory(
-                    item_id,
-                    -quantity,
-                    "consumed by recipe",
-                    source=self.person_entity_id,
-                    destination=step.get("producer_id"),
-                )
-            for item_id, quantity in outputs:
-                self._change_inventory(
-                    item_id,
-                    quantity,
-                    "produced by recipe",
-                    source=step.get("producer_id"),
-                    destination=self.person_entity_id,
-                )
-        elif step_id == "eat_meal":
-            item_id = step.get("item_id") or "item_cooked_meal"
-            item = self.get_person(item_id) or {}
-            if self._item_quantity(item_id) <= 0:
-                return False, "no cooked meal held"
-            if item.get("consumable") is False:
-                return False, "held item is not consumable"
-            try:
-                satiation = max(0.0, float(item.get("food_satiation", 0.0) or 0.0))
-            except (TypeError, ValueError):
-                satiation = 0.0
-            if satiation <= 0.0:
-                return False, "food item has no satiation value"
-            self._change_inventory(
-                item_id,
-                -1,
-                "consumed as food",
-                source=self.person_entity_id,
-                destination="consumed",
-            )
-            self.needs["food"] = min(100.0, self.needs["food"] + satiation)
-        elif step_id == "transfer_lumber":
+        if step_id == "transfer_lumber":
             item_id = step.get("item_id") or "item_raw_lumber"
             quantity = float(step.get("quantity", 0.0) or 0.0)
             if quantity <= 0.0:
@@ -992,11 +1605,35 @@ class PersonSimulation:
                 point["remaining_quantity"] = 0.0
         return True, ""
 
+    def _personality_distribution(self):
+        """The person's Big Five distribution: birth (or authored) combined with their words."""
+        traits, _actions = self._trait_indexes()
+        return personality(self.get_person() or {}, self.world_model, traits)
+
     def _personality_scores(self):
-        return {
-            axis["id"]: float(axis.get("value", 0.5))
-            for axis in self.get_personality_panel_model().get("axes", [])
-        }
+        """The means of the person's Big Five distribution, as the older decision terms read them."""
+        return {axis: entry.value for axis, entry in self._personality_distribution().items()}
+
+    def _trait_indexes(self):
+        revision = getattr(self.world_model, "repository_revision", 0)
+        cached = getattr(self, "_trait_index_cache", None)
+        if cached is None or cached[0] != revision:
+            cached = (revision, trait_index(self.world_model), action_index(self.world_model))
+            self._trait_index_cache = cached
+        return cached[1], cached[2]
+
+    def _refuse(self, task):
+        """Take a decision the person's character excludes out of consideration, and say so once."""
+        task_id = task.get("id")
+        self.external_task_allocations = [item for item in self.external_task_allocations if item.get("id") != task_id]
+        self.internal_task_allocations = [item for item in self.internal_task_allocations if item.get("id") != task_id]
+        if task_id in self._refused_task_ids:
+            return
+        self._refused_task_ids.add(task_id)
+        task["lifecycle_state"] = "refused"
+        task["decision_explanation"] = f"Refused outright: {task['excluded_by']}."
+        self.last_status = f"Refused {task.get('label', 'task')}: {task['excluded_by']}"
+        self._record_decision("refused", task)
 
     @staticmethod
     def _urgency(fulfillment, exponent=1.75):
@@ -1132,14 +1769,11 @@ class PersonSimulation:
         if score:
             breakdown.append({"label": "Base pressure", "value": score})
 
-        if point_id == "food":
-            value = 270.0 * self._urgency(self.needs.get("food", 0.0), 1.72)
+        if task.get("need") in self.LOOP_NEEDS:
+            label, weight, exponent, _tier = self.LOOP_NEEDS[task["need"]]
+            value = weight * self._urgency(self.needs.get(task["need"], 0.0), exponent)
             score += value
-            breakdown.append({"label": "Hunger", "value": value})
-        elif point_id == "bed":
-            value = 235.0 * self._urgency(self.needs.get("rest", 0.0), 1.8)
-            score += value
-            breakdown.append({"label": "Fatigue", "value": value})
+            breakdown.append({"label": label, "value": value})
         elif point_id == "target":
             value = 105.0 * self._urgency(self.needs.get("leisure", 0.0), 1.55)
             score += value
@@ -1172,6 +1806,14 @@ class PersonSimulation:
                 score += coercion_value
                 breakdown.append({"label": "Coercion / feared consequence", "value": coercion_value})
 
+        traits, actions = self._trait_indexes()
+        task["excluded_by"] = exclusion(self.get_person() or {}, task.get("action_tags"), self.world_model, traits, actions)
+        distribution = self._personality_distribution()
+        character_value, character_label = character(distribution, task.get("action_tags"), self.world_model, traits, actions)
+        if character_value:
+            score += character_value
+            breakdown.append({"label": character_label, "value": character_value})
+
         conviction_value, conviction_reasons, alternatives = self._conviction_effects(task)
         if conviction_value:
             score += conviction_value
@@ -1196,15 +1838,19 @@ class PersonSimulation:
             *(f"For: {item['label']} ({item['value']:+.0f})." for item in positive[:3]),
             *(f"Against: {item['label']} ({item['value']:+.0f})." for item in negative[:2]),
         ]
+        if task.get("need_choice"):
+            explanation.append(task["need_choice"])
         task["decision_explanation"] = " ".join(explanation)
         return task
 
     def _autonomous_candidates(self):
         candidates = []
-        if self.needs.get("food", 0.0) < 72.0:
-            candidates.append(self._task_for_point("food", source="autonomous", priority=22.0, allocation_kind="need"))
-        if self.needs.get("rest", 0.0) < 58.0:
-            candidates.append(self._task_for_point("bed", source="autonomous", priority=20.0, allocation_kind="need"))
+        if self.needs.get("food", 0.0) < self.NEED_THRESHOLDS["food"]:
+            candidates.append(self._need_task("food", source="autonomous", priority=22.0, allocation_kind="need"))
+        if self.needs.get("rest", 0.0) < self.NEED_THRESHOLDS["rest"]:
+            candidates.append(self._need_task("rest", source="autonomous", priority=20.0, allocation_kind="need"))
+        if self.needs.get("belonging", 0.0) < self.NEED_THRESHOLDS["belonging"]:
+            candidates.append(self._need_task("belonging", source="autonomous", priority=14.0, allocation_kind="need"))
         if self.work_due > 32.0:
             candidates.append(self._task_for_point("job", source="autonomous", priority=18.0, allocation_kind="job"))
         if self.needs.get("leisure", 0.0) < 65.0:
@@ -1225,6 +1871,9 @@ class PersonSimulation:
         unique = {}
         for task in candidates:
             if task.get("id") == active_id:
+                continue
+            if task.get("excluded_by"):
+                self._refuse(task)
                 continue
             key = str(task.get("id") or f"{task.get('source')}:{task.get('point_id')}")
             if key not in unique or task.get("decision_score", 0.0) > unique[key].get("decision_score", 0.0):
@@ -1300,6 +1949,9 @@ class PersonSimulation:
         if label:
             task["label"] = str(label)
         task = self._score_task(task)
+        if task.get("excluded_by"):
+            self._refuse(task)
+            return task["id"]
         self.external_task_allocations.append(task)
         conviction_penalty = -sum(
             min(0.0, float(item.get("value", 0.0)))
@@ -1353,6 +2005,116 @@ class PersonSimulation:
         self._fill_autonomous_queue()
         return task_id
 
+    def _goal_key(self, task):
+        return task.get("need") or task.get("point_id") or task.get("id") or "task"
+
+    def _open_episode(self, task):
+        key = self._goal_key(task)
+        for episode in reversed(self.goal_episodes):
+            if episode["goal"] == key and episode["open"]:
+                return episode
+        episode = {
+            "goal": key,
+            "title": self.GOAL_TITLES.get(key) or task.get("label", "Task"),
+            "need": task.get("need"),
+            "attempts": [],
+            "open": True,
+        }
+        self.goal_episodes.append(episode)
+        del self.goal_episodes[:-8]
+        return episode
+
+    def _track_goal(self, event, task):
+        """Keep the goal a decision belongs to: its attempts, and whether it has been met."""
+        episode = self._open_episode(task)
+        need = task.get("need")
+        if event in ("selected", "preempted"):
+            task["need_before"] = self.needs.get(need) if need else None
+            return
+        if event not in ("completed", "failed", "refused"):
+            return
+        attempt = {"state": "failed" if event == "refused" else event, "label": task.get("label", "Task")}
+        action = task.get("action_label")
+        if event == "refused":
+            attempt["detail"] = f"refused: {task.get('excluded_by')}"
+        elif event == "failed":
+            reason = task.get("failure_reason") or "it did not work"
+            attempt["detail"] = f"{action}: {reason}" if action and action != attempt["label"] else reason
+        elif need and task.get("need_before") is not None:
+            attempt["detail"] = f"{need} {task['need_before']:.0f} to {self.needs.get(need, 0.0):.0f}"
+        episode["attempts"].append(attempt)
+        del episode["attempts"][:-6]
+        met = event == "completed" and self.needs.get(need, 0.0) >= self.NEED_THRESHOLDS.get(need, 0.0)
+        if not need or met:
+            episode["open"] = False
+
+    def _goal_tree(self, active):
+        """The task panel's goals: what is being pursued and how it went, what comes next, what was done."""
+        active_key = self._goal_key(active) if active else None
+        current = []
+        for episode in reversed(self.goal_episodes):
+            if not episode["open"]:
+                continue
+            node = {
+                "title": episode["title"],
+                "need": episode["need"],
+                "attempts": [dict(attempt) for attempt in episode["attempts"]],
+                "active": episode["goal"] == active_key,
+            }
+            if node["active"]:
+                steps = list(active.get("steps") or [])
+                index = int(active.get("step_index", 0) or 0)
+                target = active.get("target") or self.position
+                distance = math.dist(self.position, target)
+                phase = "walking" if active.get("phase") == "moving" and distance > 0.5 else "doing"
+                node["pressure"] = float(active.get("decision_score", 0.0) or 0.0)
+                node["current"] = {
+                    "label": active.get("label", "Task"),
+                    "step": active.get("action_label") or active.get("label", "Task"),
+                    "progress": (
+                        f"step {index + 1} of {len(steps)}, {phase}" if len(steps) > 1 else phase
+                    ) + (f", {distance:.0f} m to go" if phase == "walking" else ""),
+                }
+                node["next"] = [step.get("label", step.get("id", "step")) for step in steps[index + 1:]]
+            else:
+                queued = next((task for task in self.task_queue if self._goal_key(task) == episode["goal"]), None)
+                node["next"] = [queued.get("label", "Task")] if queued else []
+                if queued:
+                    node["pressure"] = float(queued.get("decision_score", 0.0) or 0.0)
+            current.append(node)
+        if active is not None and not any(node["active"] for node in current):
+            current.insert(0, {
+                "title": self.GOAL_TITLES.get(active_key) or active.get("label", "Task"),
+                "need": active.get("need"),
+                "attempts": [],
+                "active": True,
+                "pressure": float(active.get("decision_score", 0.0) or 0.0),
+                "current": {"label": active.get("label", "Task"), "step": active.get("action_label") or "", "progress": ""},
+                "next": [],
+            })
+        current.sort(key=lambda node: not node["active"])
+        open_keys = {episode["goal"] for episode in self.goal_episodes if episode["open"]} | {active_key}
+        up_next = []
+        for task in self.task_queue:
+            key = self._goal_key(task)
+            if key in open_keys or any(item["key"] == key for item in up_next):
+                continue
+            up_next.append({
+                "key": key,
+                "title": self.GOAL_TITLES.get(key) or task.get("label", "Task"),
+                "plan": task.get("label", "Task"),
+                "pressure": float(task.get("decision_score", 0.0) or 0.0),
+            })
+        earlier = [
+            {
+                "title": episode["title"],
+                "attempts": len(episode["attempts"]),
+                "last": dict(episode["attempts"][-1]) if episode["attempts"] else None,
+            }
+            for episode in reversed(self.goal_episodes) if not episode["open"]
+        ]
+        return {"current": current, "up_next": up_next[:3], "earlier": earlier[:3]}
+
     def _record_decision(self, event, task, displaced=None):
         entry = {
             "event": str(event),
@@ -1372,6 +2134,7 @@ class PersonSimulation:
             entry["failure_reason"] = task["failure_reason"]
             entry["explanation"] = f"Failed because {task['failure_reason']}. {entry['explanation']}"
         self.decision_history.insert(0, entry)
+        self._track_goal(event, task)
         del self.decision_history[20:]
 
     def _reconsider_active_task(self):
@@ -1544,17 +2307,9 @@ class PersonSimulation:
         if not destination_entity_id:
             return None
         person = self.get_person(person_id) or {}
-        raw_records = person.get("knowledge_records") or person.get("knowledge") or []
-        if isinstance(raw_records, dict):
-            raw_records = [raw_records]
-        for raw in raw_records if isinstance(raw_records, (list, tuple)) else []:
-            if isinstance(raw, str):
-                raw = {"entity": raw}
-            if not isinstance(raw, dict):
-                continue
-            entity_id = str(raw.get("entity") or raw.get("subject") or raw.get("entity_id") or "").strip()
-            if entity_id == destination_entity_id:
-                return dict(raw)
+        for record in knowledge_records(person, self.world_model):
+            if record.get("entity") == destination_entity_id:
+                return record
         return None
 
     @staticmethod
@@ -1853,10 +2608,7 @@ class PersonSimulation:
 
     def _complete_task(self, task):
         point_id = task.get("point_id")
-        if point_id == "bed":
-            self.needs["rest"] = min(100.0, self.needs["rest"] + 62.0)
-            self.needs["safety"] = min(100.0, self.needs["safety"] + 4.0)
-        elif point_id == "job":
+        if point_id == "job":
             self.work_due = max(0.0, self.work_due - 64.0)
             self.needs["esteem"] = min(100.0, self.needs["esteem"] + 12.0)
             self.completed_jobs += 1
@@ -1983,6 +2735,10 @@ class PersonSimulation:
             "clothing": self._equipped_clothing_entity(self.get_person()),
             "bounds": dict(self.bounds),
             "site_id": self.site_entity_id,
+            "things": [
+                {"label": spot["label"], "position": spot["position"], "kind": spot.get("kind")}
+                for spot in self.spots.values() if spot.get("placed")
+            ],
             "in_void": self.in_void,
             "site_label": (
                 self.site_entity.get("pretty_name")
@@ -2038,22 +2794,12 @@ class PersonSimulation:
             if event.button != 1:
                 return
             for hitbox in reversed(self._person_editor_hitboxes):
-                if not hitbox["rect"].collidepoint(screen_pos):
+                if hitbox.get("kind") == "scroll_area" or not hitbox["rect"].collidepoint(screen_pos):
                     continue
-                kind = hitbox.get("kind")
-                if kind == "skin_tone":
-                    self.select_editor_skin_tone(hitbox.get("tone_id"))
-                elif kind == "body_trait":
-                    self.adjust_editor_body_trait(hitbox.get("trait_id"), hitbox.get("delta", 0.0))
-                elif kind == "clothing":
-                    self.select_editor_clothing(hitbox.get("clothing_id"))
-                elif kind == "save":
-                    self.save_person_editor()
-                elif kind == "revert":
-                    self.revert_person_editor()
-                elif kind == "simulation":
-                    self.set_person_view(self.VIEW_SIMULATION)
+                self._editor_click(hitbox)
                 return
+            self._ensure_person_editor()["focus"] = None
+            return
         if self.placement_mode:
             if event.button == 1:
                 world_x, world_y = camera.screen_to_world(screen_pos)
@@ -2130,6 +2876,10 @@ class PersonSimulation:
                 self.external_task_allocations.append(task)
 
     def get_person(self, person_entity_id=None):
+        editor = self.person_editor
+        if editor is not None and editor.get("is_new") and person_entity_id in (None, self.person_entity_id):
+            # Not made yet: the person is the editor's draft.
+            return editor["draft"]
         if self.world_model is None:
             return None
         return self.world_model.get_entity(person_entity_id or self.person_entity_id)
@@ -2348,6 +3098,7 @@ class PersonSimulation:
                 return str(
                     entity.get("pretty_name")
                     or entity.get("name")
+                    or entity.get("common_name")
                     or entity.get("id")
                     or value
                 ).strip()
@@ -2370,6 +3121,8 @@ class PersonSimulation:
     @staticmethod
     def _knowledge_category(entity, fallback="Other"):
         entity_type = str((entity or {}).get("type") or (entity or {}).get("_dataset") or "").casefold()
+        if entity_type == "species" and (entity.get("plant_life_form") or entity.get("plant_growth_form")):
+            return "Nature"
         if entity_type in {"person", "people", "pop", "species"}:
             return "People"
         if entity_type in {"location", "locations", "city", "cities", "building"}:
@@ -2385,24 +3138,11 @@ class PersonSimulation:
         return fallback
 
     def _knowledge_records(self):
-        """Normalize authored knowledge while accepting references to any card type."""
+        """Normalize the person's knowledge collection while accepting references to any card type."""
         person = self.get_person() or {}
         records = []
-        raw_records = person.get("knowledge_records") or person.get("knowledge") or []
-        if not isinstance(raw_records, (list, tuple, set)):
-            raw_records = [raw_records]
-        for raw in raw_records:
-            if isinstance(raw, str):
-                raw = {"entity": raw}
-            if not isinstance(raw, dict):
-                continue
-            record = dict(raw)
-            entity_id = str(
-                record.get("entity")
-                or record.get("subject")
-                or record.get("entity_id")
-                or ""
-            ).strip()
+        for record in self._believed_records(person):
+            entity_id = record["entity"]
             entity = self.get_person(entity_id) if entity_id else None
             if not isinstance(entity, dict):
                 entity = {}
@@ -2410,6 +3150,7 @@ class PersonSimulation:
                 record.get("label")
                 or entity.get("pretty_name")
                 or entity.get("name")
+                or entity.get("common_name")
                 or entity_id
                 or "Unspecified knowledge"
             )
@@ -2439,7 +3180,6 @@ class PersonSimulation:
             ("worldviews", "Worldviews & ideas", 0.8),
             ("beliefs", "Worldviews & ideas", 0.82),
             ("cultural_aspects", "Worldviews & ideas", 0.74),
-            ("known_entities", "Other", 0.5),
         )
         existing_ids = {record.get("entity_id") for record in records if record.get("entity_id")}
         for field_name, category, interest in automatic_fields:
@@ -2461,17 +3201,50 @@ class PersonSimulation:
                 existing_ids.add(entity_id)
         return records
 
+    def _known_need_sources(self, need):
+        """Panel rows for what the person knows of that serves a need, with what they believe about it."""
+        index = need_tag_index(self.world_model)
+        rows = []
+        for record in self._knowledge_records():
+            entity = self.get_person(record.get("entity_id"))
+            link = most_direct(need_links(entity, self.world_model, need=need, index=index)) if entity else None
+            if link is None:
+                continue
+            detail = brief(link, self.world_model)
+            believed_location = record.get("believed_location")
+            if believed_location:
+                detail += f" at {self._display_entity_value(believed_location) or believed_location}"
+            if record.get("believed_state"):
+                detail += f", {record['believed_state']}"
+            if record.get("source"):
+                detail += f" · {record['source']}"
+            rows.append({
+                "entity_id": record.get("entity_id"),
+                "label": record.get("label"),
+                "interest": record.get("familiarity", 0.35),
+                "stance": detail,
+                "relation": link.relation,
+                "action": link.action,
+                "thing_id": link.thing,
+            })
+        return rows
+
     def get_knowledge_panel_model(self):
         category_order = (
+            "Food sources",
+            "Places to rest",
             "People",
             "Places",
             "Work & organizations",
             "Worldviews & ideas",
             "Things & techniques",
             "Events & history",
+            "Nature",
             "Other",
         )
         grouped = {category: [] for category in category_order}
+        grouped["Food sources"] = self._known_need_sources("food")
+        grouped["Places to rest"] = self._known_need_sources("rest")
         for record in self._knowledge_records():
             category = record.get("category") or "Other"
             grouped.setdefault(category, []).append(record)
@@ -2539,7 +3312,9 @@ class PersonSimulation:
         personality = self._personality_scores()
         for task in comparisons:
             conflicts = task.get("conviction_conflicts") or []
-            if not conflicts:
+            if task.get("excluded_by"):
+                task["likely_response"] = f"Refuses outright: {task['excluded_by']}"
+            elif not conflicts:
                 task["likely_response"] = "Proceed normally"
             elif task.get("suggested_alternatives"):
                 task["likely_response"] = "Seek reassignment: " + ", ".join(task["suggested_alternatives"][:2])
@@ -2562,6 +3337,7 @@ class PersonSimulation:
             "queue": list(self.task_queue[:7]),
             "comparisons": displayed_comparisons,
             "history": list(self.decision_history[:5]),
+            "goals": self._goal_tree(active),
             "external_count": len(self.external_task_allocations),
             "internal_count": len(self.internal_task_allocations),
             "status": self.last_status,
@@ -2718,44 +3494,35 @@ class PersonSimulation:
         }
 
     def get_personality_panel_model(self):
-        """Project ontology-authored Big Five fields without inventing durable facts."""
+        """The Big Five from birth (or authored), each axis moved by the person's personality words."""
         person = self.get_person() or {}
-        nested = person.get("big_five") or person.get("personality_big_five") or {}
-        if not isinstance(nested, dict):
-            nested = {}
-
+        traits, _actions = self._trait_indexes()
+        values = personality(person, self.world_model, traits)
+        known, unknown = person_traits(person, traits)
         axes = []
         for definition in self.BIG_FIVE_AXES:
-            axis_id = definition["id"]
-            field_names = (
-                f"big_five_{axis_id}",
-                f"personality_{axis_id}",
-                axis_id,
-            )
-            authored = axis_id in nested and nested.get(axis_id) not in (None, "")
-            raw_value = nested.get(axis_id)
-            if not authored:
-                for field_name in field_names:
-                    if field_name in person and person.get(field_name) not in (None, ""):
-                        raw_value = person.get(field_name)
-                        authored = True
-                        break
+            entry = values[definition["id"]]
             axis = dict(definition)
-            axis["value"] = self._bounded_score(raw_value, default=0.5)
-            axis["authored"] = authored
+            axis.update({
+                "value": entry.value,
+                "spread": entry.spread,
+                "baseline": entry.baseline,
+                "baseline_spread": entry.baseline_spread,
+                "baseline_source": entry.baseline_source,
+                "authored": entry.baseline_source == "authored",
+                "words": [{"label": name, "position": place} for name, place in entry.words],
+            })
             axes.append(axis)
-
-        markers = self._authored_list(
-            person,
-            "personality_adjectives",
-            "personality_markers",
-            "personality_traits",
-        )
         return {
             "person_name": self.get_person_name(),
             "axes": axes,
             "all_authored": all(axis["authored"] for axis in axes),
-            "adjective_markers": markers,
+            "adjective_markers": [trait_label(trait) for trait in known] + unknown,
+            "unknown_words": unknown,
+            "exclusions": [
+                f"{trait_label(trait)} excludes {', '.join(str(item) for item in trait.get('excludes_actions'))}"
+                for trait in known if trait.get("excludes_actions")
+            ],
         }
 
     def _anchor_year_label(self, person):

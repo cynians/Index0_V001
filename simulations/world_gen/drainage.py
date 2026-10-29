@@ -33,7 +33,7 @@ def _neighbors(width, height, x, y, wrap_x):
                 yield nx, ny
 
 
-def _priority_flood(rows, ocean_mask, wrap_x):
+def _priority_flood(rows, ocean_mask, wrap_x, inlets=None):
     height, width = len(rows), len(rows[0])
     filled = [[float(value or 0.0) for value in row[:width]] for row in rows]
     parent, visited, heap, visit_order = {}, set(), [] , []
@@ -53,14 +53,19 @@ def _priority_flood(rows, ocean_mask, wrap_x):
                 seed(x, y)
     # A global equirectangular grid has no open north/south edge: the first and
     # last rows represent polar caps, not places where rivers may leave the map.
-    # Regional, non-wrapping grids still use their complete boundary as an outlet.
+    # Regional, non-wrapping grids still use their complete boundary as an outlet,
+    # except where rivers enter the tile (``inlets``, a boolean grid): seeded
+    # as outlets, a river's entry cell drained its whole catchment straight
+    # back out whenever local detail left it below the cell inside.
     if not wrap_x:
         for x in range(width):
-            seed(x, 0)
-            seed(x, height - 1)
+            for y in (0, height - 1):
+                if inlets is None or not inlets[y][x]:
+                    seed(x, y)
         for y in range(height):
-            seed(0, y)
-            seed(width - 1, y)
+            for x in (0, width - 1):
+                if inlets is None or not inlets[y][x]:
+                    seed(x, y)
     if not heap:
         # Oceanless global worlds drain to their lowest closed basin instead of
         # inventing outlets at the poles.
@@ -81,6 +86,89 @@ def _priority_flood(rows, ocean_mask, wrap_x):
     return filled, parent, visit_order
 
 
+def _flat_potential(rows, filled, ocean_mask, wrap_x):
+    """Drainage potential over the flats the priority flood made, by cell.
+
+    A filled depression is a flat whose epsilon steps grow in rings from its
+    spill point, so steepest descent on it runs in the eight grid directions:
+    straight diagonal and axis-aligned rivers across every filled basin.
+    Garbrecht and Martz (1997) and Barnes, Lehman and Mulla (2014, Computers
+    & Geosciences 62) drain a flat towards lower ground and away from higher
+    ground; here both are octile distances within the flat, and a raised cell
+    drains down ``2 d_low - d_high``.  Along the shortest way out ``d_low``
+    drops by the step and ``d_high`` changes by at most the step, so the
+    potential always falls: no flat cell is left without a way out.
+    """
+    height = len(filled)
+    width = len(filled[0]) if height else 0
+    raised = {
+        (x, y)
+        for y in range(height)
+        for x in range(width)
+        if not ocean_mask[y][x] and float(filled[y][x]) > float(rows[y][x])
+    }
+    if not raised:
+        return {}, set(), {}
+    # Connected flats and the lowest filled level of each: an exit leaves only
+    # onto ground below it, which can never drain back in (rounded heights can
+    # equal the flat's own flood-epsilon steps, and a step onto such a cell
+    # came straight back as a loop).  The spill cell always qualifies.
+    floor_of = {}
+    for seed in raised:
+        if seed in floor_of:
+            continue
+        members, queue = [seed], [seed]
+        floor_of[seed] = None
+        while queue:
+            x, y = queue.pop()
+            for nx, ny in _neighbors(width, height, x, y, wrap_x):
+                if (nx, ny) in raised and (nx, ny) not in floor_of:
+                    floor_of[(nx, ny)] = None
+                    members.append((nx, ny))
+                    queue.append((nx, ny))
+        floor = min(float(filled[y][x]) for x, y in members)
+        for cell in members:
+            floor_of[cell] = floor
+    low_edges, high_edges = [], []
+    for x, y in raised:
+        level = float(filled[y][x])
+        lower = higher = False
+        for nx, ny in _neighbors(width, height, x, y, wrap_x):
+            if (nx, ny) in raised:
+                continue
+            if ocean_mask[ny][nx] or float(filled[ny][nx]) < floor_of[(x, y)]:
+                lower = True
+            elif float(filled[ny][nx]) > level:
+                higher = True
+        if lower:
+            low_edges.append((x, y))
+        if higher:
+            high_edges.append((x, y))
+
+    def distances(sources):
+        result = {cell: 0.0 for cell in sources}
+        heap = [(0.0, cell) for cell in sources]
+        heapq.heapify(heap)
+        while heap:
+            dist, (x, y) = heapq.heappop(heap)
+            if dist > result.get((x, y), float("inf")):
+                continue
+            for nx, ny in _neighbors(width, height, x, y, wrap_x):
+                if (nx, ny) not in raised:
+                    continue
+                step = dist + (math.sqrt(2.0) if nx != x and ny != y else 1.0)
+                if step < result.get((nx, ny), float("inf")):
+                    result[(nx, ny)] = step
+                    heapq.heappush(heap, (step, (nx, ny)))
+        return result
+
+    to_low = distances(low_edges)
+    from_high = distances(high_edges) if high_edges else {}
+    potential = {cell: 2.0 * to_low[cell] - from_high.get(cell, 0.0) for cell in raised if cell in to_low}
+    # Low edges leave the flat by steepest descent onto ground below its floor.
+    return potential, set(low_edges), floor_of
+
+
 def _terrain_flow_directions(rows, filled, flood_parent, ocean_mask, wrap_x):
     """Resolve D8 flow from the filled DEM rather than the flood visit tree.
 
@@ -89,41 +177,94 @@ def _terrain_flow_directions(rows, filled, flood_parent, ocean_mask, wrap_x):
     order, producing combs of parallel diagonal rivers.  The filled surface
     supplies drainage-safe elevations; local steepest descent supplies the
     actual direction, with the flood parent retained only as a flat fallback.
+    Cells inside a filled depression drain down ``_flat_potential`` instead,
+    so a river crosses a filled basin along its axis, not in grid lines; a
+    flat's exit cells step only onto ground outside the flat.  The result is
+    checked for loops, and a cell caught in one falls back to plain descent.
     """
     height = len(filled)
     width = len(filled[0]) if height else 0
+    potential, exits, floor_of = _flat_potential(rows, filled, ocean_mask, wrap_x) if height else ({}, set(), {})
+
+    def descend(x, y, leave_flat=False):
+        current = float(filled[y][x])
+        best = None
+        best_score = -float("inf")
+        for nx, ny in _neighbors(width, height, x, y, wrap_x):
+            if leave_flat and not ocean_mask[ny][nx] and ((nx, ny) in floor_of or float(filled[ny][nx]) >= floor_of[(x, y)]):
+                continue
+            distance = math.sqrt(2.0) if nx != x and ny != y else 1.0
+            candidate = float(filled[ny][nx])
+            descent = (current - candidate) / distance
+            if ocean_mask[ny][nx]:
+                descent += max(1.0, abs(current - candidate)) * 1e-6
+            if descent <= 0.0:
+                continue
+            # Prefer actual terrain valleys when filled elevations are
+            # almost tied. The final term is deterministic and too small
+            # to override a real elevation difference.
+            raw_descent = (
+                float(rows[y][x]) - float(rows[ny][nx])
+            ) / distance
+            tie_break = (
+                ((nx * 73856093) ^ (ny * 19349663) ^ (x * 83492791))
+                & 0xFFFF
+            ) * 1e-16
+            score = descent + max(0.0, raw_descent) * 1e-8 + tie_break
+            if score > best_score:
+                best_score = score
+                best = (nx, ny)
+        return best
+
     downstream = {}
     for y in range(height):
         for x in range(width):
             if ocean_mask[y][x]:
                 downstream[(x, y)] = None
                 continue
-            current = float(filled[y][x])
-            best = None
-            best_score = -float("inf")
-            for nx, ny in _neighbors(width, height, x, y, wrap_x):
-                distance = math.sqrt(2.0) if nx != x and ny != y else 1.0
-                candidate = float(filled[ny][nx])
-                descent = (current - candidate) / distance
-                if ocean_mask[ny][nx]:
-                    descent += max(1.0, abs(current - candidate)) * 1e-6
-                if descent <= 0.0:
+            here = potential.get((x, y))
+            if here is not None and (x, y) not in exits:
+                best, best_score = None, 0.0
+                for nx, ny in _neighbors(width, height, x, y, wrap_x):
+                    there = potential.get((nx, ny))
+                    if there is None:
+                        continue
+                    distance = math.sqrt(2.0) if nx != x and ny != y else 1.0
+                    score = (here - there) / distance
+                    if score > best_score:
+                        best_score, best = score, (nx, ny)
+                if best is not None:
+                    downstream[(x, y)] = best
                     continue
-                # Prefer actual terrain valleys when filled elevations are
-                # almost tied. The final term is deterministic and too small
-                # to override a real elevation difference.
-                raw_descent = (
-                    float(rows[y][x]) - float(rows[ny][nx])
-                ) / distance
-                tie_break = (
-                    ((nx * 73856093) ^ (ny * 19349663) ^ (x * 83492791))
-                    & 0xFFFF
-                ) * 1e-16
-                score = descent + max(0.0, raw_descent) * 1e-8 + tie_break
-                if score > best_score:
-                    best_score = score
-                    best = (nx, ny)
-            downstream[(x, y)] = best or flood_parent.get((x, y))
+            # An exit steps off the flat onto lower ground: a cardinal step to
+            # a flat cell one flood epsilon lower out-scored the diagonal step
+            # to the spill, and the flat's potential pointed straight back.
+            best = descend(x, y, leave_flat=(x, y) in exits) if (x, y) in exits else None
+            downstream[(x, y)] = best or descend(x, y) or flood_parent.get((x, y))
+
+    # Plain descent and the flood tree only ever go down, so a loop can only
+    # come through a flat's potential: a flat caught in one drains by plain
+    # descent instead (the old straight lines, but never a loop).
+    incoming = defaultdict(int)
+    for target in downstream.values():
+        if target is not None:
+            incoming[target] += 1
+    stack = [cell for cell in downstream if not incoming[cell]]
+    while stack:
+        target = downstream.get(stack.pop())
+        if target is not None:
+            incoming[target] -= 1
+            if not incoming[target]:
+                stack.append(target)
+    looped = [cell for cell, count in incoming.items() if count > 0]
+    if looped:
+        floors = {floor_of[cell] for cell in looped if cell in floor_of}
+        for (x, y), floor in floor_of.items():
+            if floor in floors:
+                downstream[(x, y)] = descend(x, y) or flood_parent.get((x, y))
+        for x, y in looped:
+            if (x, y) not in floor_of:
+                downstream[(x, y)] = descend(x, y) or flood_parent.get((x, y))
     return downstream
 
 
@@ -258,10 +399,12 @@ def _smoothed_channel_points(
             sinuous.append((point[0] + nx * offset, point[1] + ny * offset))
         sinuous.append(points[-1])
         points = sinuous
+    # Only a planet wraps: on a regional tile the sinuosity of a path along
+    # the west edge went to the east edge and back (lines across the whole map).
     return [
         {
-            "x": round((x % width) / max(1, width - 1), 6),
-            "y": round(y / max(1, height - 1), 6),
+            "x": round((x % width if wrap_x else min(max(x, 0.0), width - 1.0)) / max(1, width - 1), 6),
+            "y": round(min(max(y, 0.0), height - 1.0) / max(1, height - 1), 6),
         }
         for x, y in points
     ]
@@ -405,6 +548,62 @@ def _nearest_point_on_polyline(point, polyline):
     return best_distance, best_point
 
 
+def _trace_on_child_flow(start, accumulation):
+    """The child's own way down from ``start`` (normalized), by its flow accumulation.
+
+    Steps to the neighbour that gathers the most water, as long as it
+    gathers more than the cell it leaves: down the child's channel to its
+    sea, its tile edge or the lake it ends in.  ``None`` when the child's
+    ground offers no step.
+    """
+    height = len(accumulation)
+    width = len(accumulation[0]) if height else 0
+    if width < 2 or height < 2:
+        return None
+    x = int(round(_clamp(float(start.get("x", 0.0))) * (width - 1)))
+    y = int(round(_clamp(float(start.get("y", 0.0))) * (height - 1)))
+    path, seen = [(x, y)], {(x, y)}
+    for _step in range(4 * (width + height)):
+        here = float(accumulation[y][x] or 0.0)
+        best, best_value = None, here
+        for nx, ny in _neighbors(width, height, x, y, False):
+            value = float(accumulation[ny][nx] or 0.0)
+            if (nx, ny) not in seen and value > best_value:
+                best, best_value = (nx, ny), value
+        if best is None:
+            break
+        x, y = best
+        path.append(best)
+        seen.add(best)
+    if len(path) < 2:
+        return None
+    return _bends(path, 0.75)
+
+
+def _bends(path, tolerance):
+    """``path`` (cells) kept at its bends: Ramer-Douglas-Peucker within ``tolerance`` cells."""
+    keep = [False] * len(path)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(path) - 1)]
+    while stack:
+        first, last = stack.pop()
+        (ax, ay), (bx, by) = path[first], path[last]
+        length = math.hypot(bx - ax, by - ay)
+        farthest, distance = None, tolerance
+        for index in range(first + 1, last):
+            px, py = path[index]
+            if length > 0.0:
+                gap = abs((bx - ax) * (ay - py) - (ax - px) * (by - ay)) / length
+            else:
+                gap = math.hypot(px - ax, py - ay)
+            if gap > distance:
+                farthest, distance = index, gap
+        if farthest is not None:
+            keep[farthest] = True
+            stack.extend(((first, farthest), (farthest, last)))
+    return [cell for cell, kept in zip(path, keep) if kept]
+
+
 def _boundary_ports(points, tolerance=1e-6):
     """Expose inherited reach entry/exit points for adjacent child tiles."""
     ports = []
@@ -523,6 +722,9 @@ def _inherit_parent_lakes(parent_drainage, local_lakes, child_bounds, parent_bou
     return [*unmatched, *resolved], len(inherited), len(inherited) - len(unmatched)
 
 
+MAX_INHERITED_TRUNKS = 16
+
+
 def inherit_parent_drainage(parent_drainage, child_drainage, child_bounds, parent_bounds):
     """Project major parent reaches into a refined map as continuity anchors.
 
@@ -574,12 +776,22 @@ def inherit_parent_drainage(parent_drainage, child_drainage, child_bounds, paren
             candidates_by_origin[origin_id] = (score, river)
 
     inherited = []
+    accumulation = child_drainage.get("flow_accumulation_rows") or []
+    child_height = len(accumulation)
+    child_width = len(accumulation[0]) if child_height else 0
+    if child_width < 2 or child_height < 2:
+        accumulation = []
+    # The cap counts trunks that cross the child: capped before clipping, the
+    # sixteen strongest reaches of a parent with hundreds were its own short
+    # segments elsewhere, and a Local map under a Region got none.
     ordered_candidates = sorted(
         candidates_by_origin.items(),
         key=lambda item: item[1][0],
         reverse=True,
-    )[:16]
+    )
     for origin_id, (_score, river) in ordered_candidates:
+        if len(inherited) >= MAX_INHERITED_TRUNKS:
+            break
         parent_points = river.get("display_points") or river.get("points") or []
         global_points = [
             {
@@ -603,6 +815,25 @@ def inherit_parent_drainage(parent_drainage, child_drainage, child_bounds, paren
                     clipped_points.append(local)
         if len(clipped_points) < 2:
             continue
+        # The parent's line is as straight as the parent's cells are wide and
+        # knows nothing of the child's coast: the trunk keeps the parent's
+        # course only as far as where it comes in, and from there takes the
+        # child's own way down (its solver already carries the inflow).
+        mouth = river.get("mouth") if river.get("mouth") in {"ocean", "lake"} else "external_boundary"
+        geometry = "parent_polyline_clipped"
+        if accumulation:
+            traced = _trace_on_child_flow(clipped_points[0], accumulation)
+            if traced is not None:
+                clipped_points = [
+                    {"x": round(cx / (child_width - 1), 6), "y": round(cy / (child_height - 1), 6)}
+                    for cx, cy in traced
+                ]
+                geometry = "traced_on_child_flow"
+                end_x, end_y = traced[-1]
+                if end_x in {0, child_width - 1} or end_y in {0, child_height - 1}:
+                    mouth = "external_boundary"
+                elif river.get("mouth") not in {"ocean", "lake"}:
+                    mouth = "confluence"
         inherited.append({
             **river,
             "id": f"parent_trunk_{origin_id}",
@@ -614,11 +845,8 @@ def inherit_parent_drainage(parent_drainage, child_drainage, child_bounds, paren
             "parent_river_id": river.get("id"),
             "boundary_ports": _boundary_ports(clipped_points),
             "direction_contract": "source_to_mouth_inherited_from_parent",
-            "mouth": (
-                river.get("mouth")
-                if river.get("mouth") in {"ocean", "lake"}
-                else "external_boundary"
-            ),
+            "geometry_source": geometry,
+            "mouth": mouth,
         })
     local_rivers = []
     suppressed_local_duplicates = 0
@@ -688,6 +916,83 @@ def inherit_parent_drainage(parent_drainage, child_drainage, child_bounds, paren
     return child_drainage
 
 
+# Hydraulic geometry of a natural channel at its mean flow: depth and width
+# from discharge in m3/s (Leopold & Maddock 1953, exponents near 0.4 and 0.5).
+CHANNEL_DEPTH_COEFFICIENT_M = 0.24
+CHANNEL_DEPTH_EXPONENT = 0.38
+CHANNEL_WIDTH_COEFFICIENT_M = 2.8
+# Share of the perennial depth a seasonal channel holds as its characteristic
+# water, and the share an event-fed wash counts for when wetting its bed.
+INTERMITTENT_DEPTH_FACTOR = 0.55
+EPHEMERAL_WETTING_FACTOR = 0.25
+# A channel is open water from this characteristic depth on; a thinner film
+# is wet ground with soil under it.
+MIN_CHANNEL_WATER_DEPTH_M = 0.02
+# The bank of a channel at least this deep is as wet as a lake shore; a rill
+# a centimetre deep wets its bed a twentieth as much.
+RIPARIAN_SATURATING_DEPTH_M = 0.25
+# The wetted margin grows with the channel (bank storage and hyporheic
+# exchange reach a few channel widths).  Three widths keep the halo a 10 m
+# river had at Site scale, where the rule was first written in cells.
+RIPARIAN_REACH_CHANNEL_WIDTHS = 3.0
+RIPARIAN_REACH_MAX_M = 300.0
+# Standing water wets the ground within about a metre above its level, a
+# few tens of metres of shore on gentle ground.
+SHORE_REACH_M = 30.0
+
+_CHAMFER_STEPS = tuple(
+    (step_y, step_x)
+    for step_y in range(-3, 4) for step_x in range(-3, 4)
+    if (step_y or step_x) and math.gcd(step_y, step_x) == 1
+)
+
+
+def _capped_cones(emit, decay, cap, cell_width_m, cell_height_m):
+    """Per cell, the largest ``min(cap, emit - decay * distance)`` a source casts on it (0..1).
+
+    Sources are the cells with ``emit > 0``; the distance runs in metres from
+    a source cell's centre.  Each source is a flat-topped cone: a water body
+    as wide as its top, with a margin that fades over ``emit / decay`` metres.
+    The cones are propagated over a 32-direction chamfer until nothing
+    changes, so a margin is as wide on the ground at every sample spacing.
+    """
+    cast = np.array(emit, dtype=np.float64)
+    slope = np.array(decay, dtype=np.float64)
+    top = np.array(cap, dtype=np.float64)
+    value = np.where(cast > 0.0, np.minimum(top, cast), 0.0)
+    height, width = value.shape
+    steps = [
+        (step_y, step_x, math.hypot(step_x * cell_width_m, step_y * cell_height_m))
+        for step_y, step_x in _CHAMFER_STEPS if abs(step_y) < height and abs(step_x) < width
+    ]
+    for _sweep in range(height + width):
+        improved = False
+        for step_y, step_x, distance in steps:
+            source = (
+                slice(max(0, -step_y), height - max(0, step_y)),
+                slice(max(0, -step_x), width - max(0, step_x)),
+            )
+            target = (
+                slice(max(0, step_y), height - max(0, -step_y)),
+                slice(max(0, step_x), width - max(0, -step_x)),
+            )
+            reached = cast[source] - slope[source] * distance
+            candidate = np.minimum(top[source], reached)
+            # On a flat top the nearer source wins: it carries further.
+            better = (candidate > value[target] + 1e-9) | (
+                (candidate >= value[target] - 1e-9) & (reached > cast[target] + 1e-9) & (candidate > 0.0)
+            )
+            if better.any():
+                improved = True
+                np.copyto(slope[target], slope[source], where=better)
+                np.copyto(top[target], top[source], where=better)
+                np.copyto(cast[target], reached, where=better)
+                np.copyto(value[target], candidate, where=better)
+        if not improved:
+            break
+    return np.clip(value, 0.0, 1.0)
+
+
 def derive_surface_hydrology_grids(
     elevation_rows,
     ocean_mask,
@@ -705,6 +1010,10 @@ def derive_surface_hydrology_grids(
 
     The graph remains canonical.  These bounded rasters are a scale-specific
     cache used by Map, Biosphere, soils, and surface-process models.
+
+    Water depth, open water and the wetting of banks follow what a channel
+    carries, in metres: a routed path with a trickle of discharge is a
+    channel, but neither open water nor a wet bank, at any sample spacing.
     """
     height = len(elevation_rows or [])
     width = min((len(row) for row in (elevation_rows or [])), default=0)
@@ -718,6 +1027,13 @@ def derive_surface_hydrology_grids(
     cell_width_m = float(region_width_m or 0.0) / max(1, width - 1)
     cell_height_m = float(region_height_m or 0.0) / max(1, height - 1)
     cell_spacing_m = max(1e-6, math.sqrt(max(1e-12, cell_width_m * cell_height_m)))
+    # Wetting cast by the water bodies, as cones from their centreline cells
+    # (``_capped_cones``: emit, decay per metre, cap): the wet margin beside
+    # the water, and the bed itself.
+    margin_cones = np.zeros((3, height, width), dtype=np.float64)
+    bed_cones = np.zeros((3, height, width), dtype=np.float64)
+    water_cones = np.zeros((3, height, width), dtype=np.float64)
+    standing = np.asarray(water, dtype=bool)  # sea now, lakes below
 
     def paint_disc(cx, cy, radius, *, channel_value=1.0, water_value=False, water_depth=0.0):
         radius = max(0, int(radius))
@@ -741,28 +1057,59 @@ def derive_surface_hydrology_grids(
         points = river.get("points") or river.get("display_points") or []
         if len(points) < 2:
             continue
-        discharge = max(0.0, float(river.get("estimated_discharge_m3_s", 0.0) or 0.0))
+        recorded_discharge = river.get("estimated_discharge_m3_s")
+        discharge = max(0.0, float(recorded_discharge or 0.0))
         width_m = max(0.0, float(river.get("average_width_m", 0.0) or 0.0))
+        if recorded_discharge is not None:
+            # The recorded width has a display floor; a rill is not 2 m wide,
+            # and a path that carries nothing has no width at all.
+            hydraulic_width_m = CHANNEL_WIDTH_COEFFICIENT_M * math.sqrt(discharge)
+            width_m = min(width_m, hydraulic_width_m) if width_m > 0.0 else hydraulic_width_m
+        elif width_m > 0.0:
+            # A channel described by its width alone.
+            discharge = (width_m / CHANNEL_WIDTH_COEFFICIENT_M) ** 2
         radius = max(0, min(8, int(round(width_m / max(1e-6, cell_spacing_m) * 0.5))))
         regime = str(river.get("flow_regime") or "intermittent")
-        characteristic_depth = min(18.0, max(0.08, 0.24 * max(0.02, discharge) ** 0.38))
-        if regime == "intermittent":
-            characteristic_depth *= 0.55
+        hydraulic_depth = (
+            min(18.0, CHANNEL_DEPTH_COEFFICIENT_M * discharge ** CHANNEL_DEPTH_EXPONENT) if discharge > 0.0 else 0.0
+        )
+        characteristic_depth = hydraulic_depth * (INTERMITTENT_DEPTH_FACTOR if regime == "intermittent" else 1.0)
         active_water = regime in {"perennial", "intermittent"}
+        strength = _clamp(
+            (characteristic_depth if active_water else hydraulic_depth * EPHEMERAL_WETTING_FACTOR)
+            / RIPARIAN_SATURATING_DEPTH_M
+        )
+        reach_m = max(1e-6, min(RIPARIAN_REACH_MAX_M, RIPARIAN_REACH_CHANNEL_WIDTHS * width_m))
+        # Full wetting across the channel, fading over the margin; a channel
+        # and margin narrower than the cell wet only their share of it.
+        margin = (
+            strength * (1.0 + width_m / (2.0 * reach_m)),
+            strength / reach_m,
+            strength * _clamp((width_m + reach_m) / cell_spacing_m),
+        )
+        # The share of a cell the channel itself covers, at its distance from the centreline.
+        bed = ((width_m + cell_spacing_m) / (2.0 * cell_spacing_m), 1.0 / cell_spacing_m, _clamp(width_m / cell_spacing_m))
+        holds_water = active_water and characteristic_depth >= MIN_CHANNEL_WATER_DEPTH_M
         for first, second in zip(points, points[1:]):
             x0, y0 = float(first["x"]) * (width - 1), float(first["y"]) * (height - 1)
             x1, y1 = float(second["x"]) * (width - 1), float(second["y"]) * (height - 1)
             steps = max(1, int(math.ceil(max(abs(x1 - x0), abs(y1 - y0)) * 1.5)))
             for step in range(steps + 1):
                 amount = step / steps
+                cx, cy = round(x0 + (x1 - x0) * amount), round(y0 + (y1 - y0) * amount)
                 paint_disc(
-                    round(x0 + (x1 - x0) * amount),
-                    round(y0 + (y1 - y0) * amount),
+                    cx,
+                    cy,
                     radius,
                     channel_value=1.0 if active_water else 0.65,
-                    water_value=active_water,
+                    water_value=holds_water,
                     water_depth=characteristic_depth,
                 )
+                if strength > 0.0 and 0 <= cx < width and 0 <= cy < height and margin[0] > margin_cones[0, cy, cx]:
+                    margin_cones[:, cy, cx] = margin
+                    bed_cones[:, cy, cx] = [strength * value for value in bed]
+                    if holds_water:
+                        water_cones[:, cy, cx] = bed
 
     for lake in drainage_network.get("lakes") or []:
         if not isinstance(lake, dict):
@@ -786,6 +1133,7 @@ def derive_surface_hydrology_grids(
             if lake_surface is not None and bed > float(lake_surface) + max(0.5, cell_spacing_m * 0.02):
                 continue
             water[y][x] = True
+            standing[y, x] = True
             lake_depth = max(0.05, float(lake_surface) - bed) if lake_surface is not None else 0.05
             depth[y][x] = max(depth[y][x], lake_depth)
             surface[y][x] = bed + depth[y][x]
@@ -827,56 +1175,51 @@ def derive_surface_hydrology_grids(
     recharge = sample_grid(groundwater_recharge_rows)
     supply = runoff + recharge * 0.7 + precipitation * 0.08
     climatic = supply / np.maximum(1.0, supply + evaporation)
-    channel_grid = np.asarray(channel, dtype=np.float64)
-    water_grid = np.asarray(water, dtype=bool)
-    occupied = water_grid | (channel_grid > 0.0)
-
-    def within(mask, radius):
-        """Any ``mask`` cell in the edge-clipped square window of ``radius``."""
-        grown = mask.copy()
-        for offset in range(1, radius + 1):
-            grown[offset:, :] |= mask[:-offset, :]
-            grown[:-offset, :] |= mask[offset:, :]
-        columns = grown.copy()
-        for offset in range(1, radius + 1):
-            columns[:, offset:] |= grown[:, :-offset]
-            columns[:, :-offset] |= grown[:, offset:]
-        return columns
-
-    near_water = np.where(
-        water_grid,
-        1.0,
-        np.where(
-            within(occupied, 1),
-            0.72,
-            np.where(within(occupied, 2), 0.48, np.where(within(occupied, 3), 0.28, 0.0)),
-        ),
-    )
+    # Lakes and the sea wet their shore whatever flows into them; a river
+    # running through one keeps its own margin where that reaches further.
+    shore = (1.0, 1.0 / SHORE_REACH_M, 1.0)
+    keeps_margin = (margin_cones[2] >= 1.0) & (margin_cones[1] <= shore[1])
+    for field, value in zip(margin_cones, shore):
+        np.copyto(field, value, where=standing & ~keeps_margin)
+    spacing = (cell_width_m or cell_spacing_m, cell_height_m or cell_spacing_m)
+    near_water = _capped_cones(*margin_cones, *spacing)
+    in_channel = _capped_cones(*bed_cones, *spacing)
     wetness = round_rows(
-        np.clip(0.04 + climatic * 0.68 + channel_grid * 0.12 + near_water * 0.32, 0.0, 1.0),
+        np.clip(0.04 + climatic * 0.68 + in_channel * 0.12 + near_water * 0.32, 0.0, 1.0),
         4,
     )
+    # The flag below marks every cell a water-bearing channel is drawn in;
+    # this is how much of each cell is actually under water.
+    water_fraction = np.where(standing, 1.0, _capped_cones(*water_cones, *spacing))
 
     runoff_grid = {
         "status": "drainage_graph_rasterized",
-        "model_version": "surface-hydrology-fields-v1",
+        "model_version": "surface-hydrology-fields-v2",
         "width": width,
         "height": height,
         "channel_presence_rows": channel,
         "wetness_index_rows": wetness,
         "flow_accumulation_rows": drainage_network.get("flow_accumulation_rows") or [],
-        "wetness_contract": "climate water balance plus graph-channel and open-water proximity; dimensionless qualitative index",
+        "wetness_contract": (
+            "climate water balance plus wetting beside water, scaled by the water body's depth and "
+            "fading over metres of ground; dimensionless qualitative index"
+        ),
     }
     surface_water_grid = {
         "status": "drainage_graph_rasterized",
-        "model_version": "surface-hydrology-fields-v1",
+        "model_version": "surface-hydrology-fields-v2",
         "width": width,
         "height": height,
         "water_presence_rows": water,
+        "water_fraction_rows": round_rows(water_fraction, 3),
         "water_depth_m_rows": depth,
         "water_surface_elevation_m_rows": surface,
-        "presence_contract": "ocean, retained lakes, and characteristic perennial/intermittent channel water",
-        "depth_contract": "DEM bathymetry for ocean/lakes; qualitative hydraulic-geometry estimate for channels",
+        "presence_contract": (
+            "ocean, retained lakes, and perennial/intermittent channels whose characteristic depth "
+            f"reaches {MIN_CHANNEL_WATER_DEPTH_M} m; a channel narrower than a cell still flags the cell"
+        ),
+        "fraction_contract": "share of each cell under open water, from channel width in metres; 1 in lakes and ocean",
+        "depth_contract": "DEM bathymetry for ocean/lakes; hydraulic-geometry depth of the mean discharge for channels",
         "seasonal_state": "unresolved; intermittent presence is characteristic rather than instantaneous",
         "salinity": "unresolved",
     }
@@ -951,12 +1294,20 @@ def _lake_components(
                 selected.append((cx, cy))
                 cumulative_loss = next_loss
             water_balance_limited = len(selected) < len(cells)
+            # Share of the selected floor the runoff can keep under water: an
+            # undersupplied terminal lake is shallow and ephemeral (a playa).
+            terminal_fill = _clamp(water_budget / max(1e-9, cumulative_loss)) if water_balance_limited else 1.0
             overflowing = not water_balance_limited and outlet is not None and outlet[2] is not None
 
-            if overflowing:
+            if overflowing and detail_level <= 0:
                 # Long-lived through-flow cuts a spillway below the raw DEM
                 # saddle. This breaches broad shallow closures while retaining
                 # deep structural, volcanic, glacial, and rift lakes.
+                # Planet maps only: their cells are tens of kilometres and the
+                # gorge is below them.  A regional map has the sill in its own
+                # heights, and a lake that overflows stands at it: with the
+                # assumed cut, a basin 52 m deep behind a Region tile's shore
+                # held a lake 39 m under its own outlet.
                 base_incision_m = min(
                     maximum_depth * 0.58,
                     25.0 + math.log1p(max(0.0, inflow_index)) * (16.0 if detail_level <= 0 else 9.0),
@@ -969,13 +1320,17 @@ def _lake_components(
                 incised = [cell for cell in cells if float(rows[cell[1]][cell[0]]) <= incised_surface]
                 if len(incised) >= minimum_cells:
                     selected = incised
-            if len(selected) < minimum_cells:
+            # ``minimum_cells`` filters depressions too small to resolve (above),
+            # not terminal lakes: in a dry climate a large closed basin holds a
+            # lake of one or two cells, or only a playa.  Dropping those left a
+            # planet with fifteen closed basins without a single lake or salt pan.
+            if len(selected) < minimum_cells and not water_balance_limited:
                 continue
 
             cells = selected
             min_x, max_x = min(cx for cx, _ in cells), max(cx for cx, _ in cells)
             min_y, max_y = min(cy for _, cy in cells), max(cy for _, cy in cells)
-            surface = min(spill_surface, max(float(rows[cy][cx]) for cx, cy in cells) + minimum_depth)
+            surface = min(spill_surface, max(float(rows[cy][cx]) for cx, cy in cells) + minimum_depth * terminal_fill)
             area_weight = sum(area_weights[cy][cx] for cx, cy in cells)
             total_area_weight = sum(sum(row) for row in area_weights)
             area_fraction = area_weight / max(1e-9, total_area_weight)
@@ -1003,6 +1358,7 @@ def _lake_components(
                 "annual_inflow_index_mm_weighted_cells": round(inflow_index, 2),
                 "annual_open_water_loss_index_mm_weighted_cells": round(cumulative_loss, 2),
                 "water_balance_limited": water_balance_limited,
+                "terminal_fill_fraction": round(terminal_fill, 4),
                 "overflowing": overflowing,
                 "bounds": {"min_x": round(min_x / max(1, width - 1), 5), "max_x": round(max_x / max(1, width - 1), 5), "min_y": round(min_y / max(1, height - 1), 5), "max_y": round(max_y / max(1, height - 1), 5), "wraps_dateline": bool(wrap_x and max_x - min_x > width * 0.5)},
                 "center": {"x": round(center_x, 5), "y": round(sum(cy for _, cy in cells) / len(cells) / max(1, height - 1), 5)},
@@ -1025,25 +1381,46 @@ def derive_drainage_network(
     groundwater_recharge_rows=None, snowmelt_runoff_rows=None,
     driest_month_precipitation_rows=None,
     wettest_month_precipitation_rows=None, represented_area_m2=None,
+    inflow=None,
 ):
+    """Rivers, lakes and basins of ``rows``.
+
+    ``inflow`` brings in the rivers a regional tile receives from its parent:
+    ``{"cells": {(x, y): upstream cells}, "inlets": [[bool]], "means":
+    {field: catchment mean}}`` on this grid.  The entry cells accumulate the
+    upstream catchment (with the parent's mean runoff and climate), and
+    ``inlets`` are edge cells that are no outlets.
+    """
     if not rows or not rows[0]:
         return {"status": "unavailable", "model_version": MODEL_VERSION}
     height = len(rows)
     width = min(len(row) for row in rows)
     rows = [list(map(float, row[:width])) for row in rows]
     ocean_mask = [list(row[:width]) for row in ocean_mask]
-    filled, flood_parent, visit_order = _priority_flood(rows, ocean_mask, bool(wrap_x))
+    inflow = inflow if isinstance(inflow, dict) and not wrap_x else {}
+    filled, flood_parent, visit_order = _priority_flood(rows, ocean_mask, bool(wrap_x), inlets=inflow.get("inlets"))
     downstream = _terrain_flow_directions(
         rows, filled, flood_parent, ocean_mask, bool(wrap_x),
     )
-    # Steepest descent on the filled DEM is acyclic. Elevation order is the
-    # correct accumulation order even when the chosen valley neighbor was not
-    # the cell's original priority-flood parent.
-    flow_order = sorted(
-        ((x, y) for y in range(height) for x in range(width)),
-        key=lambda cell: filled[cell[1]][cell[0]],
-        reverse=True,
-    )
+    # The flow graph is acyclic, but inside a filled flat a step may rise by a
+    # flood epsilon (``_flat_potential``), so elevation order is no longer
+    # upstream-first: every cell comes after all cells draining into it
+    # (Kahn), the highest of the ready cells first.
+    incoming = defaultdict(int)
+    for target in downstream.values():
+        if target is not None:
+            incoming[target] += 1
+    ready = [(-filled[y][x], y, x) for y in range(height) for x in range(width) if not incoming[(x, y)]]
+    heapq.heapify(ready)
+    flow_order = []
+    while ready:
+        _level, y, x = heapq.heappop(ready)
+        flow_order.append((x, y))
+        target = downstream.get((x, y))
+        if target is not None:
+            incoming[target] -= 1
+            if not incoming[target]:
+                heapq.heappush(ready, (-filled[target[1]][target[0]], target[1], target[0]))
 
     area_weights = _cell_area_weights(width, height, spherical=bool(wrap_x))
     accumulation = [[max(0.0, float(runoff_rows[y][x] or 0.0)) * area_weights[y][x] for x in range(width)] for y in range(height)]
@@ -1072,6 +1449,20 @@ def derive_drainage_network(
             ]
             for y in range(height)
         ]
+    tile_means = inflow.get("means") or {}
+    cell_means = inflow.get("cell_means") or {}
+    for (x, y), cells in (inflow.get("cells") or {}).items():
+        if not (0 <= y < height and 0 <= x < width) or ocean_mask[y][x] or cells <= 0.0:
+            continue
+        inflow_means = {**tile_means, **(cell_means.get((x, y)) or {})}
+        weight = float(cells) * area_weights[y][x]
+        runoff = inflow_means.get("runoff")
+        accumulation[y][x] += weight * max(0.0, float(runoff_rows[y][x] or 0.0) if runoff is None else float(runoff))
+        contributing_cells[y][x] += int(round(cells))
+        contributing_area[y][x] += weight
+        for name, field in catchment_fields.items():
+            local = field[y][x] / max(1e-9, area_weights[y][x])
+            field[y][x] += weight * float(inflow_means.get(name, local))
     upstream = defaultdict(list)
     for x, y in flow_order:
         target = downstream.get((x, y))
@@ -1137,6 +1528,7 @@ def derive_drainage_network(
                     orders.get(start, 1),
                     [start, target],
                     contributing_cells[start[1]][start[0]],
+                    start,
                 ))
             continue
         path, current, seen = [start], start, {start}
@@ -1150,9 +1542,15 @@ def derive_drainage_network(
                 break
         if len(path) < 2:
             continue
+        # A reach that ends by joining another stream is gauged at its own
+        # last cell: the junction cell already carries the joined river, so
+        # every rill entering a trunk was recorded with the trunk's
+        # discharge, order and catchment (and inherited by children as one).
         end = path[-1]
-        catchment_cells = contributing_cells[end[1]][end[0]]
-        raw_segments.append((accumulation[end[1]][end[0]], orders.get(end, 1), path, catchment_cells))
+        joined = sum(1 for child in upstream.get(end, ()) if child in stream_cells) >= 2
+        gauge = path[-2] if joined else end
+        catchment_cells = contributing_cells[gauge[1]][gauge[0]]
+        raw_segments.append((accumulation[gauge[1]][gauge[0]], orders.get(gauge, 1), path, catchment_cells, gauge))
     raw_segments.sort(key=lambda item: (item[1], item[0], len(item[2])), reverse=True)
     segment_limit = int(max_segments or (28 if detail_level <= 0 else (64 if detail_level == 1 else 140)))
     feeders = [item for item in raw_segments if item[1] == 1]
@@ -1198,7 +1596,7 @@ def derive_drainage_network(
     rivers, node_to_segment = [], {}
     maximum_flow = max(item[0] for item in raw_segments) if raw_segments else max(land_values)
     cell_spacing_m = math.sqrt(float(represented_area_m2) / max(1, width * height)) if represented_area_m2 else 1.0
-    for index, (mouth_flow, stream_order, path, catchment_cells) in enumerate(raw_segments):
+    for index, (mouth_flow, stream_order, path, catchment_cells, gauge) in enumerate(raw_segments):
         river_id = f"river_{index + 1:03d}"
         role = "mainstem" if stream_order >= 3 else ("tributary" if stream_order == 2 else "feeder")
         points = [{"x": round(x / max(1, width - 1), 5), "y": round(y / max(1, height - 1), 5)} for x, y in path]
@@ -1226,11 +1624,11 @@ def derive_drainage_network(
             path, rows, width, height, cell_spacing_m, normalized_flow, stream_order,
         )
         weighted_area = max(
-            1e-9, float(contributing_area[path[-1][1]][path[-1][0]])
+            1e-9, float(contributing_area[gauge[1]][gauge[0]])
         )
         catchment_climate = {
             f"mean_{name}_mm": round(
-                float(field[path[-1][1]][path[-1][0]]) / weighted_area,
+                float(field[gauge[1]][gauge[0]]) / weighted_area,
                 3,
             )
             for name, field in catchment_fields.items()
@@ -1255,14 +1653,18 @@ def derive_drainage_network(
             "mouth": mouth,
             "source_elevation_m": round(rows[path[0][1]][path[0][0]], 1),
             "catchment_cell_count": int(catchment_cells),
-            "catchment_area_weighted_cells": round(contributing_area[path[-1][1]][path[-1][0]], 3),
+            "catchment_area_weighted_cells": round(contributing_area[gauge[1]][gauge[0]], 3),
             "channel_cell_length": len(path),
         })
         node_to_segment[path[0]] = river_id
-    for river, (_flow, _order, path, _catchment_cells) in zip(rivers, raw_segments):
+    for river, (_flow, _order, path, _catchment_cells, _gauge) in zip(rivers, raw_segments):
         joined = node_to_segment.get(path[-1])
         if joined and joined != river["id"]:
             river["joins_river_id"] = joined
+            # Its water goes on down the segment it joins; only that one
+            # reaches the sea or a lake (the mouth test above looks one cell
+            # past the end, which is the next segment's).
+            river["mouth"] = "confluence"
 
     terminal_cache = {}
     def terminal(cell):

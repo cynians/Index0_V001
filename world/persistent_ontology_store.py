@@ -19,7 +19,10 @@ import uuid
 from pathlib import Path
 from urllib.parse import quote
 
-from world.ontology_repository import BASE_IRI, ENTITY_IRI, OntologyRepository
+from world.ontology_repository import (
+    BASE_IRI, ENTITY_IRI, PACKED_JSON_FROM_CHARS, PACKED_JSON_PREFIX, OntologyRepository, pack_json_text,
+    unpack_json_text,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -135,6 +138,10 @@ class PersistentOntologyStore:
     LOCK_RETRY_ATTEMPTS = 5
     SQLITE_BUSY_TIMEOUT_MS = 1_500
     PROJECTION_CACHE_VERSION = 2
+    # Owlready2 keeps one index over values, which is also what stops a triple from being stored twice.  A
+    # value of megabytes sat in it a second time and doubled the database: only values up to this many
+    # characters stay in it.  Nothing in Owlready2 asks for this index by name.
+    VALUE_INDEX_MAX_CHARS = 4096
     LAZY_LOCATION_FIELDS = {
         "map_layers",
         "regional_material_occurrences",
@@ -274,6 +281,148 @@ class PersistentOntologyStore:
                     "database_authoritative": True,
                 }
             )
+            try:
+                # A fresh import has Owlready2's own layout, large values in the value index included.
+                self.compact_database()
+            except sqlite3.Error as exc:
+                logger.warning("Imported ontology store was left uncompacted: %s", exc)
+
+    def _value_index_sql(self):
+        return ("CREATE UNIQUE INDEX index_datas_op ON datas(o,p,c,d,s) "
+                f"WHERE length(o) <= {int(self.VALUE_INDEX_MAX_CHARS)}")
+
+    def _apply_value_index_policy(self, connection):
+        """Keep large values out of the index over values; ``True`` if the index had to be rebuilt."""
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='index_datas_op'").fetchone()
+        wanted = self._value_index_sql()
+        if row is not None and " ".join(str(row[0]).split()) == " ".join(wanted.split()):
+            return False
+        connection.execute("DROP INDEX IF EXISTS index_datas_op")
+        connection.execute(wanted)
+        return True
+
+    def _json_literal_rows(self, connection):
+        """``(rowid, characters)`` of every stored literal large enough to pack that is a JSON literal.
+
+        Which fields of an individual hold JSON is on the individual itself
+        (``jsonFieldName``); a long plain string is not touched, for nothing
+        would unpack it when it is read.
+        """
+        def storid(iri):
+            row = connection.execute("SELECT storid FROM resources WHERE iri=?", (iri,)).fetchone()
+            return row[0] if row else None
+
+        marker = storid(f"{BASE_IRI}jsonFieldName")
+        if marker is None:
+            return [], 0
+        properties, json_fields = {}, {}
+        for subject, field_name in connection.execute("SELECT s, o FROM datas WHERE p=?", (marker,)):
+            if field_name not in properties:
+                properties[field_name] = storid(f"{BASE_IRI}{self._owl_name(f'field_{field_name}')}")
+            if properties[field_name] is not None:
+                json_fields.setdefault(subject, set()).add(properties[field_name])
+        found, other = [], 0
+        for rowid, subject, prop, size in connection.execute(
+                "SELECT rowid, s, p, length(o) FROM datas WHERE typeof(o)='text' AND length(o) >= ?",
+                (PACKED_JSON_FROM_CHARS,)):
+            if prop in json_fields.get(subject, ()):
+                found.append((rowid, size))
+            else:
+                other += 1
+        return found, other
+
+    def storage_report(self):
+        """What the store holds in large literals, without changing it."""
+        connection = sqlite3.connect(f"file:{self.database_path}?mode=ro", uri=True)
+        try:
+            rows, other = self._json_literal_rows(connection)
+            packed = plain = packed_chars = plain_chars = 0
+            for rowid, size in rows:
+                (head,) = connection.execute("SELECT substr(o, 1, ?) FROM datas WHERE rowid=?",
+                                             (len(PACKED_JSON_PREFIX), rowid)).fetchone()
+                if head == PACKED_JSON_PREFIX:
+                    packed, packed_chars = packed + 1, packed_chars + size
+                else:
+                    plain, plain_chars = plain + 1, plain_chars + size
+            index = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND name='index_datas_op'").fetchone()
+            return {
+                "database_bytes": self.database_path.stat().st_size,
+                "json_literals_plain": plain, "json_literals_plain_chars": plain_chars,
+                "json_literals_packed": packed, "json_literals_packed_chars": packed_chars,
+                "large_literals_not_json": other,
+                "value_index_is_partial": bool(index) and "WHERE" in str(index[0]).upper(),
+            }
+        finally:
+            connection.close()
+
+    def optimize_storage(self, progress=None):
+        """Bring the quadstore to its compact layout and say what that did.
+
+        Every JSON literal of ``PACKED_JSON_FROM_CHARS`` characters or more is
+        packed (each is unpacked again and compared before it is written),
+        large values leave the index over values, and the file is compacted.
+        What is read from the store is the same as before, so a startup
+        projection that was valid stays valid.  The store must not be open in
+        any other process.
+        """
+        with self._operation_lock:
+            signature_before = self._projection_source_signature()
+            size_before = self.database_path.stat().st_size
+            connection = sqlite3.connect(str(self.database_path), isolation_level=None, check_same_thread=False,
+                                         timeout=self.SQLITE_BUSY_TIMEOUT_MS / 1000.0)
+            packed = chars_before = chars_after = 0
+            try:
+                connection.execute(f"PRAGMA busy_timeout = {self.SQLITE_BUSY_TIMEOUT_MS}")
+                connection.execute("BEGIN EXCLUSIVE")
+                try:
+                    rows, other = self._json_literal_rows(connection)
+                    # Out first: otherwise every rewritten value is taken out of the index and put back in.
+                    connection.execute("DROP INDEX IF EXISTS index_datas_op")
+                    for number, (rowid, _size) in enumerate(rows):
+                        (text,) = connection.execute("SELECT o FROM datas WHERE rowid=?", (rowid,)).fetchone()
+                        if text.startswith(PACKED_JSON_PREFIX):
+                            continue
+                        kept = pack_json_text(text)
+                        if unpack_json_text(kept) != text:
+                            raise RuntimeError(f"a packed literal did not unpack to itself (row {rowid})")
+                        connection.execute("UPDATE datas SET o=? WHERE rowid=?", (kept, rowid))
+                        packed, chars_before, chars_after = packed + 1, chars_before + len(text), chars_after + len(kept)
+                        if progress is not None and number % 50 == 0:
+                            progress(number / max(1, len(rows)), f"packed {packed} literals")
+                    connection.execute(self._value_index_sql())
+                    connection.execute("COMMIT")
+                except BaseException:
+                    connection.execute("ROLLBACK")
+                    raise
+                if progress is not None:
+                    progress(1.0, "compacting the file")
+                connection.execute("VACUUM")
+            finally:
+                connection.close()
+            return {
+                "bytes_before": size_before, "bytes_after": self.database_path.stat().st_size,
+                "literals_packed": packed, "chars_before": chars_before, "chars_after": chars_after,
+                "large_literals_not_json": other,
+                "projection_kept": self._restamp_projection_cache(signature_before),
+            }
+
+    def _restamp_projection_cache(self, signature_before):
+        """Keep a startup projection across a change of the file that left what is read from it the same."""
+        manifest_path = Path(self.projection_manifest_path)
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        if (manifest.get("version") != self.PROJECTION_CACHE_VERSION
+                or manifest.get("source_signature") != signature_before):
+            return False
+        manifest["source_signature"] = self._projection_source_signature()
+        temporary = manifest_path.with_name(f".{manifest_path.name}.{uuid.uuid4().hex}.tmp")
+        temporary.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(manifest_path)
+        return True
 
     def _write_manifest(self, payload):
         temp_path = self.manifest_path.with_name(f".{self.manifest_path.name}.{uuid.uuid4().hex}.tmp")
@@ -830,6 +979,7 @@ class PersistentOntologyStore:
     def compact_database(self):
         """Reclaim pages left behind by large ontology cleanup transactions."""
         with self._operation_lock:
+            signature_before = self._projection_source_signature()
             connection = sqlite3.connect(
                 str(self.database_path),
                 isolation_level=None,
@@ -840,9 +990,11 @@ class PersistentOntologyStore:
                 connection.execute(
                     f"PRAGMA busy_timeout = {self.SQLITE_BUSY_TIMEOUT_MS}"
                 )
+                self._apply_value_index_policy(connection)
                 connection.execute("VACUUM")
             finally:
                 connection.close()
+            self._restamp_projection_cache(signature_before)
         return self.database_path
 
     def reimport_rdfxml(self):

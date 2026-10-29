@@ -7,6 +7,15 @@ from simulations.space.orbit_visualizer import draw_orbit
 from simulations.space.stellar import AU_M, LY_M, habitable_zone_for_luminosity
 
 
+JOURNEY_COLOR = (112, 214, 160)
+# The cruise around the parent leads; hyperbolas and parking orbits sit lighter round their bodies.
+JOURNEY_SEGMENT_STYLE = {
+    "cruise": (JOURNEY_COLOR, 2),
+    "hyperbola": ((176, 236, 204), 1),
+    "orbit": ((84, 140, 112), 1),
+}
+
+
 class SpaceRenderer:
     """
     Handles rendering for space simulations.
@@ -659,6 +668,14 @@ class SpaceRenderer:
 
             draw_orbit(screen, camera, orbit)
 
+        journey = sim.get_journey_draw_data() if hasattr(sim, "get_journey_draw_data") else None
+        if journey:
+            for kind, world_points in journey["segments"]:
+                color, width = JOURNEY_SEGMENT_STYLE.get(kind, (JOURNEY_COLOR, 1))
+                points = [point for point in (camera.world_to_screen(world) for world in world_points) if point is not None]
+                if len(points) > 1:
+                    pygame.draw.lines(screen, color, kind == "orbit", points, width)
+
         for body in sim.system.get_entries():
             obj = body["object"]
             bx, by = obj.get_position()
@@ -816,3 +833,26 @@ class SpaceRenderer:
             )
             if hasattr(sim, "register_body_label_hitbox"):
                 sim.register_body_label_hitbox(source_entity_id, label_rect)
+
+        if journey:
+            self._draw_journey_craft(screen, camera, journey)
+
+    def _draw_journey_craft(self, screen, camera, journey):
+        """The craft and its manoeuvre nodes on top of the bodies; the craft's name below-right so it clears a planet's."""
+        for node in journey.get("nodes", []):
+            point = camera.world_to_screen(node["position"])
+            if point is None:
+                continue
+            nx, ny = int(point[0]), int(point[1])
+            color = (255, 222, 120) if node["selected"] else (230, 176, 84)
+            pygame.draw.circle(screen, (24, 24, 28), (nx, ny), 6)
+            pygame.draw.circle(screen, color, (nx, ny), 6, 2)
+            self._draw_readable_label(screen, node["label"], (nx + 8, ny - 16), color)
+        center = camera.world_to_screen(journey["position"])
+        if center is None:
+            return
+        x, y = int(center[0]), int(center[1])
+        diamond = [(x, y - 6), (x + 5, y), (x, y + 6), (x - 5, y)]
+        pygame.draw.polygon(screen, (236, 248, 240), diamond)
+        pygame.draw.polygon(screen, JOURNEY_COLOR, diamond, 1)
+        self._draw_readable_label(screen, journey["label"], (x + 9, y + 8), (200, 240, 214))

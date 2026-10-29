@@ -1852,9 +1852,12 @@ def stabilize_regional_coastal_topology(heightmap, *, detail_level=1):
     if not total_flips:
         return heightmap, audit
     changed = dict(heightmap)
+    from simulations.world_gen.exact_rounding import height_decimals
+
+    digits = max(3, height_decimals(heightmap.get("sample_spacing_x_m")))
     changed["sample_grid"] = {
         **grid,
-        "rows": [[round(value, 3) for value in row] for row in values],
+        "rows": [[round(value, digits) for value in row] for row in values],
     }
     changed["coastal_topology_stabilization"] = audit
     return changed, dict(changed["coastal_topology_stabilization"])
@@ -2053,16 +2056,15 @@ def materialize_regional_coastal_landforms(heightmap, coastal_model, *, detail_l
         spacing_x * max(1, unique_width - 1),
         spacing_y * max(1, height - 1),
     )
+    # Depositional shores only.  A rock shore is cut by its waves into its
+    # own rock (``sea_cliffs``: platform and cliff, in the landform step);
+    # a generic ramp blended over it would wear that away again.
     profiles = {
-        "rocky_cliff": {"width": min(footprint_m * 0.42, 160.0), "land_slope": 0.72, "sea_slope": 0.08, "relief": min(30.0, footprint_m * 0.22)},
-        "headland_bay": {"width": min(footprint_m * 0.38, 180.0), "land_slope": 0.38, "sea_slope": 0.045, "relief": min(22.0, footprint_m * 0.22)},
         "clastic_beach": {"width": min(footprint_m * 0.46, 320.0), "land_slope": 0.065, "sea_slope": 0.025, "relief": min(4.0, footprint_m * 0.08)},
         "barrier_lagoon": {"width": min(footprint_m * 0.46, 650.0), "land_slope": 0.025, "sea_slope": 0.012, "relief": min(3.5, footprint_m * 0.06)},
         "deltaic": {"width": min(footprint_m * 0.48, 1_600.0), "land_slope": 0.008, "sea_slope": 0.004, "relief": min(2.5, footprint_m * 0.035)},
         "estuarine_drowned_valley": {"width": min(footprint_m * 0.44, 700.0), "land_slope": 0.035, "sea_slope": 0.015, "relief": min(6.0, footprint_m * 0.10)},
         "tidal_flat_accommodation": {"width": min(footprint_m * 0.48, 1_000.0), "land_slope": 0.003, "sea_slope": 0.002, "relief": min(1.2, footprint_m * 0.018)},
-        "glacial_fjord_fjard_skerry": {"width": min(footprint_m * 0.35, 180.0), "land_slope": 0.65, "sea_slope": 0.12, "relief": min(28.0, footprint_m * 0.28)},
-        "emergent_marine_terrace": {"width": min(footprint_m * 0.46, 250.0), "land_slope": 0.45, "sea_slope": 0.09, "relief": min(18.0, footprint_m * 0.32)},
     }
     shoreline_rows = [[False for _x in range(unique_width)] for _y in range(height)]
     shoreline_morphology_rows = [[None for _x in range(unique_width)] for _y in range(height)]
@@ -2185,7 +2187,10 @@ def materialize_regional_coastal_landforms(heightmap, coastal_model, *, detail_l
         if int(detail_level or 0) >= gate
         for feature in features
     })
-    changed["sample_grid"] = {**grid, "rows": [[round(value, 2) for value in row] for row in changed_rows]}
+    from simulations.world_gen.exact_rounding import height_decimals
+
+    height_digits = height_decimals(heightmap.get("sample_spacing_x_m"))
+    changed["sample_grid"] = {**grid, "rows": [[round(value, height_digits) for value in row] for row in changed_rows]}
     changed["coastal_landform_refinement"] = {
         "status": "regional_coastal_landforms_materialized" if modified else "not_applied",
         "model_version": COASTAL_MODEL_VERSION,

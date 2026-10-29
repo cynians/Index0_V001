@@ -5,7 +5,6 @@ from simulations.world_gen.atmosphere import equilibrium_temperature_k
 from simulations.world_gen.water_cycle import (
     _barrier_aware_relax_field,
     _prevailing_wind_vector,
-    _sample_inherited_category,
     _sample_inherited_rows,
     derive_water_cycle_model,
 )
@@ -314,16 +313,26 @@ class OrbitalClimateForcingTests(unittest.TestCase):
             for child_x, global_u in enumerate(
                 [0.20 + index * 0.20 / 6.0 for index in range(7)]
             ):
-                self.assertEqual(
-                    _sample_inherited_category(
-                        parent_grid["rows"], global_u, global_v,
-                    ),
-                    child_grid["rows"][child_y][child_x],
-                )
-                self.assertAlmostEqual(
-                    _sample_inherited_rows(
-                        parent_grid["temperature_rows_k"], global_u, global_v,
-                    ),
-                    child_grid["temperature_rows_k"][child_y][child_x],
-                    places=1,
-                )
+                # The continuous fields are the parent's, read between its
+                # samples; the class follows from them, so it is one the
+                # parent has in the samples around the point (the edge lies
+                # between a temperate and a hot desert row, and the nearest
+                # sample alone would say "temperate" at 23 degrees C).
+                for key in (
+                    "temperature_rows_k",
+                    "temperature_seasonality_rows_k",
+                    "annual_precipitation_rows_mm",
+                ):
+                    self.assertAlmostEqual(
+                        _sample_inherited_rows(parent_grid[key], global_u, global_v),
+                        child_grid[key][child_y][child_x],
+                        places=1,
+                        msg=key,
+                    )
+                column, row = global_u * 6.0, global_v * 4.0
+                around = {
+                    parent_grid["rows"][parent_y][parent_x]
+                    for parent_y in (int(row), min(4, int(row) + 1))
+                    for parent_x in (int(column), min(6, int(column) + 1))
+                }
+                self.assertIn(child_grid["rows"][child_y][child_x], around)

@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 from simulations.map.map_simulation import MapSimulation
 
@@ -72,6 +73,31 @@ class MapPickingTests(unittest.TestCase):
         self.assertEqual(0, country["border_width"])
         self.assertGreater(sim._render_layer_sort_key(country), sim._render_layer_sort_key(continent))
         self.assertIs(country, sim._pick_layer_at_world(0.0, 0.0, FailingScreenCamera(), (50, 50)))
+
+    def test_a_continent_is_picked_before_the_ground_of_the_map_it_lies_on(self):
+        sim = MapSimulation.__new__(MapSimulation)
+        sim.context = SimpleNamespace(root_entity_id="planet_bristoll")
+        planet = {
+            "shape": "map_rect", "entity_id": "planet_bristoll", "x": 0.0, "y": 0.0,
+            "width_world": 360.0, "height_world": 180.0, "draw_order": -3000,
+        }
+        continent = {
+            "shape": "polygon", "entity_id": "loc_continent", "is_broad_location_overlay": True, "draw_order": 200,
+            "points": [(-40.0, -30.0), (40.0, -30.0), (40.0, 30.0), (-40.0, 30.0)],
+            "_world_bounds": (-40.0, 40.0, -30.0, 30.0),
+        }
+        city = {
+            "shape": "polygon", "entity_id": "loc_city", "draw_order": 400,
+            "points": [(-2.0, -2.0), (2.0, -2.0), (2.0, 2.0), (-2.0, 2.0)],
+            "_world_bounds": (-2.0, 2.0, -2.0, 2.0),
+        }
+        sim.get_layers = lambda: [planet, continent, city]
+        # Inside the continent the continent answers, not the planet under it ...
+        self.assertIs(continent, sim._pick_layer_at_world(20.0, 10.0, FailingScreenCamera(), (50, 50)))
+        # ... anything finer inside it still comes first ...
+        self.assertIs(city, sim._pick_layer_at_world(0.0, 0.0, FailingScreenCamera(), (50, 50)))
+        # ... and the open sea is the planet's.
+        self.assertIs(planet, sim._pick_layer_at_world(120.0, 0.0, FailingScreenCamera(), (50, 50)))
 
 
 class _RightClickEvent:

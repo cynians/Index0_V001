@@ -274,6 +274,24 @@ class ParentHeightContractTests(unittest.TestCase):
         self.assertGreater(audit["topology_correction_count"], 0)
         self.assertLessEqual(audit["maximum_child_residual_m"], 215.0)
 
+    def test_ground_a_landform_took_across_sea_level_stays_where_it_put_it(self):
+        # The parent's cells are certainly land, but waves cut the shore back
+        # at this level: the reference (parent with the landform in it) lies
+        # under the sea in the first column, and the child keeps it there.
+        rows = [[-0.6, 0.4, 12.0], [-0.6, 0.4, 12.0]]
+        heightmap = {"sea_level_m": 0.0, "sample_grid": {"width": 3, "height": 2, "rows": [list(row) for row in rows]}}
+        topology = [[1, 1, 1], [1, 1, 1]]
+
+        resolved, audit = _enforce_parent_height_contract(heightmap, rows, topology, detail_amplitude_m=2.0)
+
+        self.assertEqual(resolved["sample_grid"]["rows"], rows)
+        self.assertEqual(audit["topology_correction_count"], 0)
+        # Later erosion that drowns land the reference keeps dry is still undone.
+        eroded = {"sea_level_m": 0.0, "sample_grid": {"width": 3, "height": 2, "rows": [[-0.6, -0.2, 12.0], [-0.6, -0.2, 12.0]]}}
+        resolved, audit = _enforce_parent_height_contract(eroded, rows, topology, detail_amplitude_m=2.0)
+        self.assertTrue(all(row[0] < 0.0 < row[1] for row in resolved["sample_grid"]["rows"]))
+        self.assertEqual(audit["topology_correction_count"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -32,38 +32,51 @@ SPECIAL_CHOICES = {
 RANGE_DEFAULTS = {
     "plant_apical_control": .60,
     "plant_leaf_spacing_bias": .50,
+    "plant_leaf_attachment_angle": .33,
+    "plant_lateral_shoot_length": .15,
+    "plant_lateral_shoot_curvature": .65,
     "plant_branch_droop": .35,
     "plant_branch_angle_gradient": .45,
     "plant_crown_openness": .50,
     "plant_crown_taper": .0,
     "plant_trunk_girth": .0,
+    "plant_trunk_straightness": .0,
+    "plant_primary_branch_density": .0,
+    "plant_primary_branch_length": .25,
+    "plant_bloom_density": .0,
     "plant_leaf_depth_gradient": .45,
     "plant_fine_twig_density": .55,
     "plant_leaf_cluster_density": .55,
 }
 
-FIELD_GROUPS = ("All", "Crown", "Branches", "Shoots", "Leaves", "Reproduction")
+FIELD_GROUPS = ("All", "Crown", "Branches", "Shoots", "Leaves", "Reproduction", "Surface")
 PREVIEW_MODES = ("minimum", "typical", "maximum", "variation")
 PREVIEW_AFFECTING_FIELDS = PLANT_ARCHITECTURE_RANGE_FIELDS | {
+    "plant_strobilus_module_ref",
+    "surface_growth_profile", "fungal_growth_profile",
     "plant_growth_form", "plant_growth_behaviour", "plant_lifespan",
     "mature_height", "mature_height_class", "growth_rate", "maturity_rate",
-    "plant_axis_continuity", "plant_self_pruning", "plant_crown_shape", "plant_branching_rhythm", "plant_branching_timing",
+    "plant_axis_continuity", "plant_branching_subpattern", "plant_self_pruning", "plant_crown_shape", "plant_branching_rhythm", "plant_branching_timing",
     "plant_lateral_axis_orientation", "plant_flowering_position",
     "plant_shoot_dimorphism", "plant_leaf_distribution", "plant_woodiness",
     "leaf_phenology", "leaf_size_class", "leaf_length", "leaf_structure",
     "leaf_division_order", "leaflet_count", "leaflet_length", "leaflet_width", "leaf_cluster_size",
-    "frond_stipe_fraction", "leaf_arrangement",
+    "frond_stipe_fraction", "leaf_arrangement", "frond_pinna_arrangement",
     "leaf_fascicle_size",
     "leaf_attachment_pattern", "leaf_clustering", "root_architecture",
     "reproductive_mode", "clonal_spread", "seed_size_class",
+    "plant_inflorescence_profile",
+    "plant_shoot_profile",
 }
 
 
 def field_group(field_name):
     name = str(field_name).lower()
-    if any(token in name for token in ("flower", "fruit", "seed", "reproduct", "pollin", "dispers", "clonal")):
+    if name.startswith("surface_"):
+        return "Surface"
+    if any(token in name for token in ("flower", "calyx", "fruit", "seed", "strobilus", "reproduct", "infloresc", "pollin", "dispers", "clonal", "bloom")):
         return "Reproduction"
-    if any(token in name for token in ("leaf", "photosynth")):
+    if any(token in name for token in ("leaf", "frond", "photosynth")):
         return "Crown" if any(token in name for token in ("depth", "cluster", "distribution")) else "Leaves"
     if any(token in name for token in ("crown", "height", "openness")):
         return "Crown"
@@ -102,7 +115,43 @@ def editable_field_rows(entity, query="", group="All", preview_only=False):
     query = str(query or "").strip().lower()
     rows = []
     for field_name in PLANT_TRAIT_SCHEMA_FIELDS:
-        if field_name.endswith("_ref") or field_name in {"plant_module_anchors"}:
+        if field_name.startswith("fungal_") and not entity.get("fungal_growth_profile"):
+            continue
+        if entity.get("fungal_growth_profile") and not field_name.startswith("fungal_"):
+            continue
+        if field_name == "plant_bloom_density":
+            from simulations.species.bloom_cohorts import supports_bloom_cohorts
+            if not supports_bloom_cohorts(entity):
+                continue
+        if field_name in {"plant_primary_branch_density", "plant_primary_branch_length"}:
+            if not (entity.get("plant_growth_form") == "tree" and (
+                    entity.get("plant_leaf_distribution") or entity.get("leaf_attachment_pattern") == "along_stem")):
+                continue
+        if field_name in {"plant_lateral_shoot_length", "plant_lateral_shoot_curvature"}:
+            from simulations.species.lateral_shoots import supports_lateral_shoot_controls
+            if not supports_lateral_shoot_controls(entity):
+                continue
+        if field_name == "plant_leaf_attachment_angle" and not (
+                (entity.get("plant_growth_form") == "forb"
+                and entity.get("plant_woodiness") == "herbaceous"
+                and entity.get("plant_growth_behaviour") in {
+                    "iterative_indeterminate", "rhizomatous_clonal", "stoloniferous_clonal", "suckering_clonal"})
+                or (entity.get("plant_growth_form") == "subshrub"
+                    and entity.get("plant_growth_behaviour") == "iterative_indeterminate"
+                    and entity.get("plant_lifespan") in {"annual", "short_lived_perennial"}
+                    and entity.get("leaf_attachment_pattern") == "along_stem"
+                    and entity.get("plant_leaf_distribution") == "along_shoot"
+                    and entity.get("plant_reproductive_structure") == "capitulum"
+                    and entity.get("plant_flowering_position") == "terminal")
+                or (entity.get("plant_growth_behaviour") == "rhizomatous_clonal"
+                    and entity.get("plant_leaf_distribution") == "terminal_cluster"
+                    and entity.get("leaf_structure") == "pinnately_compound")):
+            continue
+        if entity.get("plant_growth_behaviour")=="surface_covering":
+            inapplicable=("leaf","frond","crown","branch","shoot","root","seed","pollin","axis","apical","woodiness","life_form","succulence","storage","flowering_position","soil_ph")
+            if any(term in field_name for term in inapplicable) or field_name=="mature_height_class":
+                continue
+        if field_name.endswith("_ref") or field_name in {"plant_module_anchors", "fungal_module_anchors"}:
             continue
         label = field_label(field_name)
         if query and query not in label.lower() and query not in field_name.lower():
@@ -283,6 +332,14 @@ def preview_entity(state, mode="typical", sample_index=0):
     entity = copy.deepcopy(state.get("working_entity") or {})
     rng = random.Random(303_000 + int(sample_index))
     for field_name in PLANT_ARCHITECTURE_RANGE_FIELDS:
+        if field_name in {"plant_lateral_shoot_length", "plant_lateral_shoot_curvature", "plant_primary_branch_density", "plant_primary_branch_length", "plant_bloom_density"}:
+            from simulations.species.lateral_shoots import authored_shoot_control
+            if authored_shoot_control(entity.get(field_name)) is None:
+                continue
+        if field_name == "plant_leaf_attachment_angle":
+            from simulations.species.leaf_development import authored_leaf_attachment_angle
+            if authored_leaf_attachment_angle(entity.get(field_name)) is None:
+                continue
         envelope = normalised_plant_trait_range(
             entity.get(field_name), RANGE_DEFAULTS.get(field_name, .5), default_span=.10,
         )
@@ -291,7 +348,10 @@ def preview_entity(state, mode="typical", sample_index=0):
         elif mode == "maximum":
             chosen = envelope["max"]
         elif mode == "variation":
-            chosen = rng.uniform(envelope["min"], envelope["max"])
+            sample_rng = (random.Random(f"{303_000 + int(sample_index)}:{field_name.removeprefix('plant_')}")
+                          if field_name in {"plant_leaf_attachment_angle", "plant_lateral_shoot_length",
+                                            "plant_lateral_shoot_curvature", "plant_primary_branch_density", "plant_primary_branch_length", "plant_bloom_density"} else rng)
+            chosen = sample_rng.uniform(envelope["min"], envelope["max"])
         else:
             chosen = envelope["typical"]
         envelope["typical"] = round(chosen, 4)

@@ -46,7 +46,7 @@ except ImportError:  # pragma: no cover - exercised only by minimal installs.
     np = None
 
 
-TRUE_COLOR_MODEL_VERSION = "planet-true-color-v15-saltation-dust-and-direct-light-shading"
+TRUE_COLOR_MODEL_VERSION = "planet-true-color-v18-element-minerals-mapped"
 
 # Diffuse attenuation of light in the liquid (1/m): the bed shows through
 # as exp(-2 K z), so beyond a few tens of metres a sea shows only its own
@@ -347,6 +347,7 @@ def derive_true_color_model(
         seed=planet.get("world_gen_seed") if isinstance(planet.get("world_gen_seed"), dict) else {},
         natural_material_model=natural_material_model,
     )
+
     return {
         "status": "derived",
         "model_version": TRUE_COLOR_MODEL_VERSION,
@@ -544,18 +545,27 @@ def river_true_color_rgb(river):
     return tuple(int(round(float(channel))) for channel in color)
 
 
-def _true_color_river_overlay(water_cycle, size, pixel_m=None):
+def _true_color_river_overlay(water_cycle, size, pixel_m=None, resolved_channels=None):
     """River water drawn over the land.
 
     With ``pixel_m`` (physical rendering) a channel covers only its width's
     share of a pixel -- about 2.7 Q^0.5 m wide, so rivers vanish from
-    planetary-scale true colour, as they do from orbit.
+    planetary-scale true colour, as they do from orbit.  Rivers that run
+    along channels carved into the terrain (``resolved_channels``, the
+    ``alluvial_channels`` fields on this raster) are already drawn as water
+    in their channel and are skipped here.
     """
     water_cycle = water_cycle if isinstance(water_cycle, dict) else {}
     rivers = [river for river in water_cycle.get("rivers") or [] if isinstance(river, dict)]
     if not rivers:
         return None
     width, height = size
+    resolved_near = None
+    if resolved_channels is not None and np is not None:
+        distance = resolved_channels["distance_m"]
+        if distance.shape == (height, width) and pixel_m:
+            # Within a few channel widths of a carved channel.
+            resolved_near = distance <= resolved_channels["width_m"] * 2.5 + 3.0 * float(pixel_m)
     overlay = pygame.Surface(size, pygame.SRCALPHA)
     for river in rivers:
         points = []
@@ -568,6 +578,11 @@ def _true_color_river_overlay(water_cycle, size, pixel_m=None):
             ))
         if len(points) < 2:
             continue
+        if resolved_near is not None:
+            columns = np.clip([point[0] for point in points], 0, width - 1)
+            rows = np.clip([point[1] for point in points], 0, height - 1)
+            if float(np.mean(resolved_near[rows, columns])) >= 0.5:
+                continue
         discharge = max(0.0, float(river.get("estimated_discharge_m3_s", 0.0) or 0.0))
         line_width = 1 + int(discharge >= 450.0) + int(discharge >= 6000.0)
         alpha = 224
@@ -831,7 +846,7 @@ def _mix_areal_endmembers(components, fallback_reflectance, exposure, size):
         color_fraction = _color_driver_fraction(profile, exposure, bedrock_modulation)
         blended = fresh[None, None, :] * (1.0 - color_fraction[..., None]) + weathered[None, None, :] * color_fraction[..., None]
         weight = fraction
-        if str(profile.get("mixing_mode") or "") == "coating":
+        if str(profile.get("mixing_mode") or "") == "coating" and not component.get("visible_fraction"):
             weight = _optical_mixture_fraction(fraction, profile, 1.0)
         accumulated += weight[..., None] * blended
         total += weight
@@ -1071,6 +1086,10 @@ def _fallback_surface(heightmap, model):
     return surface
 
 
+# A lake is drawn from this depth, and only if its runoff keeps this share
+# of its floor under water (less is a playa).
+LAKE_MIN_DEPTH_M = 0.05
+LAKE_MIN_FILL = 0.5
 # True-colour seas by surface liquid: (shallow, deep, coastal sediment) RGB.
 # Water is blue-black; Titan's methane-ethane seas are among the darkest
 # surfaces in the Solar System (radar-dark, near-black and brownish under the
@@ -1163,6 +1182,28 @@ def render_true_color_surface(
     depth = np.clip((sea - elevation) / max(1.0, sea - minimum), 0.0, 1.0)
 
     masks = heightmap.get("surface_masks") if isinstance(heightmap.get("surface_masks"), dict) else {}
+    if has_ocean and masks.get("ocean_is_joined_sea") and isinstance(masks.get("ocean_rows"), list):
+        # Ground below sea level that land shuts in is a basin, not the sea
+        # (the same mask the climate, the drainage and the materials read).
+        sea_source = np.asarray(
+            [[1.0 if value else 0.0 for value in row[:source_w]] for row in masks["ocean_rows"][:source_h]],
+            dtype=np.float32,
+        )
+        if sea_source.shape[0] >= 2 and sea_source.shape[1] >= 2:
+            ocean = ocean & (_resample_bilinear(sea_source[:-1, :-1], target_h, target_w) >= 0.5)
+    # Lakes the drainage retained are water like the sea, to their own level
+    # (they were in the water cycle and on no picture).  Playas are left dry.
+    lake = np.zeros(elevation.shape, dtype=bool)
+    lake_depth_m = None
+    drainage_model = (water_cycle or {}).get("drainage_network_model") if isinstance(water_cycle, dict) else None
+    if isinstance(water_cycle, dict) and (water_cycle.get("lakes") or (drainage_model or {}).get("lakes")):
+        from simulations.world_gen.fine_hydrology import _lake_water
+
+        lake_depth_m = _lake_water(water_cycle, elevation.astype(np.float64), elevation.shape, min_fill=LAKE_MIN_FILL, boxes=False)
+        lake = (lake_depth_m > LAKE_MIN_DEPTH_M) & ~ocean
+        if lake.any():
+            ocean = ocean | lake
+            depth = np.where(lake, np.clip(lake_depth_m / max(1.0, sea - minimum), 0.0, 1.0), depth).astype(depth.dtype)
     ice_rows = masks.get("ice_rows") if isinstance(masks.get("ice_rows"), list) else []
     if ice_rows and len(ice_rows) >= 2:
         ice_source = np.asarray(
@@ -1711,6 +1752,8 @@ def render_true_color_surface(
             "methane_ethane" if ("methane" in fluid_name or "ethane" in fluid_name) else fluid_name, 0.05,
         )
         water_depth_m = np.maximum(0.0, sea - elevation)
+        if lake_depth_m is not None:
+            water_depth_m = np.where(lake, lake_depth_m, water_depth_m).astype(np.float32)
         depth = 1.0 - np.exp(-2.0 * attenuation * water_depth_m)
         # Suspended sediment stays over the shelf (~100 m).
         shelf = np.exp(-water_depth_m / 100.0)
@@ -1820,6 +1863,25 @@ def render_true_color_surface(
             linear_land = _srgb_array_to_linear(np.clip(rgb, 0.0, 255.0)) * gain
             rgb = np.where(physical_land[..., None], _linear_array_to_srgb(np.clip(linear_land, 0.0, 1.0)), rgb)
 
+    # Resolved river channels (alluvial_channels, LOD4+): water fills the
+    # carved section up to the mean-flow stage, so pools and threads are wet
+    # and point bars dry.  The water surface is flat (no relief shading);
+    # suspended load hides the bed within a few decimetres.
+    from simulations.world_gen.alluvial_channels import heightmap_channel_fields
+
+    channel_water = heightmap_channel_fields(heightmap, raster=(target_w, target_h))
+    if channel_water is not None and np.any(channel_water["water_depth"] > 0.0):
+        rivers = [river for river in (water_cycle or {}).get("rivers") or [] if isinstance(river, dict)]
+        main = max(rivers, key=lambda river: float(river.get("estimated_discharge_m3_s", 0.0) or 0.0)) if rivers else {}
+        water_rgb = np.asarray(river_true_color_rgb(main), dtype=np.float32)
+        water_depth = channel_water["water_depth"]
+        water_alpha = np.where(
+            (water_depth > 0.0) & ~ocean,
+            np.clip(0.45 + 0.5 * (1.0 - np.exp(-water_depth / 0.3)), 0.0, 0.95),
+            0.0,
+        ).astype(np.float32)
+        rgb = rgb * (1.0 - water_alpha[..., None]) + water_rgb * water_alpha[..., None]
+
     atmosphere = atmosphere if isinstance(atmosphere, dict) else {}
     visual = atmosphere.get("visual_model") if isinstance(atmosphere.get("visual_model"), dict) else {}
     pressure = max(0.0, float(model.get("surface_pressure_bar", 0.0) or 0.0))
@@ -1845,6 +1907,7 @@ def render_true_color_surface(
         water_cycle,
         surface.get_size(),
         pixel_m=(spacing_x * max(1.0, cell_w / target_w)) if appearance_physics is not None else None,
+        resolved_channels=channel_water,
     )
     if river_overlay is not None:
         surface = surface.convert_alpha()
