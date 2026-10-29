@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Index 0 Companion</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: #0e1117; color: #e7edf5;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    touch-action: none; overscroll-behavior: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  header {
+    padding: 10px 14px; background: #191e27; border-bottom: 1px solid #3e4858;
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  }
+  header .title { color: #70c7e5; font-weight: 600; letter-spacing: .04em; font-size: 13px; }
+  #status { font-size: 13px; color: #9aa7ba; }
+  #canvasWrap {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    overflow: auto; background:
+      repeating-conic-gradient(#20242e 0% 25%, #171a21 0% 50%) 0 0 / 20px 20px;
+  }
+  #canvas { image-rendering: pixelated; touch-action: none; border: 1px solid #3e4858; }
+  #toolbar {
+    padding: 10px 14px; background: #191e27; border-top: 1px solid #3e4858;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  #toolbar label { font-size: 12px; color: #9aa7ba; display: flex; align-items: center; gap: 6px; }
+  button {
+    background: #232936; color: #e7edf5; border: 1px solid #3e4858; border-radius: 6px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer;
+  }
+  button:active { background: #2d3646; }
+  button.primary { background: #1f6fa8; border-color: #2a86c8; }
+  button.active { background: #2a86c8; }
+  input[type=range] { width: 100px; }
+  input[type=color] { width: 34px; height: 28px; padding: 0; border: none; background: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <span class="title">INDEX 0 COMPANION</span>
+    <span id="status">Waiting for a canvas from Index 0…</span>
+  </header>
+  <div id="canvasWrap">
+    <canvas id="canvas" width="1" height="1"></canvas>
+  </div>
+  <div id="toolbar">
+    <label>Color <input type="color" id="color" value="#e0c840"></label>
+    <label>Size <input type="range" id="size" min="1" max="12" value="2"></label>
+    <button id="eraser">Eraser</button>
+    <button id="undo">Undo</button>
+    <button id="clear">Clear</button>
+    <button id="send" class="primary">Send to Index</button>
+  </div>
+</div>
+<script>
+(function () {
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
+
+  const statusEl = document.getElementById("status");
+  const colorInput = document.getElementById("color");
+  const sizeInput = document.getElementById("size");
+  const eraserBtn = document.getElementById("eraser");
+  const undoBtn = document.getElementById("undo");
+  const clearBtn = document.getElementById("clear");
+  const sendBtn = document.getElementById("send");
+
+  let currentToken = null;
+  let logicalW = 0, logicalH = 0;
+  let eraserOn = false;
+  let drawing = false;
+  let lastPoint = null;
+  let undoStack = [];
+
+  function resizeDisplay() {
+    if (!logicalW || !logicalH) return;
+    const displayTarget = Math.min(window.innerWidth - 40, window.innerHeight - 160, 640);
+    const scale = Math.max(4, Math.floor(displayTarget / Math.max(logicalW, logicalH)));
+    canvas.style.width = (logicalW * scale) + "px";
+    canvas.style.height = (logicalH * scale) + "px";
+  }
+
+  function setCanvasSize(w, h) {
+    logicalW = w; logicalH = h;
+    canvas.width = w; canvas.height = h;
+    ctx.imageSmoothingEnabled = false;
+    resizeDisplay();
+  }
+
+  function loadPngBase64(b64) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        resolve();
+      };
+      img.src = "data:image/png;base64," + b64;
+    });
+  }
+
+  function pushUndo() {
+    try {
+      undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      if (undoStack.length > 40) undoStack.shift();
+    } catch (e) { /* canvas not sized yet */ }
+  }
+
+  function undo() {
+    const snapshot = undoStack.pop();
+    if (snapshot) ctx.putImageData(snapshot, 0, 0);
+  }
+
+  function canvasPointFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    return [x, y];
+  }
+
+  function dot(x, y, radius) {
+    ctx.save();
+    if (eraserOn) {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.fillStyle = "rgba(0,0,0,1)";
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = colorInput.value;
+    }
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function strokeTo(x, y, pressure) {
+    const base = parseFloat(sizeInput.value) || 2;
+    const p = pressure && pressure > 0 ? pressure : 0.55;
+    const radius = Math.max(0.5, base * (0.4 + p * 0.9)) / 2;
+    if (lastPoint) {
+      const [lx, ly] = lastPoint;
+      const dist = Math.hypot(x - lx, y - ly);
+      const steps = Math.max(1, Math.ceil(dist / Math.max(0.5, radius * 0.6)));
+      for (let i = 1; i <= steps; i++) {
+        dot(lx + (x - lx) * (i / steps), ly + (y - ly) * (i / steps), radius);
+      }
+    } else {
+      dot(x, y, radius);
+    }
+    lastPoint = [x, y];
+  }
+
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!logicalW) return;
+    canvas.setPointerCapture(e.pointerId);
+    pushUndo();
+    drawing = true;
+    lastPoint = null;
+    const [x, y] = canvasPointFromEvent(e);
+    strokeTo(x, y, e.pressure);
+    e.preventDefault();
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!drawing) return;
+    const [x, y] = canvasPointFromEvent(e);
+    strokeTo(x, y, e.pressure);
+    e.preventDefault();
+  });
+  window.addEventListener("pointerup", () => { drawing = false; lastPoint = null; });
+  window.addEventListener("pointercancel", () => { drawing = false; lastPoint = null; });
+
+  eraserBtn.addEventListener("click", () => {
+    eraserOn = !eraserOn;
+    eraserBtn.classList.toggle("active", eraserOn);
+  });
+  undoBtn.addEventListener("click", undo);
+  clearBtn.addEventListener("click", () => {
+    pushUndo();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  });
+
+  sendBtn.addEventListener("click", async () => {
+    if (!currentToken) { statusEl.textContent = "Nothing to send yet."; return; }
+    const dataUrl = canvas.toDataURL("image/png");
+    const png_base64 = dataUrl.split(",")[1];
+    statusEl.textContent = "Sending…";
+    try {
+      const res = await fetch("/canvas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: currentToken, width: logicalW, height: logicalH, png_base64 }),
+      });
+      if (res.ok) {
+        statusEl.textContent = "Sent to Index 0 ✓";
+      } else {
+        statusEl.textContent = "Send failed (" + res.status + ")";
+      }
+    } catch (e) {
+      statusEl.textContent = "Send failed: " + e;
+    }
+  });
+
+  async function poll() {
+    try {
+      const res = await fetch("/canvas", { cache: "no-store" });
+      const state = await res.json();
+      if (state && state.token && state.token !== currentToken) {
+        currentToken = state.token;
+        setCanvasSize(state.width, state.height);
+        await loadPngBase64(state.png_base64);
+        undoStack = [];
+        statusEl.textContent = "Editing \"" + (state.label || "artwork") + "\" (" + state.width + "×" + state.height + ")";
+      }
+    } catch (e) {
+      statusEl.textContent = "Not connected to Index 0";
+    }
+  }
+
+  window.addEventListener("resize", resizeDisplay);
+  poll();
+  setInterval(poll, 1000);
+})();
+</script>
+</body>
+</html>

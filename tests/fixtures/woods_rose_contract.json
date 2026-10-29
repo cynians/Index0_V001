@@ -1,0 +1,24 @@
+{
+  "source": "Saved Woods Rose verification from 2026-10-02; seed 303, age 180, LOD 2",
+  "fingerprint": "db7f3677f805be71",
+  "life_state": {
+    "phase": "reproductive",
+    "reproductive_factor": 1.0,
+    "fruiting_factor": 0.2192,
+    "fruit_ripeness": 0.0658,
+    "seasonal_stage": "flowering_and_fruit_set",
+    "season_fraction": 0.4932,
+    "senescence_factor": 0.0,
+    "active_factor": 1.0,
+    "phenology_source": "reference_based_qualitative_seasonal_recipe",
+    "leaf_factor": 1.0
+  },
+  "stats": {
+    "shrub_cane_count": 8,
+    "leaf_count": 1176,
+    "shrub_flower_count": 124,
+    "shrub_fruit_count": 0,
+    "leaf_area_m2": 2.032128,
+    "placement_count": 2509
+  }
+}

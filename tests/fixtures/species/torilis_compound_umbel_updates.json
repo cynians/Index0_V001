@@ -1,0 +1,59 @@
+{
+  "species_id": "spec_torilis_arvensis",
+  "updates": {
+    "plant_growth_form": "forb",
+    "plant_growth_behaviour": "iterative_indeterminate",
+    "plant_lifespan": "annual",
+    "plant_life_form": "therophyte",
+    "plant_woodiness": "herbaceous",
+    "mature_height_class": "low",
+    "growth_rate": "moderate",
+    "maturity_rate": "rapid",
+    "longevity_class": "very_short",
+    "leaf_phenology": "other_unknown",
+    "leaf_size_class": "medium",
+    "leaf_structure": "pinnately_compound",
+    "leaf_arrangement": "alternate",
+    "leaf_attachment_pattern": "along_stem",
+    "leaf_clustering": "distributed",
+    "plant_shoot_dimorphism": "single_shoot_system",
+    "plant_leaf_distribution": "along_shoot",
+    "plant_flowering_position": "mixed",
+    "plant_reproductive_structure": "compound_umbel",
+    "plant_lateral_axis_orientation": "mixed",
+    "plant_axis_continuity": "other_unknown",
+    "photosynthesis_pathway": "c3",
+    "root_architecture": "taproot",
+    "root_depth_class": "other_unknown",
+    "reproductive_mode": "sexual",
+    "seed_size_class": "small",
+    "clonal_spread": "none",
+    "resprouting": "absent",
+    "regeneration_strategy": "disturbance_colonization",
+    "nitrogen_fixation": "none",
+    "nutrition_mode": "autotrophic",
+    "mycorrhizal_type": "other_unknown",
+    "shade_tolerance": "other_unknown",
+    "moisture_preference": "other_unknown",
+    "waterlogging_tolerance": "other_unknown",
+    "salinity_tolerance": "other_unknown",
+    "mature_height": {
+      "min_m": 0.1,
+      "typical_m": 0.65,
+      "max_m": 1.25
+    },
+    "leaf_length": {
+      "min_m": 0.03,
+      "typical_m": 0.09,
+      "max_m": 0.15
+    },
+    "leaf_division_order": 2,
+    "pollination": [
+      "generalist_insect"
+    ],
+    "dispersal": [
+      "animal_external",
+      "human"
+    ]
+  }
+}

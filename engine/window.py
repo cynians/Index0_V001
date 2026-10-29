@@ -1,8 +1,11 @@
 import math
+import time
 import pygame
+from ui.fonts import get_font
 
 from engine.camera import Camera
 from engine.input_controller import InputController
+from engine.performance_debug import performance_debug
 
 
 class SimWindow:
@@ -30,7 +33,7 @@ class SimWindow:
         self.show_grid = True
         self.show_fps = True
 
-        self.default_font = pygame.font.SysFont("consolas", 16)
+        self.default_font = get_font()
 
     # --------------------------------------------------
     # MAIN LOOP
@@ -39,12 +42,18 @@ class SimWindow:
     def run(self):
 
         while self.running:
-
+            frame_started = time.perf_counter()
             dt = self._tick()
-
+            events_started = time.perf_counter()
             self._process_events()
+            performance_debug.record("frame.events", (time.perf_counter() - events_started) * 1000.0)
+            update_started = time.perf_counter()
             self._update_frame(dt)
+            performance_debug.record("frame.update", (time.perf_counter() - update_started) * 1000.0)
+            render_started = time.perf_counter()
             self._render_frame()
+            performance_debug.record("frame.render", (time.perf_counter() - render_started) * 1000.0)
+            performance_debug.record("frame.total", (time.perf_counter() - frame_started) * 1000.0)
 
         pygame.quit()
 
@@ -149,6 +158,10 @@ class SimWindow:
         meters_per_world_unit = self._get_world_units_to_meters()
         value_m = abs(float(value)) * meters_per_world_unit
 
+        light_year_m = 9_460_730_472_580_800.0
+        if value_m >= light_year_m:
+            return f"{value_m / light_year_m:.2f} ly"
+
         if value_m >= 149_597_870_700:
             return f"{value_m / 149_597_870_700:.2f} AU"
 
@@ -177,6 +190,10 @@ class SimWindow:
         """
         Draw a lower-right map-style scale bar for the current zoom level.
         """
+        # A view that does not draw through the camera shows its own scale.
+        active = getattr(self, "get_active_simulation", lambda: None)()
+        if getattr(active, "draws_own_scale", False):
+            return
         target_px = 160.0
         world_length = self._nice_step(target_px / max(self.camera.zoom, 1e-18))
         pixel_length = int(round(world_length * self.camera.zoom))
@@ -302,4 +319,6 @@ class SimWindow:
         if self.show_fps:
             fps = int(self.clock.get_fps())
             text = self.default_font.render(f"FPS: {fps}", True, (200, 200, 200))
-            self.screen.blit(text, (10, 10))
+            # Bottom-left. At the top-left it sat under the tab strip with
+            # only its first letter showing.
+            self.screen.blit(text, (10, self.height - text.get_height() - 1))

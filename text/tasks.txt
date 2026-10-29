@@ -1959,15 +1959,15 @@ TASK-204
 Status: PARTIAL
 Difficulty: 5
 Requires: TASK-019, TASK-020, TASK-132
-Description: Split location entry storage by system into separate files while preserving one logical locations dataset, including:
-- Physical separation such as entries/locations/sol.yaml and entries/locations/nanhai_system.yaml
-- Recursive entity loading from subdirectories
-- Merging of split location files into one logical locations dataset for runtime use
+Description: Split location authoring/projection by system while preserving one logical locations dataset, including:
+- Physical separation by star system in the ontology projection and editor views
+- Recursive entity grouping for nested orbital systems
+- Merging of grouped locations into one logical locations dataset for runtime use
 - Preservation of current world-model queries against locations
 - Current state:
-  - recursive entry loading exists
-  - loader already merges entries/locations/* into one logical locations dataset
-  - authored split location files and generation/writeback workflow are not yet fully established
+  - ontology-backed location projection exists
+  - loader already presents orbital and spatial entities through one logical locations dataset
+  - authored grouped location views and generation workflow are not yet fully established
 
 TASK-205
 Status: TODO
@@ -2313,8 +2313,8 @@ TASK-243
 Status: TODO
 Difficulty: 5
 Requires: TASK-231, TASK-232, TASK-237
-Description: Derive operational-mode module visibility and system grouping from repository-backed placed vehicle components, including:
-- Use design_placed_components and related repository-backed component placement state as the basis for operational-mode module presentation
+Description: Derive operational-mode module visibility and system grouping from the next vehicle simulation model, including:
+- Define the replacement source of truth for operational module presentation
 - Replace empty or placeholder operational module lists with component-derived operational groupings where possible
 - Preserve distinction between:
   - design placement representation
@@ -2360,8 +2360,8 @@ Difficulty: 4
 Requires: TASK-207, TASK-210, TASK-215, TASK-230
 Description: Refine and expand the existing vehicle repository set using idea-derived real vehicle entries, including:
 - Continue replacing remaining placeholder or weak vehicle entries with repository-safe idea-derived vehicles where needed
-- Refine already-added vehicle entries in vehicles.yaml rather than treating the file as mostly placeholder content
-- Adapt ideas step-by-step into vehicles.yaml using the current repository schema
+- Refine already-added vehicle entries in the ontology rather than treating the set as mostly placeholder content
+- Adapt ideas step-by-step into vehicle entities using the current repository schema
 - Keep entries descriptive and repository-safe even when simulation/runtime fields are still incomplete
 - Preserve ability to review and adjust each converted or refined vehicle entry individually before wider batch normalization
 
@@ -2376,16 +2376,16 @@ TASK-237
 Status: IN PROGRESS
 Difficulty: 5
 Requires: TASK-236, TASK-038, TASK-210
-Description: Represent vehicle component structure descriptively in repository vehicle entries without flattening final capabilities, including:
-- Vehicle entries storing intended roles, major component groups, and configuration stubs
+Description: Represent vehicle component structure without flattening final capabilities, including:
+- Define the replacement structure for vehicle roles, major groups, and configuration concepts
 - Avoid treating repository vehicle entries as authoritative flat capability stat blocks
 - Preserve future derivation of actual runtime capabilities from installed components and component combinations
 - Keep repository vehicle entries aligned with the existing VehicleSimulation component-based direction
 - Normalize this structure across the growing mixed-era vehicle repository rather than only introducing it for new entries
 
 Notes:
-- This direction is already partially present in current vehicles.yaml entries through component_layout_stub and related descriptive fields.
-- Remaining work is mainly repository-wide consistency and tighter linkage to simulation usage.
+- The previous vehicle-entry component layout fields have been removed pending a full simulation rethink.
+- Remaining work is mainly repository-wide consistency and tighter linkage to the replacement simulation model.
 
 TASK-238
 Status: TODO
@@ -2479,16 +2479,16 @@ Description: Normalize repository image-role handling around shared entity image
   - orientation view images
   - later canonical asset storage/writeback workflows
 
-TASK-243
+TASK-249
 Status: TODO
 Difficulty: 3
-Requires: TASK-243
-Description: Rework the vehicle design catalog and component repository workflow. First, make the lower Vehicle Design panel vertically resizable by dragging its upper border, similar to an IDE/log panel. Then replace the flat catalog list with a grouped card-based inventory view where card footprint reflects the placed top-down size of the component or assembly. Keep the lower panel as the canonical catalog UI layer and avoid duplicate renderer-side catalog drawing. For repository scaling, keep a single shared component schema but split component data into a small number of broad functional files rather than one giant YAML or many tiny per-vehicle files.
+Requires: TASK-231, TASK-237
+Description: Rework the vehicle design catalog and component repository workflow. First, make the lower Vehicle Design panel vertically resizable by dragging its upper border, similar to an IDE/log panel. Then replace the flat catalog list with a grouped card-based inventory view where card footprint reflects the placed top-down size of the component or assembly. Keep the lower panel as the canonical catalog UI layer and avoid duplicate renderer-side catalog drawing. For repository scaling, keep a single shared component schema but group component data into a small number of broad functional ontology categories rather than one giant undifferentiated component set or many tiny per-vehicle buckets.
 Use broad buckets such as structural, running gear, powertrain, control/crew, cargo/support, sensors/weapons, and vehicle-specific assemblies. Continue LuAZ-967 component development using a two-phase workflow: first collect candidate components/assemblies and classify them into generic reusable parts versus vehicle-specific assemblies, then produce replacement diffs for the appropriate component data files.
 
 
 TASK-244
-Status: TODO
+Status: PARTIAL
 Difficulty: 4
 Requires: TASK-183, TASK-186, TASK-189
 Description: Split cities from locations at the repository/schema level, including:
@@ -2498,8 +2498,18 @@ Description: Split cities from locations at the repository/schema level, includi
 - Support for city-wide systems, structural zones, embedded sites, and aggregated population at the city layer
 - Foundation for later quarter and site aggregation into city truth
 
+Notes:
+- Current state:
+  - dedicated cities schema and entries file exist
+  - loc_central_asian_steppe_cog remains the physical/map anchor
+  - city_cog links to that location as the first city-layer aggregate
+- Remaining work:
+  - broader migration policy for other urban/location entries
+  - city-aware loader/UI affordances beyond basic repository visibility
+  - later quarter and site aggregation semantics
+
 TASK-245
-Status: TODO
+Status: DONE
 Difficulty: 3
 Requires: TASK-244
 Description: Add the Center of Gravity as the first dedicated city-layer repository entry, including:
@@ -2507,6 +2517,10 @@ Description: Add the Center of Gravity as the first dedicated city-layer reposit
 - A city_cog aggregate entry for the megastructure itself
 - Representation of CoG ring structure, infrastructure belts, utility systems, and orbital interface systems
 - Linkage to existing CoG ideas and later quarter/site concretization
+
+Notes:
+- city_cog is present in the ontology.
+- loc_central_asian_steppe_cog is present in the ontology as the linked physical/map anchor.
 
 TASK-246
 Status: TODO
@@ -2561,3 +2575,149 @@ This includes:
 - supporting entities with open-ended or missing end dates
 - keeping timeline edits consistent with existing entity loading and canvas behavior
 - preparing the feature so later edits can be saved back into repository-backed entries
+
+
+TASK-250
+Status: DONE
+Difficulty: 4
+Requires: TASK-038
+Description: Introduce a shared world-generation storage policy that separates durable world truth, reproducible derived assets, and disposable diagnostics, including:
+- Explicit storage roots and retention classes (`temporary`, `retained`, and `pinned`)
+- Temporary or ignored-cache output as the default for headless and batch generation
+- An explicit retain/output action before diagnostic files persist
+- Path-scope validation before replacement, pruning, cleanup, or garbage collection
+- Sol as the first pinned benchmark exempt from ordinary retention
+- Tests proving that ordinary validation no longer writes permanent run trees into the source checkout
+
+
+TASK-251
+Status: DONE
+Difficulty: 5
+Requires: TASK-250
+Description: Replace headless world-generation output directories with a single versioned `.i0wg` run bundle, including:
+- Reuse of the existing ZIP-manifest approach established by `.i0r` raster bundles
+- Storage of manifest, input contract, summary, planet snapshot, fingerprints, optional regional snapshot, and optional images inside one file
+- Generation through an isolated temporary repository followed by atomic bundle finalization and temporary-tree cleanup
+- Summary/fingerprint-only output by default, with rendering and debug retention opt-in
+- Reader support in report and replay tools
+- Migration of the retained Solar System benchmark to one pinned bundle after compatibility is verified
+
+
+TASK-252
+Status: DONE
+Difficulty: 5
+Requires: TASK-250, TASK-251
+Description: Add lifecycle management for canonical worldgen-derived raster and regional assets, including:
+- One deterministic active `.i0r` bundle path per canonical planet or region family
+- Temporary write, manifest validation, and atomic replacement on regeneration
+- Owner entity, input fingerprint, model version, layer hashes, and creation time in manifests
+- Reference-aware deletion of superseded bundles after planet deletion, ID changes, or invalidation
+- Repository maintenance reporting for orphan bundles, stale temporary files, and expired unpinned diagnostics
+- Regression tests proving repeated generation does not increase canonical derived-file count
+
+
+TASK-253
+Status: DONE
+Difficulty: 5
+Requires: TASK-225, TASK-232, TASK-250
+Description: Add a shared post-evolution heightmap derivative refresh required by coastal generation, including:
+- Re-solving planetary sea level from conserved equivalent global water depth
+- Rebuilding land/ocean/coastal masks after surface evolution
+- Recalculating spherical area-weighted hypsometry and ocean fraction
+- Recalculating shelf width, depth, gradient, and sediment-wedge fields
+- Avoiding duplicate longitude-seam accounting
+- Preserving inherited planetary sea level while recomputing local regional morphology
+- Backward-compatible rebuilding of missing or stale derived fields on older saved worlds
+
+
+TASK-254
+Status: DONE
+Difficulty: 6
+Requires: TASK-253
+Description: Implement a deterministic spherical shoreline graph as the persistent scaffold for coastal geomorphology, including:
+- Ordered connected sea-level contour chains
+- Longitude-seam continuity and spherical length calculation
+- Consistent landward/seaward normals
+- Segmentation at meaningful changes in tectonics, relief, exposure, substrate, river influence, or curvature
+- Stable segment IDs and parent/child segment lineage across regional refinement
+- Measurements for relief, inland and nearshore slope, shelf width, embayment, enclosure, archipelago context, ocean basin, and river-mouth adjacency
+
+
+TASK-255
+Status: DONE
+Difficulty: 7
+Requires: TASK-226, TASK-230, TASK-231, TASK-254
+Description: Derive reduced-physics coastal forcing and sediment-budget fields for every shoreline segment, including:
+- Wind/fetch-derived wave exposure, significant-wave class, peak-period class, breaker incidence, and longshore-transport direction/capacity
+- Astronomical tidal potential from available stellar and satellite facts plus reduced basin/shelf amplification
+- Tidal-range estimate, micro/meso/macro classification, and confidence
+- Relative sea-level tendency from tectonic uplift/subsidence, sediment loading, ice/isostatic influence, and bounded eustatic history
+- River, cliff, glacial, aeolian, volcaniclastic, and carbonate sediment sources
+- Mud, sand, gravel, bioclastic, and volcaniclastic fractions plus alongshore transfer and accommodation
+- Numerical material/substrate inputs independent of renderer raster files
+
+
+TASK-256
+Status: DONE
+Difficulty: 6
+Requires: TASK-255
+Description: Implement multiaxial coastal classification and enrich river-mouth systems, including:
+- Tectonic setting, relative sea-level state, shoreline trajectory, substrate, dominant forcing, wave exposure, tidal class, and confidence
+- Rocky cliff/headland-bay, beach, barrier-lagoon, deltaic, estuarine, tidal-flat/wetland-accommodation, glacial, volcanic, carbonate/karst, permafrost, and emergent-terrace assemblages
+- River/wave/tide-dominance classification for deltas
+- Recognition of drowned river valleys, fjord/fjard candidates, skerry fields, estuaries, and lagoonal basins
+- Reflective/intermediate/dissipative classification only for suitable wave-dominated sandy beaches
+- Rule traces and scientific impossibility guards for barriers, fjords, reefs, terraces, and other conditional landforms
+
+
+TASK-257
+Status: DONE
+Difficulty: 8
+Requires: TASK-232, TASK-253, TASK-254, TASK-256
+Description: Materialize parent-conditioned coastal landforms during regional refinement, replacing generic near-sea-level noise, including:
+- Scale-gated generation of cliffs, shore platforms, headlands, embayments, beaches, barriers, lagoons, spits, tombolos, inlets, tidal flats, delta lobes, fjord walls/sills, skerries, dunes, washover fans, and marine terraces
+- Parent segment identity and forcing inherited into child patches
+- Edge fading and sediment-budget conservation across patch boundaries
+- Substrate-appropriate beach and cliff morphology
+- One bounded local drainage reconciliation after barriers, lagoons, inlets, or delta lobes change terrain
+- Biological occupation deferred while preserving reef/marsh/mangrove accommodation potential
+
+
+TASK-258
+Status: DONE
+Difficulty: 5
+Requires: TASK-251, TASK-256
+Description: Persist and expose coastal geomorphology in worldgen, maps, and retained reports, including:
+- `coastal_geomorphology_model` and `coastal_summary` on planets and generated regions
+- Coastal causal-provenance and invalidation dependencies
+- Reset/rollback cleanup of coastal descendants
+- A Coastal Geomorphology map layer with segment categories, wave/tide overlays, transport arrows, landform symbols, and confidence-aware legend
+- Compact worldgen summaries for coast assemblages, coastline length, estuaries, deltas, and wave/tidal distribution
+- Coastal report content inside retained `.i0wg` bundles without default loose image output
+
+
+TASK-259
+Status: DONE
+Difficulty: 6
+Requires: TASK-252, TASK-253, TASK-256, TASK-257, TASK-258
+Description: Add coastal scientific validation, storage invariants, and benchmark calibration, including:
+- Synthetic archetypes for cliffed, barrier, glacial, deltaic, tidal-flat, volcanic, karst/carbonate, and permafrost coasts
+- Deterministic segment-ID and classification tests
+- Longitude-seam, spherical-length, parent/child inheritance, and regional-edge tests
+- Impossibility guards preventing biologically occupied reefs without Biosphere support, barriers without sediment, and fjords without glacial inundation
+- Persistent-file-count tests for repeated generation and failure cleanup
+- Pinned Sol benchmark replay and refreshed coastal reference output
+- Performance limits for planetary classification and regional landform generation
+
+
+TASK-260
+Status: DONE
+Difficulty: 5
+Requires: TASK-254, TASK-259
+Description: Profile and reduce production planetary-generation time without lowering final fidelity, including:
+- Per-stage timing in the production headless replay route
+- Exact spatial indexing of tectonic boundary segments during heightfield sampling
+- Caching of immutable deterministic seed constants reused at every heightfield sample
+- An isolated before/after heightfield fingerprint comparison
+- A complete same-seed before/after generation comparison covering elevation, land/ocean/ice fractions, hydrology, precipitation, and coastal outputs
+- Retained benchmark metadata without retaining temporary full-generation file trees

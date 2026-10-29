@@ -1,0 +1,7976 @@
+{
+  "entity": {
+    "id": "spec_torilis_arvensis",
+    "_dataset": "species",
+    "type": "species",
+    "binomial_name": "Torilis arvensis",
+    "wiki_field_colors": {
+      "intro": "#ebffda",
+      "alternate": "#6d7859"
+    },
+    "card_header_color": "#2d452d",
+    "card_color": "#367036",
+    "common_name": "Spreading Hedge Parsley - Torilis arvensis",
+    "parents": [
+      "cladis_hedge_parsleys_torilis"
+    ],
+    "plant_lateral_axis_orientation": "mixed",
+    "root_architecture": "taproot",
+    "plant_axis_continuity": "other_unknown",
+    "pollination": [
+      "generalist_insect"
+    ],
+    "leaf_attachment_pattern": "along_stem",
+    "nutrition_mode": "autotrophic",
+    "leaf_structure": "pinnately_compound",
+    "leaf_length": {
+      "min_m": 0.03,
+      "typical_m": 0.09,
+      "max_m": 0.15
+    },
+    "waterlogging_tolerance": "other_unknown",
+    "plant_shoot_dimorphism": "single_shoot_system",
+    "leaf_size_class": "medium",
+    "plant_growth_behaviour": "iterative_indeterminate",
+    "regeneration_strategy": "disturbance_colonization",
+    "moisture_preference": "other_unknown",
+    "leaf_arrangement": "alternate",
+    "leaf_division_order": 2,
+    "clonal_spread": "none",
+    "photosynthesis_pathway": "c3",
+    "plant_life_form": "therophyte",
+    "reproductive_mode": "sexual",
+    "plant_growth_form": "forb",
+    "leaf_clustering": "distributed",
+    "plant_woodiness": "herbaceous",
+    "root_depth_class": "other_unknown",
+    "plant_leaf_distribution": "along_shoot",
+    "plant_reproductive_structure": "compound_umbel",
+    "resprouting": "absent",
+    "mature_height_class": "low",
+    "salinity_tolerance": "other_unknown",
+    "seed_size_class": "small",
+    "dispersal": [
+      "animal_external",
+      "human"
+    ],
+    "growth_rate": "moderate",
+    "longevity_class": "very_short",
+    "leaf_phenology": "other_unknown",
+    "maturity_rate": "rapid",
+    "shade_tolerance": "other_unknown",
+    "mycorrhizal_type": "other_unknown",
+    "nitrogen_fixation": "none",
+    "mature_height": {
+      "min_m": 0.1,
+      "typical_m": 0.65,
+      "max_m": 1.25
+    },
+    "plant_lifespan": "annual",
+    "plant_flowering_position": "mixed",
+    "offspring": [
+      {
+        "id": "illust_torilis_arvensis_leaf_module"
+      },
+      {
+        "id": "illust_torilis_arvensis_stem_module"
+      },
+      {
+        "id": "illust_torilis_arvensis_branch_module"
+      },
+      {
+        "id": "illust_torilis_arvensis_flower_module"
+      }
+    ],
+    "employed_people": [],
+    "plant_leaf_module_ref": "assets/plants/illustrations/illust_torilis_arvensis_leaf_module_pixel.png",
+    "plant_stem_module_ref": "assets/plants/illustrations/illust_torilis_arvensis_stem_module_pixel.png",
+    "plant_branch_module_ref": "assets/plants/illustrations/illust_torilis_arvensis_branch_module_pixel.png",
+    "plant_flower_module_ref": "assets/plants/illustrations/illust_torilis_arvensis_flower_module_pixel.png",
+    "plant_inflorescence_profile": {
+      "form": "compound_umbel",
+      "unit": "individual_flower",
+      "length_m": 0.022,
+      "width_m": 0.032,
+      "flower_size_m": 0.002,
+      "umbellet_diameter_m": 0.005,
+      "ray_count": 6,
+      "flowers_per_umbellet": 9,
+      "axis_color": [
+        118,
+        152,
+        71
+      ],
+      "flower_color": [
+        244,
+        246,
+        237
+      ],
+      "bud_color": [
+        157,
+        183,
+        104
+      ],
+      "status": "reference_based_qualitative_display_recipe; ray counts and envelope representative",
+      "source": "https://w3.biosci.utexas.edu/prc/K12/pages/Torilis%20arvensis.html"
+    },
+    "plant_apical_control": {
+      "min": 0.3,
+      "typical": 0.45,
+      "max": 0.6,
+      "status": "provisional_visual_fit",
+      "source": "https://www.inaturalist.org/observations/149716762"
+    },
+    "plant_leaf_spacing_bias": {
+      "min": 0.35,
+      "typical": 0.55,
+      "max": 0.75,
+      "status": "provisional_visual_fit",
+      "source": "https://www.inaturalist.org/observations/149716762"
+    },
+    "plant_module_anchors": {
+      "leaf": {
+        "attachment_point": [
+          0.5,
+          0.9459
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "depicted_size_m": 0.09
+      },
+      "flower": {
+        "attachment_point": [
+          0.5,
+          0.4865
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "depicted_size_m": 0.002
+      }
+    }
+  },
+  "blueprint": {
+    "schema_version": 4,
+    "kind": "plant_blueprint",
+    "species_id": "spec_torilis_arvensis",
+    "display_name": "Spreading Hedge Parsley - Torilis arvensis",
+    "root_module_id": "root",
+    "modules": [
+      {
+        "id": "renewal_organ",
+        "kind": "renewal_organ",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.015,
+        "radius_m": 0.0075,
+        "sockets": [
+          "base",
+          "renewal_bud"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "renewal_bud",
+        "kind": "renewal_bud",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.008,
+        "radius_m": 0.003,
+        "sockets": [
+          "base",
+          "shoot"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "root_support",
+        "kind": "stem_section",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.1,
+        "radius_m": 0.02,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "root_section",
+        "kind": "root_section",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.1,
+        "radius_m": 0.01,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "root",
+        "kind": "root",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.16,
+        "radius_m": 0.05,
+        "sockets": [
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "stem_section",
+        "kind": "stem_section",
+        "asset_ref": "assets/plants/illustrations/illust_torilis_arvensis_stem_module_pixel.png",
+        "texture_set_ref": null,
+        "length_m": 0.2,
+        "radius_m": 0.035,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "branch_section",
+        "kind": "branch_section",
+        "asset_ref": "assets/plants/illustrations/illust_torilis_arvensis_branch_module_pixel.png",
+        "texture_set_ref": null,
+        "length_m": 0.16000000000000003,
+        "radius_m": 0.022,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      {
+        "id": "leaf",
+        "kind": "leaf",
+        "asset_ref": "assets/plants/illustrations/illust_torilis_arvensis_leaf_module_pixel.png",
+        "texture_set_ref": null,
+        "length_m": 0.09,
+        "radius_m": 0.012,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9459
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {
+          "leaf_structure": "pinnately_compound",
+          "leaf_arrangement": "alternate",
+          "leaf_division_order": 2,
+          "leaflet_count": 0,
+          "leaflet_length_m": 0.021599999999999998,
+          "leaflet_width_m": 0.0045,
+          "frond_stipe_fraction": 0.36,
+          "frond_blade_width_m": 0.0,
+          "frond_arch": 0.0
+        }
+      },
+      {
+        "id": "flower",
+        "kind": "flower",
+        "asset_ref": "assets/plants/illustrations/illust_torilis_arvensis_flower_module_pixel.png",
+        "texture_set_ref": null,
+        "length_m": 0.16,
+        "radius_m": 0.018,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.4865
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {
+          "depicted_size_m": 0.002
+        }
+      },
+      {
+        "id": "fruit",
+        "kind": "fruit",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.1,
+        "radius_m": 0.025,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      }
+    ],
+    "growth": {
+      "clonal_spread": "none",
+      "resprouting": "absent",
+      "regeneration_strategy": "disturbance_colonization",
+      "shade_tolerance": "other_unknown",
+      "plant_life_form": "therophyte",
+      "belowground_storage": [],
+      "shape": "forb",
+      "growth_form": "forb",
+      "growth_behaviour": "iterative_indeterminate",
+      "maturity_days": 30.0,
+      "max_height_m": 1.25,
+      "internode_length_m": 0.2,
+      "branch_probability": 0.34,
+      "branch_angle_deg": 28.0,
+      "phyllotaxis_deg": 137.5,
+      "leaves_per_node": 1,
+      "leaf_arrangement": "alternate",
+      "apical_dominance": 0.45,
+      "apical_control": 0.45,
+      "architecture_ranges": {
+        "branch_angle_gradient": {
+          "min": 0.158,
+          "typical": 0.158,
+          "max": 0.158,
+          "status": "runtime_default"
+        },
+        "leaf_spacing_bias": {
+          "min": 0.35,
+          "typical": 0.55,
+          "max": 0.75,
+          "status": "provisional_visual_fit",
+          "source": "https://www.inaturalist.org/observations/149716762"
+        },
+        "crown_openness": {
+          "min": 0.2345,
+          "typical": 0.2345,
+          "max": 0.2345,
+          "status": "runtime_default"
+        },
+        "leaf_depth_gradient": {
+          "min": 0.2234,
+          "typical": 0.2234,
+          "max": 0.2234,
+          "status": "runtime_default"
+        },
+        "branch_droop": {
+          "min": 0.1238,
+          "typical": 0.1238,
+          "max": 0.1238,
+          "status": "runtime_default"
+        },
+        "trunk_girth": {
+          "min": 0.0,
+          "typical": 0.0,
+          "max": 0.0,
+          "status": "runtime_default"
+        },
+        "apical_control": {
+          "min": 0.3,
+          "typical": 0.45,
+          "max": 0.6,
+          "status": "provisional_visual_fit",
+          "source": "https://www.inaturalist.org/observations/149716762"
+        },
+        "leaf_cluster_density": {
+          "min": 0.2418,
+          "typical": 0.2418,
+          "max": 0.2418,
+          "status": "runtime_default"
+        },
+        "crown_taper": {
+          "min": 0.0,
+          "typical": 0.0,
+          "max": 0.0,
+          "status": "runtime_default"
+        },
+        "fine_twig_density": {
+          "min": 0.2346,
+          "typical": 0.2346,
+          "max": 0.2346,
+          "status": "runtime_default"
+        }
+      },
+      "growth_rate_bias": 0.55,
+      "initial_cover_bias": 0.35,
+      "plant_woodiness": "herbaceous",
+      "leaf_phenology": "other_unknown",
+      "leaf_size_class": "medium",
+      "leaf_structure": "pinnately_compound",
+      "leaf_division_order": 2,
+      "leaf_length_m": 0.09,
+      "leaf_cluster_size": 3,
+      "leaflet_count": 0,
+      "leaflet_length_m": 0.021599999999999998,
+      "leaflet_width_m": 0.0045,
+      "frond_stipe_fraction": 0.36,
+      "leaf_attachment_pattern": "along_stem",
+      "leaf_clustering": "distributed",
+      "shoot_dimorphism": "single_shoot_system",
+      "leaf_distribution": "along_shoot",
+      "shoot_distribution_grammar": 0,
+      "axis_continuity": "other_unknown",
+      "self_pruning": "other_unknown",
+      "crown_shape": "other_unknown",
+      "crown_taper": 0.0,
+      "trunk_girth": 0.0,
+      "branching_rhythm": "other_unknown",
+      "branching_timing": "other_unknown",
+      "lateral_axis_orientation": "mixed",
+      "flowering_position": "mixed",
+      "reproductive_structure": "compound_umbel",
+      "leaf_spacing_bias": 0.55,
+      "branch_droop": 0.1238,
+      "branch_angle_gradient": 0.158,
+      "crown_openness": 0.2345,
+      "leaf_depth_gradient": 0.2234,
+      "fine_twig_density": 0.2346,
+      "leaf_cluster_density": 0.2418,
+      "fascicle_size": 0,
+      "fascicle_grammar_version": 1,
+      "reproductive_mode": "sexual",
+      "root_architecture": "taproot",
+      "root_depth_class": "other_unknown",
+      "max_root_depth": null,
+      "nitrogen_fixation": "none",
+      "nutrition_mode": "autotrophic",
+      "mycorrhizal_type": "other_unknown",
+      "longevity_class": "very_short",
+      "life_history": {
+        "cycle_days": 365.0,
+        "age_limit_days": 365.0,
+        "reproductive_start_fraction": 0.5,
+        "senescence_start_fraction": 0.86,
+        "terminal_reproduction": true,
+        "overwintering": false,
+        "class": "annual",
+        "maturity_days": 30.0,
+        "reproductive_start_days": 182.5,
+        "senescence_start_days": 313.9,
+        "source": "authored"
+      },
+      "root_profile": {
+        "architecture": "taproot",
+        "depth_class": "other_unknown",
+        "target_depth_m": 0.6,
+        "depth_source": "runtime_default",
+        "target_spread_radius_m": 0.39,
+        "spread_source": "depth_architecture_default",
+        "grammar_version": 5,
+        "support": "stem_base"
+      },
+      "inflorescence_profile": {
+        "length_m": 0.022,
+        "width_m": 0.032,
+        "flower_size_m": 0.002,
+        "umbellet_diameter_m": 0.005,
+        "axis_color": [
+          118,
+          152,
+          71
+        ],
+        "flower_color": [
+          244,
+          246,
+          237
+        ],
+        "bud_color": [
+          157,
+          183,
+          104
+        ],
+        "form": "compound_umbel",
+        "unit": "individual_flower",
+        "ray_count": 6,
+        "flowers_per_umbellet": 9,
+        "version": 1,
+        "status": "reference_based_qualitative_display_recipe; ray counts and envelope representative"
+      },
+      "umbellifer_forb_grammar_version": 1,
+      "forb_leaf_placement_version": 1,
+      "forb_leaf_development_version": 1,
+      "forb_leaf_length_upper_scale": 1.25,
+      "root_visual_profile": {
+        "radius_m": 0.0028,
+        "base_color": [
+          160,
+          127,
+          88
+        ],
+        "tip_color": [
+          230,
+          208,
+          163
+        ],
+        "woody": false,
+        "source": "functional_form_visual_default",
+        "version": 2
+      }
+    },
+    "lod_policy": {
+      "0": "skeleton",
+      "1": "major_leaves",
+      "2": "full"
+    },
+    "model_space": {
+      "dimensions": 3,
+      "up_axis": "z",
+      "depth_axis": "y",
+      "projection": "orthographic",
+      "asset_dimension": 2
+    }
+  },
+  "snapshot": {
+    "schema_version": 4,
+    "kind": "plant_growth_snapshot",
+    "species_id": "spec_torilis_arvensis",
+    "blueprint_fingerprint": "2944121d046ce4c9",
+    "seed": 303,
+    "age_days": 227.5,
+    "lod": 2,
+    "modules": {
+      "root_support": {
+        "id": "root_support",
+        "kind": "stem_section",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.1,
+        "radius_m": 0.02,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      "root_section": {
+        "id": "root_section",
+        "kind": "root_section",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.1,
+        "radius_m": 0.01,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      "root": {
+        "id": "root",
+        "kind": "root",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.16,
+        "radius_m": 0.05,
+        "sockets": [
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      "stem_section": {
+        "id": "stem_section",
+        "kind": "stem_section",
+        "asset_ref": "assets/plants/illustrations/illust_torilis_arvensis_stem_module_pixel.png",
+        "texture_set_ref": null,
+        "length_m": 0.2,
+        "radius_m": 0.035,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      "branch_section": {
+        "id": "branch_section",
+        "kind": "branch_section",
+        "asset_ref": "assets/plants/illustrations/illust_torilis_arvensis_branch_module_pixel.png",
+        "texture_set_ref": null,
+        "length_m": 0.16000000000000003,
+        "radius_m": 0.022,
+        "sockets": [
+          "base",
+          "tip"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      },
+      "leaf": {
+        "id": "leaf",
+        "kind": "leaf",
+        "asset_ref": "assets/plants/illustrations/illust_torilis_arvensis_leaf_module_pixel.png",
+        "texture_set_ref": null,
+        "length_m": 0.09,
+        "radius_m": 0.012,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9459
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {
+          "leaf_structure": "pinnately_compound",
+          "leaf_arrangement": "alternate",
+          "leaf_division_order": 2,
+          "leaflet_count": 0,
+          "leaflet_length_m": 0.021599999999999998,
+          "leaflet_width_m": 0.0045,
+          "frond_stipe_fraction": 0.36,
+          "frond_blade_width_m": 0.0,
+          "frond_arch": 0.0
+        }
+      },
+      "flower": {
+        "id": "flower",
+        "kind": "flower",
+        "asset_ref": "assets/plants/illustrations/illust_torilis_arvensis_flower_module_pixel.png",
+        "texture_set_ref": null,
+        "length_m": 0.16,
+        "radius_m": 0.018,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.4865
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {
+          "depicted_size_m": 0.002
+        }
+      },
+      "fruit": {
+        "id": "fruit",
+        "kind": "fruit",
+        "asset_ref": null,
+        "texture_set_ref": null,
+        "length_m": 0.1,
+        "radius_m": 0.025,
+        "sockets": [
+          "base"
+        ],
+        "attachment_point": [
+          0.5,
+          0.9
+        ],
+        "growth_vector": [
+          0.0,
+          -1.0
+        ],
+        "growth_axis": [
+          0.0,
+          -1.0
+        ],
+        "visual": {}
+      }
+    },
+    "placements": [
+      [
+        "root",
+        -1,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0
+      ],
+      [
+        "stem_section",
+        0,
+        0.0,
+        0.0011,
+        0.136,
+        0.0,
+        0.6978,
+        1
+      ],
+      [
+        "leaf",
+        1,
+        -0.0035,
+        0.0009,
+        0.1094,
+        0.0,
+        1.25,
+        2
+      ],
+      [
+        "stem_section",
+        1,
+        0.003,
+        0.0029,
+        0.272,
+        137.5,
+        0.7356,
+        1
+      ],
+      [
+        "leaf",
+        3,
+        0.0037,
+        0.0008,
+        0.2552,
+        137.5,
+        1.2024,
+        2
+      ],
+      [
+        "stem_section",
+        3,
+        0.0069,
+        0.0049,
+        0.408,
+        275.0,
+        0.7733,
+        1
+      ],
+      [
+        "leaf",
+        5,
+        0.0045,
+        0.0078,
+        0.3801,
+        275.0,
+        1.1244,
+        2
+      ],
+      [
+        "stem_section",
+        5,
+        0.0094,
+        0.0067,
+        0.544,
+        52.5,
+        0.8111,
+        1
+      ],
+      [
+        "leaf",
+        7,
+        0.0116,
+        0.002,
+        0.4998,
+        52.5,
+        1.0284,
+        2
+      ],
+      [
+        "stem_section",
+        7,
+        0.0087,
+        0.0079,
+        0.68,
+        190.0,
+        0.8489,
+        1
+      ],
+      [
+        "leaf",
+        9,
+        0.0057,
+        0.0058,
+        0.652,
+        190.0,
+        0.9184,
+        2
+      ],
+      [
+        "branch_section",
+        9,
+        -0.0577,
+        -0.0439,
+        0.8503,
+        218.0,
+        1.0,
+        2
+      ],
+      [
+        "leaf",
+        11,
+        -0.027,
+        -0.0199,
+        0.7716,
+        218.0,
+        0.597,
+        3
+      ],
+      [
+        "flower",
+        11,
+        -0.0577,
+        -0.0439,
+        0.8503,
+        0.0,
+        1.0,
+        3
+      ],
+      [
+        "stem_section",
+        9,
+        0.0053,
+        0.0083,
+        0.816,
+        327.5,
+        0.8867,
+        1
+      ],
+      [
+        "leaf",
+        14,
+        0.0058,
+        0.01,
+        0.8024,
+        327.5,
+        0.7969,
+        2
+      ],
+      [
+        "stem_section",
+        14,
+        0.0014,
+        0.0078,
+        0.952,
+        105.0,
+        0.9244,
+        1
+      ],
+      [
+        "leaf",
+        16,
+        0.0026,
+        0.0047,
+        0.9276,
+        105.0,
+        0.6651,
+        2
+      ],
+      [
+        "flower",
+        16,
+        -0.0145,
+        0.0226,
+        0.9574,
+        137.0,
+        1.0,
+        2
+      ],
+      [
+        "stem_section",
+        16,
+        -0.0004,
+        0.0064,
+        1.088,
+        242.5,
+        0.9622,
+        1
+      ],
+      [
+        "leaf",
+        19,
+        -0.003,
+        0.0108,
+        1.0454,
+        242.5,
+        0.5242,
+        2
+      ],
+      [
+        "branch_section",
+        19,
+        -0.0702,
+        -0.0416,
+        1.2594,
+        214.5,
+        1.0,
+        2
+      ],
+      [
+        "leaf",
+        21,
+        -0.033,
+        -0.016,
+        1.1679,
+        214.5,
+        0.3407,
+        3
+      ],
+      [
+        "flower",
+        21,
+        -0.0702,
+        -0.0416,
+        1.2594,
+        0.0,
+        1.0,
+        3
+      ],
+      [
+        "flower",
+        19,
+        0.0013,
+        -0.0153,
+        1.0934,
+        274.5,
+        1.0,
+        2
+      ],
+      [
+        "stem_section",
+        19,
+        0.001,
+        0.0045,
+        1.224,
+        20.0,
+        1.0,
+        1
+      ],
+      [
+        "leaf",
+        25,
+        0.0047,
+        0.0083,
+        1.1742,
+        20.0,
+        0.375,
+        2
+      ],
+      [
+        "flower",
+        25,
+        0.0144,
+        0.0217,
+        1.2294,
+        52.0,
+        1.0,
+        2
+      ],
+      [
+        "flower",
+        25,
+        0.001,
+        0.0045,
+        1.2349,
+        0.0,
+        1.0,
+        2
+      ],
+      [
+        "root_section",
+        0,
+        0.0074,
+        0.0,
+        -0.0802,
+        0.0,
+        1.218,
+        0
+      ],
+      [
+        "root_section",
+        29,
+        0.0141,
+        0.0,
+        -0.1909,
+        0.0,
+        0.936,
+        0
+      ],
+      [
+        "root_section",
+        30,
+        0.0194,
+        0.0,
+        -0.3168,
+        0.0,
+        0.654,
+        0
+      ],
+      [
+        "root_section",
+        31,
+        0.0228,
+        0.0,
+        -0.454,
+        0.0,
+        0.372,
+        0
+      ],
+      [
+        "root_section",
+        32,
+        0.024,
+        0.0,
+        -0.6,
+        0.0,
+        0.09,
+        0
+      ],
+      [
+        "root_section",
+        29,
+        0.1034,
+        0.03,
+        -0.1498,
+        0.0,
+        0.5684,
+        1
+      ],
+      [
+        "root_section",
+        34,
+        0.1899,
+        0.057,
+        -0.2456,
+        0.0,
+        0.4368,
+        1
+      ],
+      [
+        "root_section",
+        35,
+        0.2586,
+        0.0785,
+        -0.3547,
+        0.0,
+        0.3052,
+        1
+      ],
+      [
+        "root_section",
+        36,
+        0.3027,
+        0.0922,
+        -0.4735,
+        0.0,
+        0.1736,
+        1
+      ],
+      [
+        "root_section",
+        37,
+        0.3179,
+        0.097,
+        -0.6,
+        0.0,
+        0.042,
+        1
+      ],
+      [
+        "root_section",
+        35,
+        0.2082,
+        0.0446,
+        -0.2552,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        39,
+        0.2247,
+        0.0334,
+        -0.2685,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        40,
+        0.2378,
+        0.0245,
+        -0.2836,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        41,
+        0.2462,
+        0.0187,
+        -0.3001,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        42,
+        0.2491,
+        0.0168,
+        -0.3176,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        36,
+        0.2666,
+        0.0991,
+        -0.3643,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        44,
+        0.2738,
+        0.1177,
+        -0.3776,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        45,
+        0.2794,
+        0.1325,
+        -0.3927,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        46,
+        0.2831,
+        0.142,
+        -0.4092,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        47,
+        0.2844,
+        0.1452,
+        -0.4267,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        37,
+        0.3107,
+        0.1129,
+        -0.4831,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        49,
+        0.3179,
+        0.1315,
+        -0.4964,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        50,
+        0.3236,
+        0.1463,
+        -0.5115,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        51,
+        0.3272,
+        0.1557,
+        -0.528,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        52,
+        0.3285,
+        0.159,
+        -0.5455,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        30,
+        -0.0728,
+        0.0408,
+        -0.2216,
+        0.0,
+        0.5684,
+        1
+      ],
+      [
+        "root_section",
+        54,
+        -0.1512,
+        0.0776,
+        -0.2639,
+        0.0,
+        0.4368,
+        1
+      ],
+      [
+        "root_section",
+        55,
+        -0.2134,
+        0.1068,
+        -0.3121,
+        0.0,
+        0.3052,
+        1
+      ],
+      [
+        "root_section",
+        56,
+        -0.2533,
+        0.1255,
+        -0.3646,
+        0.0,
+        0.1736,
+        1
+      ],
+      [
+        "root_section",
+        57,
+        -0.2671,
+        0.132,
+        -0.4205,
+        0.0,
+        0.042,
+        1
+      ],
+      [
+        "root_section",
+        55,
+        -0.156,
+        0.0981,
+        -0.2735,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        59,
+        -0.1604,
+        0.1167,
+        -0.2868,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        60,
+        -0.1639,
+        0.1314,
+        -0.3019,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        61,
+        -0.1661,
+        0.1408,
+        -0.3184,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        62,
+        -0.1669,
+        0.1441,
+        -0.3359,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        56,
+        -0.2183,
+        0.1273,
+        -0.3217,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        64,
+        -0.2226,
+        0.1459,
+        -0.335,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        65,
+        -0.2261,
+        0.1606,
+        -0.3501,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        66,
+        -0.2283,
+        0.17,
+        -0.3666,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        67,
+        -0.2291,
+        0.1733,
+        -0.3841,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        57,
+        -0.2582,
+        0.1461,
+        -0.3742,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        69,
+        -0.2626,
+        0.1646,
+        -0.3875,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        70,
+        -0.266,
+        0.1793,
+        -0.4026,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        71,
+        -0.2683,
+        0.1888,
+        -0.4191,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        72,
+        -0.269,
+        0.1921,
+        -0.4366,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        31,
+        0.0481,
+        -0.0698,
+        -0.3413,
+        0.0,
+        0.5684,
+        1
+      ],
+      [
+        "root_section",
+        74,
+        0.074,
+        -0.1327,
+        -0.375,
+        0.0,
+        0.4368,
+        1
+      ],
+      [
+        "root_section",
+        75,
+        0.0946,
+        -0.1827,
+        -0.4134,
+        0.0,
+        0.3052,
+        1
+      ],
+      [
+        "root_section",
+        76,
+        0.1078,
+        -0.2148,
+        -0.4552,
+        0.0,
+        0.1736,
+        1
+      ],
+      [
+        "root_section",
+        77,
+        0.1123,
+        -0.2258,
+        -0.4997,
+        0.0,
+        0.042,
+        1
+      ],
+      [
+        "root_section",
+        75,
+        0.09,
+        -0.1373,
+        -0.3846,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        79,
+        0.1044,
+        -0.1415,
+        -0.3979,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        80,
+        0.1158,
+        -0.1448,
+        -0.413,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        81,
+        0.1231,
+        -0.1469,
+        -0.4295,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        82,
+        0.1256,
+        -0.1476,
+        -0.447,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        76,
+        0.1105,
+        -0.1873,
+        -0.423,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        84,
+        0.1249,
+        -0.1914,
+        -0.4363,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        85,
+        0.1363,
+        -0.1947,
+        -0.4514,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        86,
+        0.1437,
+        -0.1968,
+        -0.4679,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        87,
+        0.1462,
+        -0.1976,
+        -0.4854,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        77,
+        0.0997,
+        -0.2293,
+        -0.4648,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        89,
+        0.0924,
+        -0.2423,
+        -0.4781,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        90,
+        0.0866,
+        -0.2527,
+        -0.4932,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        91,
+        0.0828,
+        -0.2594,
+        -0.5096,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        92,
+        0.0816,
+        -0.2617,
+        -0.5272,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        32,
+        0.0537,
+        0.0841,
+        -0.4604,
+        0.0,
+        0.5684,
+        1
+      ],
+      [
+        "root_section",
+        94,
+        0.0815,
+        0.16,
+        -0.4692,
+        0.0,
+        0.4368,
+        1
+      ],
+      [
+        "root_section",
+        95,
+        0.1035,
+        0.2202,
+        -0.4793,
+        0.0,
+        0.3052,
+        1
+      ],
+      [
+        "root_section",
+        96,
+        0.1177,
+        0.2588,
+        -0.4903,
+        0.0,
+        0.1736,
+        1
+      ],
+      [
+        "root_section",
+        97,
+        0.1226,
+        0.2722,
+        -0.502,
+        0.0,
+        0.042,
+        1
+      ],
+      [
+        "root_section",
+        95,
+        0.0712,
+        0.1768,
+        -0.4789,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        99,
+        0.0619,
+        0.192,
+        -0.4921,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        100,
+        0.0546,
+        0.204,
+        -0.5072,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        101,
+        0.0498,
+        0.2117,
+        -0.5237,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        102,
+        0.0482,
+        0.2144,
+        -0.5412,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        96,
+        0.1222,
+        0.2264,
+        -0.4889,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        104,
+        0.1391,
+        0.232,
+        -0.5022,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        105,
+        0.1525,
+        0.2364,
+        -0.5173,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        106,
+        0.1611,
+        0.2392,
+        -0.5338,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        107,
+        0.1641,
+        0.2402,
+        -0.5513,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        97,
+        0.1074,
+        0.2757,
+        -0.4999,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        109,
+        0.0982,
+        0.2908,
+        -0.5132,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        110,
+        0.0908,
+        0.3029,
+        -0.5283,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        111,
+        0.0861,
+        0.3106,
+        -0.5447,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        112,
+        0.0844,
+        0.3133,
+        -0.5623,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        29,
+        -0.0779,
+        -0.0442,
+        -0.1334,
+        0.0,
+        0.5684,
+        1
+      ],
+      [
+        "root_section",
+        114,
+        -0.1548,
+        -0.084,
+        -0.2067,
+        0.0,
+        0.4368,
+        1
+      ],
+      [
+        "root_section",
+        115,
+        -0.2158,
+        -0.1156,
+        -0.2901,
+        0.0,
+        0.3052,
+        1
+      ],
+      [
+        "root_section",
+        116,
+        -0.255,
+        -0.1359,
+        -0.381,
+        0.0,
+        0.1736,
+        1
+      ],
+      [
+        "root_section",
+        117,
+        -0.2685,
+        -0.1429,
+        -0.4777,
+        0.0,
+        0.042,
+        1
+      ],
+      [
+        "root_section",
+        115,
+        -0.1588,
+        -0.1047,
+        -0.2163,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        119,
+        -0.1625,
+        -0.1234,
+        -0.2296,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        120,
+        -0.1654,
+        -0.1383,
+        -0.2447,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        121,
+        -0.1672,
+        -0.1478,
+        -0.2612,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        122,
+        -0.1679,
+        -0.1511,
+        -0.2787,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        116,
+        -0.2351,
+        -0.1069,
+        -0.2998,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        124,
+        -0.2525,
+        -0.0991,
+        -0.313,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        125,
+        -0.2663,
+        -0.0929,
+        -0.3282,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        126,
+        -0.2751,
+        -0.089,
+        -0.3446,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        127,
+        -0.2782,
+        -0.0876,
+        -0.3621,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        117,
+        -0.2743,
+        -0.1272,
+        -0.3906,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        129,
+        -0.2917,
+        -0.1194,
+        -0.4039,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        130,
+        -0.3055,
+        -0.1132,
+        -0.419,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        131,
+        -0.3143,
+        -0.1093,
+        -0.4354,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        132,
+        -0.3174,
+        -0.1079,
+        -0.453,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        30,
+        0.0958,
+        -0.0221,
+        -0.2447,
+        0.0,
+        0.5684,
+        1
+      ],
+      [
+        "root_section",
+        134,
+        0.1696,
+        -0.042,
+        -0.319,
+        0.0,
+        0.4368,
+        1
+      ],
+      [
+        "root_section",
+        135,
+        0.2281,
+        -0.0578,
+        -0.4036,
+        0.0,
+        0.3052,
+        1
+      ],
+      [
+        "root_section",
+        136,
+        0.2657,
+        -0.068,
+        -0.4957,
+        0.0,
+        0.1736,
+        1
+      ],
+      [
+        "root_section",
+        137,
+        0.2786,
+        -0.0714,
+        -0.5937,
+        0.0,
+        0.042,
+        1
+      ],
+      [
+        "root_section",
+        135,
+        0.1846,
+        -0.0309,
+        -0.3286,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        139,
+        0.1981,
+        -0.0209,
+        -0.3419,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        140,
+        0.2088,
+        -0.013,
+        -0.357,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        141,
+        0.2157,
+        -0.0079,
+        -0.3735,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        142,
+        0.2181,
+        -0.0062,
+        -0.391,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        136,
+        0.2355,
+        -0.0749,
+        -0.4132,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        144,
+        0.2421,
+        -0.0903,
+        -0.4265,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        145,
+        0.2474,
+        -0.1026,
+        -0.4416,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        146,
+        0.2508,
+        -0.1104,
+        -0.4581,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        147,
+        0.252,
+        -0.1132,
+        -0.4756,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        137,
+        0.2731,
+        -0.0851,
+        -0.5053,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        149,
+        0.2797,
+        -0.1005,
+        -0.5186,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        150,
+        0.285,
+        -0.1127,
+        -0.5337,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        151,
+        0.2884,
+        -0.1206,
+        -0.5501,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        152,
+        0.2895,
+        -0.1233,
+        -0.5677,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        31,
+        -0.0296,
+        0.0773,
+        -0.3409,
+        0.0,
+        0.5684,
+        1
+      ],
+      [
+        "root_section",
+        154,
+        -0.0739,
+        0.1471,
+        -0.374,
+        0.0,
+        0.4368,
+        1
+      ],
+      [
+        "root_section",
+        155,
+        -0.109,
+        0.2024,
+        -0.4117,
+        0.0,
+        0.3052,
+        1
+      ],
+      [
+        "root_section",
+        156,
+        -0.1316,
+        0.238,
+        -0.4528,
+        0.0,
+        0.1736,
+        1
+      ],
+      [
+        "root_section",
+        157,
+        -0.1393,
+        0.2502,
+        -0.4965,
+        0.0,
+        0.042,
+        1
+      ],
+      [
+        "root_section",
+        155,
+        -0.0939,
+        0.1492,
+        -0.3836,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        159,
+        -0.112,
+        0.1511,
+        -0.3969,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        160,
+        -0.1263,
+        0.1526,
+        -0.412,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        161,
+        -0.1356,
+        0.1536,
+        -0.4285,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        162,
+        -0.1387,
+        0.1539,
+        -0.446,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        156,
+        -0.1024,
+        0.2215,
+        -0.4214,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        164,
+        -0.0964,
+        0.2386,
+        -0.4346,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        165,
+        -0.0917,
+        0.2523,
+        -0.4498,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        166,
+        -0.0887,
+        0.261,
+        -0.4662,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        167,
+        -0.0876,
+        0.264,
+        -0.4837,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        157,
+        -0.1516,
+        0.2401,
+        -0.4624,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        169,
+        -0.1697,
+        0.242,
+        -0.4757,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        170,
+        -0.184,
+        0.2435,
+        -0.4908,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        171,
+        -0.1932,
+        0.2445,
+        -0.5073,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        172,
+        -0.1964,
+        0.2448,
+        -0.5248,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        32,
+        0.007,
+        -0.089,
+        -0.4604,
+        0.0,
+        0.5684,
+        1
+      ],
+      [
+        "root_section",
+        174,
+        -0.0073,
+        -0.1693,
+        -0.4692,
+        0.0,
+        0.4368,
+        1
+      ],
+      [
+        "root_section",
+        175,
+        -0.0187,
+        -0.233,
+        -0.4793,
+        0.0,
+        0.3052,
+        1
+      ],
+      [
+        "root_section",
+        176,
+        -0.026,
+        -0.274,
+        -0.4903,
+        0.0,
+        0.1736,
+        1
+      ],
+      [
+        "root_section",
+        177,
+        -0.0285,
+        -0.2881,
+        -0.502,
+        0.0,
+        0.042,
+        1
+      ],
+      [
+        "root_section",
+        175,
+        0.0058,
+        -0.1842,
+        -0.4789,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        179,
+        0.0177,
+        -0.1977,
+        -0.4921,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        180,
+        0.0272,
+        -0.2083,
+        -0.5072,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        181,
+        0.0332,
+        -0.2152,
+        -0.5237,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        182,
+        0.0353,
+        -0.2176,
+        -0.5412,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        176,
+        -0.0055,
+        -0.2479,
+        -0.4889,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        184,
+        0.0064,
+        -0.2614,
+        -0.5022,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        185,
+        0.0158,
+        -0.2721,
+        -0.5173,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        186,
+        0.0219,
+        -0.2789,
+        -0.5338,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        187,
+        0.0239,
+        -0.2813,
+        -0.5513,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        177,
+        -0.0435,
+        -0.2834,
+        -0.4999,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        189,
+        -0.0593,
+        -0.2919,
+        -0.5132,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        190,
+        -0.0718,
+        -0.2987,
+        -0.5283,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        191,
+        -0.0799,
+        -0.303,
+        -0.5447,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        192,
+        -0.0826,
+        -0.3045,
+        -0.5623,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        29,
+        0.0842,
+        0.0587,
+        -0.1252,
+        0.0,
+        0.5684,
+        1
+      ],
+      [
+        "root_section",
+        194,
+        0.1534,
+        0.1117,
+        -0.1871,
+        0.0,
+        0.4368,
+        1
+      ],
+      [
+        "root_section",
+        195,
+        0.2084,
+        0.1537,
+        -0.2577,
+        0.0,
+        0.3052,
+        1
+      ],
+      [
+        "root_section",
+        196,
+        0.2437,
+        0.1807,
+        -0.3345,
+        0.0,
+        0.1736,
+        1
+      ],
+      [
+        "root_section",
+        197,
+        0.2558,
+        0.19,
+        -0.4162,
+        0.0,
+        0.042,
+        1
+      ],
+      [
+        "root_section",
+        195,
+        0.1741,
+        0.1065,
+        -0.1968,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        199,
+        0.1927,
+        0.1018,
+        -0.21,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        200,
+        0.2074,
+        0.0981,
+        -0.2252,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        201,
+        0.2169,
+        0.0957,
+        -0.2416,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        202,
+        0.2202,
+        0.0948,
+        -0.2591,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        196,
+        0.229,
+        0.1485,
+        -0.2673,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        204,
+        0.2476,
+        0.1438,
+        -0.2806,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        205,
+        0.2624,
+        0.1401,
+        -0.2957,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        206,
+        0.2718,
+        0.1377,
+        -0.3122,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        207,
+        0.2751,
+        0.1369,
+        -0.3297,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        197,
+        0.2643,
+        0.1755,
+        -0.3441,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        209,
+        0.2829,
+        0.1708,
+        -0.3574,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        210,
+        0.2977,
+        0.1671,
+        -0.3725,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        211,
+        0.3071,
+        0.1647,
+        -0.3889,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        212,
+        0.3104,
+        0.1639,
+        -0.4065,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        30,
+        -0.0807,
+        0.0084,
+        -0.2332,
+        0.0,
+        0.5684,
+        1
+      ],
+      [
+        "root_section",
+        214,
+        -0.1661,
+        0.016,
+        -0.2916,
+        0.0,
+        0.4368,
+        1
+      ],
+      [
+        "root_section",
+        215,
+        -0.234,
+        0.0221,
+        -0.3581,
+        0.0,
+        0.3052,
+        1
+      ],
+      [
+        "root_section",
+        216,
+        -0.2775,
+        0.0259,
+        -0.4305,
+        0.0,
+        0.1736,
+        1
+      ],
+      [
+        "root_section",
+        217,
+        -0.2926,
+        0.0273,
+        -0.5076,
+        0.0,
+        0.042,
+        1
+      ],
+      [
+        "root_section",
+        215,
+        -0.1806,
+        0.0009,
+        -0.3013,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        219,
+        -0.1936,
+        -0.0128,
+        -0.3145,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        220,
+        -0.2039,
+        -0.0237,
+        -0.3296,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        221,
+        -0.2105,
+        -0.0307,
+        -0.3461,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        222,
+        -0.2128,
+        -0.0331,
+        -0.3636,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        216,
+        -0.2484,
+        0.0069,
+        -0.3678,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        224,
+        -0.2614,
+        -0.0068,
+        -0.381,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        225,
+        -0.2717,
+        -0.0177,
+        -0.3962,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        226,
+        -0.2783,
+        -0.0246,
+        -0.4126,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        227,
+        -0.2806,
+        -0.027,
+        -0.4301,
+        0.0,
+        0.015,
+        2
+      ],
+      [
+        "root_section",
+        217,
+        -0.292,
+        0.0108,
+        -0.4401,
+        0.0,
+        0.203,
+        2
+      ],
+      [
+        "root_section",
+        229,
+        -0.305,
+        -0.0029,
+        -0.4534,
+        0.0,
+        0.156,
+        2
+      ],
+      [
+        "root_section",
+        230,
+        -0.3153,
+        -0.0138,
+        -0.4685,
+        0.0,
+        0.109,
+        2
+      ],
+      [
+        "root_section",
+        231,
+        -0.3219,
+        -0.0208,
+        -0.485,
+        0.0,
+        0.062,
+        2
+      ],
+      [
+        "root_section",
+        232,
+        -0.3242,
+        -0.0232,
+        -0.5025,
+        0.0,
+        0.015,
+        2
+      ]
+    ],
+    "bounds_m": [
+      -0.3242,
+      0.3285,
+      -0.3045,
+      0.3133,
+      -0.6,
+      1.4194
+    ],
+    "model_space": {
+      "dimensions": 3,
+      "up_axis": "z",
+      "depth_axis": "y",
+      "projection": "orthographic",
+      "asset_dimension": 2
+    },
+    "placement_paths": {
+      "1": [
+        [
+          -0.006,
+          0.0004,
+          0.0517
+        ],
+        [
+          -0.005,
+          0.0008,
+          0.0979
+        ],
+        [
+          -0.0,
+          0.0011,
+          0.136
+        ]
+      ],
+      "3": [
+        [
+          0.0042,
+          -0.0034,
+          0.1877
+        ],
+        [
+          0.0047,
+          -0.0019,
+          0.2339
+        ],
+        [
+          0.003,
+          0.0029,
+          0.272
+        ]
+      ],
+      "5": [
+        [
+          0.0018,
+          0.009,
+          0.3237
+        ],
+        [
+          0.0036,
+          0.0088,
+          0.3699
+        ],
+        [
+          0.0069,
+          0.0049,
+          0.408
+        ]
+      ],
+      "7": [
+        [
+          0.0114,
+          0.0007,
+          0.4597
+        ],
+        [
+          0.0116,
+          0.0022,
+          0.5059
+        ],
+        [
+          0.0094,
+          0.0067,
+          0.544
+        ]
+      ],
+      "9": [
+        [
+          0.004,
+          0.004,
+          0.5957
+        ],
+        [
+          0.0046,
+          0.005,
+          0.6419
+        ],
+        [
+          0.0087,
+          0.0079,
+          0.68
+        ]
+      ],
+      "11": [
+        [
+          -0.0131,
+          -0.0162,
+          0.7447
+        ],
+        [
+          -0.0362,
+          -0.033,
+          0.8026
+        ],
+        [
+          -0.0577,
+          -0.0439,
+          0.8503
+        ]
+      ],
+      "14": [
+        [
+          0.0081,
+          0.014,
+          0.7317
+        ],
+        [
+          0.0068,
+          0.0131,
+          0.7779
+        ],
+        [
+          0.0053,
+          0.0083,
+          0.816
+        ]
+      ],
+      "16": [
+        [
+          0.0047,
+          0.0022,
+          0.8677
+        ],
+        [
+          0.0032,
+          0.003,
+          0.9139
+        ],
+        [
+          0.0014,
+          0.0078,
+          0.952
+        ]
+      ],
+      "19": [
+        [
+          -0.003,
+          0.012,
+          1.0037
+        ],
+        [
+          -0.003,
+          0.0107,
+          1.0499
+        ],
+        [
+          -0.0004,
+          0.0064,
+          1.088
+        ]
+      ],
+      "21": [
+        [
+          -0.0301,
+          -0.0072,
+          1.1531
+        ],
+        [
+          -0.0533,
+          -0.0243,
+          1.2114
+        ],
+        [
+          -0.0702,
+          -0.0416,
+          1.2594
+        ]
+      ],
+      "25": [
+        [
+          0.005,
+          0.0092,
+          1.1397
+        ],
+        [
+          0.0046,
+          0.008,
+          1.1859
+        ],
+        [
+          0.001,
+          0.0045,
+          1.224
+        ]
+      ]
+    },
+    "placement_orientations": {
+      "0": {
+        "forward": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "right": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "up": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "1": {
+        "forward": [
+          0.0,
+          0.00809,
+          0.99997
+        ],
+        "right": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "up": [
+          0.0,
+          0.99997,
+          -0.00809
+        ]
+      },
+      "2": {
+        "forward": [
+          0.984184,
+          0.039968,
+          0.172581
+        ],
+        "model": "forb_socket_direction_v1"
+      },
+      "3": {
+        "forward": [
+          0.02205,
+          0.01323,
+          0.99967
+        ],
+        "right": [
+          0.99976,
+          0.0,
+          -0.02205
+        ],
+        "up": [
+          -0.00029,
+          0.99991,
+          -0.01323
+        ]
+      },
+      "4": {
+        "forward": [
+          -0.778026,
+          0.531819,
+          0.33443
+        ],
+        "model": "forb_socket_direction_v1"
+      },
+      "5": {
+        "forward": [
+          0.02866,
+          0.0147,
+          0.99948
+        ],
+        "right": [
+          0.99959,
+          0.0,
+          -0.02866
+        ],
+        "up": [
+          -0.00042,
+          0.99989,
+          -0.01469
+        ]
+      },
+      "6": {
+        "forward": [
+          0.108905,
+          -0.940139,
+          0.322921
+        ],
+        "model": "forb_socket_direction_v1"
+      },
+      "7": {
+        "forward": [
+          0.01838,
+          0.01323,
+          0.99974
+        ],
+        "right": [
+          0.99983,
+          0.0,
+          -0.01838
+        ],
+        "up": [
+          -0.00024,
+          0.99991,
+          -0.01323
+        ]
+      },
+      "8": {
+        "forward": [
+          0.687242,
+          0.675011,
+          0.268438
+        ],
+        "model": "forb_socket_direction_v1"
+      },
+      "9": {
+        "forward": [
+          -0.00515,
+          0.00882,
+          0.99995
+        ],
+        "right": [
+          0.99999,
+          -0.0,
+          0.00515
+        ],
+        "up": [
+          5e-05,
+          0.99996,
+          -0.00882
+        ]
+      },
+      "10": {
+        "forward": [
+          -0.862795,
+          -0.176195,
+          0.473856
+        ],
+        "model": "forb_socket_direction_v1"
+      },
+      "11": {
+        "forward": [
+          -0.3495,
+          -0.27265,
+          0.89639
+        ],
+        "right": [
+          0.61509,
+          -0.78846,
+          0.0
+        ],
+        "up": [
+          0.70676,
+          0.55136,
+          0.44327
+        ]
+      },
+      "12": {
+        "forward": [
+          -0.795096,
+          0.378528,
+          0.473856
+        ],
+        "model": "forb_socket_direction_v1"
+      },
+      "13": {
+        "forward": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "right": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "up": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "14": {
+        "forward": [
+          -0.02499,
+          0.00294,
+          0.99968
+        ],
+        "right": [
+          0.99969,
+          -0.0,
+          0.02499
+        ],
+        "up": [
+          7e-05,
+          1.0,
+          -0.00294
+        ]
+      },
+      "15": {
+        "forward": [
+          0.704256,
+          -0.281633,
+          0.651696
+        ],
+        "model": "forb_socket_direction_v1"
+      },
+      "16": {
+        "forward": [
+          -0.02866,
+          -0.00367,
+          0.99958
+        ],
+        "right": [
+          0.99959,
+          -0.0,
+          0.02866
+        ],
+        "up": [
+          -0.00011,
+          0.99999,
+          0.00367
+        ]
+      },
+      "17": {
+        "forward": [
+          -0.246846,
+          0.730349,
+          0.636913
+        ],
+        "model": "forb_socket_direction_v1"
+      },
+      "18": {
+        "forward": [
+          -0.71035,
+          0.66121,
+          0.24125
+        ],
+        "right": [
+          -0.68133,
+          -0.73197,
+          0.0
+        ],
+        "up": [
+          0.17659,
+          -0.16437,
+          0.97046
+        ]
+      },
+      "19": {
+        "forward": [
+          -0.01323,
+          -0.01029,
+          0.99986
+        ],
+        "right": [
+          0.99991,
+          -0.0,
+          0.01323
+        ],
+        "up": [
+          -0.00014,
+          0.99995,
+          0.01029
+        ]
+      },
+      "20": {
+        "forward": [
+          -0.46241,
+          -0.671574,
+          0.578935
+        ],
+        "model": "forb_socket_direction_v1"
+      },
+      "21": {
+        "forward": [
+          -0.36508,
+          -0.25106,
+          0.89649
+        ],
+        "right": [
+          0.56663,
+          -0.82397,
+          0.0
+        ],
+        "up": [
+          0.73868,
+          0.50797,
+          0.44307
+        ]
+      },
+      "22": {
+        "forward": [
+          0.034866,
+          -0.814628,
+          0.578935
+        ],
+        "model": "forb_socket_direction_v1"
+      },
+      "23": {
+        "forward": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "right": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "up": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "24": {
+        "forward": [
+          0.0758,
+          -0.96761,
+          0.24079
+        ],
+        "right": [
+          0.99695,
+          0.0781,
+          -0.0
+        ],
+        "up": [
+          -0.01881,
+          0.24005,
+          0.97058
+        ]
+      },
+      "25": {
+        "forward": [
+          0.01029,
+          -0.01397,
+          0.99985
+        ],
+        "right": [
+          0.99995,
+          0.0,
+          -0.01029
+        ],
+        "up": [
+          0.00014,
+          0.9999,
+          0.01397
+        ]
+      },
+      "26": {
+        "forward": [
+          0.793915,
+          0.121269,
+          0.595813
+        ],
+        "model": "forb_socket_direction_v1"
+      },
+      "27": {
+        "forward": [
+          0.59655,
+          0.76572,
+          0.2404
+        ],
+        "right": [
+          -0.78886,
+          0.61458,
+          0.0
+        ],
+        "up": [
+          -0.14774,
+          -0.18964,
+          0.97067
+        ]
+      },
+      "28": {
+        "forward": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "right": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "up": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "29": {
+        "forward": [
+          0.09188,
+          0.0,
+          -0.99577
+        ],
+        "right": [
+          -0.99577,
+          0.0,
+          -0.09188
+        ],
+        "up": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "30": {
+        "forward": [
+          0.06041,
+          0.0,
+          -0.99817
+        ],
+        "right": [
+          -0.99817,
+          0.0,
+          -0.06041
+        ],
+        "up": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "31": {
+        "forward": [
+          0.04206,
+          0.0,
+          -0.99912
+        ],
+        "right": [
+          -0.99912,
+          0.0,
+          -0.04206
+        ],
+        "up": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "32": {
+        "forward": [
+          0.02477,
+          0.0,
+          -0.99969
+        ],
+        "right": [
+          -0.99969,
+          0.0,
+          -0.02477
+        ],
+        "up": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "33": {
+        "forward": [
+          0.00822,
+          0.0,
+          -0.99997
+        ],
+        "right": [
+          -0.99997,
+          0.0,
+          -0.00822
+        ],
+        "up": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "34": {
+        "forward": [
+          0.78488,
+          0.24527,
+          -0.56904
+        ],
+        "right": [
+          -0.29827,
+          0.95448,
+          0.0
+        ],
+        "up": [
+          0.54314,
+          0.16973,
+          0.82231
+        ]
+      },
+      "35": {
+        "forward": [
+          0.65596,
+          0.20475,
+          -0.72649
+        ],
+        "right": [
+          -0.29796,
+          0.95458,
+          0.0
+        ],
+        "up": [
+          0.69349,
+          0.21647,
+          0.68718
+        ]
+      },
+      "36": {
+        "forward": [
+          0.5256,
+          0.16449,
+          -0.83468
+        ],
+        "right": [
+          -0.29867,
+          0.95436,
+          0.0
+        ],
+        "up": [
+          0.79658,
+          0.24929,
+          0.55073
+        ]
+      },
+      "37": {
+        "forward": [
+          0.34599,
+          0.10749,
+          -0.93206
+        ],
+        "right": [
+          -0.93749,
+          0.0,
+          -0.34801
+        ],
+        "up": [
+          -0.03741,
+          0.99421,
+          0.10077
+        ]
+      },
+      "38": {
+        "forward": [
+          0.11922,
+          0.03765,
+          -0.99215
+        ],
+        "right": [
+          -0.99286,
+          0.0,
+          -0.1193
+        ],
+        "up": [
+          -0.00449,
+          0.99929,
+          0.03738
+        ]
+      },
+      "39": {
+        "forward": [
+          0.75934,
+          -0.51452,
+          -0.39834
+        ],
+        "right": [
+          0.56095,
+          0.82785,
+          -0.0
+        ],
+        "up": [
+          0.32977,
+          -0.22345,
+          0.91724
+        ]
+      },
+      "40": {
+        "forward": [
+          0.68835,
+          -0.46724,
+          -0.55485
+        ],
+        "right": [
+          0.56162,
+          0.82739,
+          -0.0
+        ],
+        "up": [
+          0.45908,
+          -0.31162,
+          0.83195
+        ]
+      },
+      "41": {
+        "forward": [
+          0.59866,
+          -0.40672,
+          -0.69006
+        ],
+        "right": [
+          0.56196,
+          0.82716,
+          -0.0
+        ],
+        "up": [
+          0.57079,
+          -0.38779,
+          0.72375
+        ]
+      },
+      "42": {
+        "forward": [
+          0.43294,
+          -0.29893,
+          -0.85041
+        ],
+        "right": [
+          0.56819,
+          0.8229,
+          -0.0
+        ],
+        "up": [
+          0.6998,
+          -0.4832,
+          0.52611
+        ]
+      },
+      "43": {
+        "forward": [
+          0.16255,
+          -0.1065,
+          -0.98093
+        ],
+        "right": [
+          -0.98655,
+          0.0,
+          -0.16348
+        ],
+        "up": [
+          0.01741,
+          0.99431,
+          -0.10507
+        ]
+      },
+      "44": {
+        "forward": [
+          0.33203,
+          0.85499,
+          -0.39844
+        ],
+        "right": [
+          -0.93217,
+          0.36201,
+          0.0
+        ],
+        "up": [
+          0.14424,
+          0.37142,
+          0.91719
+        ]
+      },
+      "45": {
+        "forward": [
+          0.30034,
+          0.77588,
+          -0.5548
+        ],
+        "right": [
+          -0.93257,
+          0.36099,
+          0.0
+        ],
+        "up": [
+          0.20028,
+          0.51739,
+          0.83199
+        ]
+      },
+      "46": {
+        "forward": [
+          0.25603,
+          0.67665,
+          -0.69036
+        ],
+        "right": [
+          -0.93529,
+          0.35389,
+          0.0
+        ],
+        "up": [
+          0.24431,
+          0.64569,
+          0.72346
+        ]
+      },
+      "47": {
+        "forward": [
+          0.19076,
+          0.4898,
+          -0.85071
+        ],
+        "right": [
+          -0.93182,
+          0.36292,
+          0.0
+        ],
+        "up": [
+          0.30874,
+          0.79271,
+          0.52564
+        ]
+      },
+      "48": {
+        "forward": [
+          0.07288,
+          0.1794,
+          -0.98107
+        ],
+        "right": [
+          -0.99725,
+          0.0,
+          -0.07408
+        ],
+        "up": [
+          -0.01329,
+          0.98378,
+          0.1789
+        ]
+      },
+      "49": {
+        "forward": [
+          0.33086,
+          0.8561,
+          -0.39703
+        ],
+        "right": [
+          -0.93276,
+          0.36049,
+          0.0
+        ],
+        "up": [
+          0.14312,
+          0.37034,
+          0.91781
+        ]
+      },
+      "50": {
+        "forward": [
+          0.30034,
+          0.77588,
+          -0.5548
+        ],
+        "right": [
+          -0.93257,
+          0.36099,
+          0.0
+        ],
+        "up": [
+          0.20028,
+          0.51739,
+          0.83199
+        ]
+      },
+      "51": {
+        "forward": [
+          0.26029,
+          0.67585,
+          -0.68955
+        ],
+        "right": [
+          -0.93318,
+          0.3594,
+          0.0
+        ],
+        "up": [
+          0.24782,
+          0.64347,
+          0.72424
+        ]
+      },
+      "52": {
+        "forward": [
+          0.18626,
+          0.48634,
+          -0.85369
+        ],
+        "right": [
+          -0.93386,
+          0.35765,
+          0.0
+        ],
+        "up": [
+          0.30532,
+          0.79722,
+          0.52079
+        ]
+      },
+      "53": {
+        "forward": [
+          0.07281,
+          0.18481,
+          -0.98007
+        ],
+        "right": [
+          -0.99725,
+          0.0,
+          -0.07408
+        ],
+        "up": [
+          -0.01369,
+          0.98277,
+          0.18431
+        ]
+      },
+      "54": {
+        "forward": [
+          -0.86218,
+          0.4048,
+          -0.30459
+        ],
+        "right": [
+          -0.42499,
+          -0.9052,
+          0.0
+        ],
+        "up": [
+          -0.27572,
+          0.12945,
+          0.95248
+        ]
+      },
+      "55": {
+        "forward": [
+          -0.8134,
+          0.3818,
+          -0.43886
+        ],
+        "right": [
+          -0.42491,
+          -0.90524,
+          0.0
+        ],
+        "up": [
+          -0.39728,
+          0.18648,
+          0.89855
+        ]
+      },
+      "56": {
+        "forward": [
+          -0.74107,
+          0.3479,
+          -0.57427
+        ],
+        "right": [
+          -0.42496,
+          -0.90521,
+          0.0
+        ],
+        "up": [
+          -0.51984,
+          0.24404,
+          0.81867
+        ]
+      },
+      "57": {
+        "forward": [
+          -0.58213,
+          0.27283,
+          -0.76596
+        ],
+        "right": [
+          -0.42438,
+          -0.90549,
+          0.0
+        ],
+        "up": [
+          -0.69356,
+          0.32505,
+          0.64289
+        ]
+      },
+      "58": {
+        "forward": [
+          -0.23816,
+          0.11218,
+          -0.96473
+        ],
+        "right": [
+          -0.97085,
+          0.0,
+          0.23967
+        ],
+        "up": [
+          0.02689,
+          0.99369,
+          0.10891
+        ]
+      },
+      "59": {
+        "forward": [
+          -0.20743,
+          0.88592,
+          -0.41487
+        ],
+        "right": [
+          -0.97367,
+          -0.22798,
+          0.0
+        ],
+        "up": [
+          -0.09458,
+          0.40394,
+          0.90988
+        ]
+      },
+      "60": {
+        "forward": [
+          -0.18896,
+          0.79878,
+          -0.57117
+        ],
+        "right": [
+          -0.97314,
+          -0.23021,
+          0.0
+        ],
+        "up": [
+          -0.13149,
+          0.55583,
+          0.82083
+        ]
+      },
+      "61": {
+        "forward": [
+          -0.16384,
+          0.68813,
+          -0.70685
+        ],
+        "right": [
+          -0.97281,
+          -0.23162,
+          0.0
+        ],
+        "up": [
+          -0.16372,
+          0.68763,
+          0.70736
+        ]
+      },
+      "62": {
+        "forward": [
+          -0.11508,
+          0.49172,
+          -0.86312
+        ],
+        "right": [
+          -0.97369,
+          -0.22788,
+          0.0
+        ],
+        "up": [
+          -0.19669,
+          0.84041,
+          0.505
+        ]
+      },
+      "63": {
+        "forward": [
+          -0.04488,
+          0.18512,
+          -0.98169
+        ],
+        "right": [
+          -0.99896,
+          0.0,
+          0.04567
+        ],
+        "up": [
+          0.00845,
+          0.98272,
+          0.18493
+        ]
+      },
+      "64": {
+        "forward": [
+          -0.21156,
+          0.88512,
+          -0.41449
+        ],
+        "right": [
+          -0.9726,
+          -0.23248,
+          0.0
+        ],
+        "up": [
+          -0.09636,
+          0.40314,
+          0.91005
+        ]
+      },
+      "65": {
+        "forward": [
+          -0.18481,
+          0.79943,
+          -0.57163
+        ],
+        "right": [
+          -0.9743,
+          -0.22524,
+          0.0
+        ],
+        "up": [
+          -0.12876,
+          0.55694,
+          0.82051
+        ]
+      },
+      "66": {
+        "forward": [
+          -0.16384,
+          0.68813,
+          -0.70685
+        ],
+        "right": [
+          -0.97281,
+          -0.23162,
+          0.0
+        ],
+        "up": [
+          -0.16372,
+          0.68763,
+          0.70736
+        ]
+      },
+      "67": {
+        "forward": [
+          -0.11508,
+          0.49172,
+          -0.86312
+        ],
+        "right": [
+          -0.97369,
+          -0.22788,
+          0.0
+        ],
+        "up": [
+          -0.19669,
+          0.84041,
+          0.505
+        ]
+      },
+      "68": {
+        "forward": [
+          -0.04488,
+          0.18512,
+          -0.98169
+        ],
+        "right": [
+          -0.99896,
+          0.0,
+          0.04567
+        ],
+        "up": [
+          0.00845,
+          0.98272,
+          0.18493
+        ]
+      },
+      "69": {
+        "forward": [
+          -0.21076,
+          0.88605,
+          -0.41292
+        ],
+        "right": [
+          -0.97286,
+          -0.23141,
+          0.0
+        ],
+        "up": [
+          -0.09555,
+          0.40171,
+          0.91077
+        ]
+      },
+      "70": {
+        "forward": [
+          -0.18961,
+          0.79722,
+          -0.57314
+        ],
+        "right": [
+          -0.97286,
+          -0.23138,
+          0.0
+        ],
+        "up": [
+          -0.13261,
+          0.55758,
+          0.81946
+        ]
+      },
+      "71": {
+        "forward": [
+          -0.15928,
+          0.68865,
+          -0.70739
+        ],
+        "right": [
+          -0.97428,
+          -0.22534,
+          0.0
+        ],
+        "up": [
+          -0.1594,
+          0.68919,
+          0.70683
+        ]
+      },
+      "72": {
+        "forward": [
+          -0.11993,
+          0.49536,
+          -0.86037
+        ],
+        "right": [
+          -0.97192,
+          -0.23531,
+          0.0
+        ],
+        "up": [
+          -0.20245,
+          0.83621,
+          0.50967
+        ]
+      },
+      "73": {
+        "forward": [
+          -0.03928,
+          0.18516,
+          -0.98192
+        ],
+        "right": [
+          -0.9992,
+          0.0,
+          0.03997
+        ],
+        "up": [
+          0.0074,
+          0.98271,
+          0.18501
+        ]
+      },
+      "74": {
+        "forward": [
+          0.3617,
+          -0.87968,
+          -0.30877
+        ],
+        "right": [
+          0.92487,
+          0.38028,
+          -0.0
+        ],
+        "up": [
+          0.11742,
+          -0.28557,
+          0.95114
+        ]
+      },
+      "75": {
+        "forward": [
+          0.34118,
+          -0.82857,
+          -0.44392
+        ],
+        "right": [
+          0.92468,
+          0.38075,
+          -0.0
+        ],
+        "up": [
+          0.16902,
+          -0.41049,
+          0.89606
+        ]
+      },
+      "76": {
+        "forward": [
+          0.31059,
+          -0.75387,
+          -0.57897
+        ],
+        "right": [
+          0.9246,
+          0.38094,
+          -0.0
+        ],
+        "up": [
+          0.22055,
+          -0.53532,
+          0.81535
+        ]
+      },
+      "77": {
+        "forward": [
+          0.24295,
+          -0.59082,
+          -0.76935
+        ],
+        "right": [
+          0.92486,
+          0.38032,
+          -0.0
+        ],
+        "up": [
+          0.2926,
+          -0.71154,
+          0.63882
+        ]
+      },
+      "78": {
+        "forward": [
+          0.0977,
+          -0.23882,
+          -0.96614
+        ],
+        "right": [
+          -0.99493,
+          0.0,
+          -0.10061
+        ],
+        "up": [
+          0.02403,
+          0.97106,
+          -0.23761
+        ]
+      },
+      "79": {
+        "forward": [
+          0.83257,
+          -0.23936,
+          -0.49954
+        ],
+        "right": [
+          0.27631,
+          0.96107,
+          -0.0
+        ],
+        "up": [
+          0.48009,
+          -0.13803,
+          0.86629
+        ]
+      },
+      "80": {
+        "forward": [
+          0.71831,
+          -0.20951,
+          -0.66343
+        ],
+        "right": [
+          0.28,
+          0.96,
+          -0.0
+        ],
+        "up": [
+          0.6369,
+          -0.18576,
+          0.74823
+        ]
+      },
+      "81": {
+        "forward": [
+          0.59357,
+          -0.17182,
+          -0.78622
+        ],
+        "right": [
+          0.27806,
+          0.96056,
+          -0.0
+        ],
+        "up": [
+          0.75522,
+          -0.21862,
+          0.61794
+        ]
+      },
+      "82": {
+        "forward": [
+          0.40188,
+          -0.11561,
+          -0.90836
+        ],
+        "right": [
+          0.27646,
+          0.96103,
+          -0.0
+        ],
+        "up": [
+          0.87296,
+          -0.25113,
+          0.41818
+        ]
+      },
+      "83": {
+        "forward": [
+          0.14131,
+          -0.03957,
+          -0.98917
+        ],
+        "right": [
+          -0.98995,
+          0.0,
+          -0.14142
+        ],
+        "up": [
+          0.0056,
+          0.99922,
+          -0.03917
+        ]
+      },
+      "84": {
+        "forward": [
+          0.83096,
+          -0.2404,
+          -0.50171
+        ],
+        "right": [
+          0.27791,
+          0.96061,
+          -0.0
+        ],
+        "up": [
+          0.48195,
+          -0.13943,
+          0.86504
+        ]
+      },
+      "85": {
+        "forward": [
+          0.71905,
+          -0.20473,
+          -0.66412
+        ],
+        "right": [
+          0.27384,
+          0.96178,
+          -0.0
+        ],
+        "up": [
+          0.63873,
+          -0.18186,
+          0.74763
+        ]
+      },
+      "86": {
+        "forward": [
+          0.59357,
+          -0.17182,
+          -0.78622
+        ],
+        "right": [
+          0.27806,
+          0.96056,
+          -0.0
+        ],
+        "up": [
+          0.75522,
+          -0.21862,
+          0.61794
+        ]
+      },
+      "87": {
+        "forward": [
+          0.40648,
+          -0.11535,
+          -0.90635
+        ],
+        "right": [
+          0.273,
+          0.96201,
+          -0.0
+        ],
+        "up": [
+          0.87192,
+          -0.24744,
+          0.42253
+        ]
+      },
+      "88": {
+        "forward": [
+          0.14128,
+          -0.04521,
+          -0.98894
+        ],
+        "right": [
+          -0.98995,
+          0.0,
+          -0.14142
+        ],
+        "up": [
+          0.00639,
+          0.99898,
+          -0.04475
+        ]
+      },
+      "89": {
+        "forward": [
+          -0.42223,
+          -0.75584,
+          -0.50042
+        ],
+        "right": [
+          0.87302,
+          -0.48769,
+          0.0
+        ],
+        "up": [
+          -0.24405,
+          -0.43688,
+          0.86578
+        ]
+      },
+      "90": {
+        "forward": [
+          -0.36537,
+          -0.65067,
+          -0.66568
+        ],
+        "right": [
+          0.87193,
+          -0.48962,
+          0.0
+        ],
+        "up": [
+          -0.32593,
+          -0.58043,
+          0.74623
+        ]
+      },
+      "91": {
+        "forward": [
+          -0.30161,
+          -0.54081,
+          -0.78521
+        ],
+        "right": [
+          0.87336,
+          -0.48707,
+          0.0
+        ],
+        "up": [
+          -0.38245,
+          -0.68578,
+          0.61923
+        ]
+      },
+      "92": {
+        "forward": [
+          -0.20973,
+          -0.36978,
+          -0.90514
+        ],
+        "right": [
+          0.86984,
+          -0.49334,
+          0.0
+        ],
+        "up": [
+          -0.44654,
+          -0.78732,
+          0.42512
+        ]
+      },
+      "93": {
+        "forward": [
+          -0.06745,
+          -0.12928,
+          -0.98931
+        ],
+        "right": [
+          -0.99768,
+          0.0,
+          0.06802
+        ],
+        "up": [
+          -0.00879,
+          0.99161,
+          -0.12899
+        ]
+      },
+      "94": {
+        "forward": [
+          0.344,
+          0.93626,
+          -0.07125
+        ],
+        "right": [
+          -0.93865,
+          0.34488,
+          0.0
+        ],
+        "up": [
+          0.02457,
+          0.06688,
+          0.99746
+        ]
+      },
+      "95": {
+        "forward": [
+          0.34191,
+          0.93348,
+          -0.10823
+        ],
+        "right": [
+          -0.939,
+          0.34393,
+          0.0
+        ],
+        "up": [
+          0.03722,
+          0.10163,
+          0.99413
+        ]
+      },
+      "96": {
+        "forward": [
+          0.33906,
+          0.9278,
+          -0.15566
+        ],
+        "right": [
+          -0.93925,
+          0.34325,
+          0.0
+        ],
+        "up": [
+          0.05343,
+          0.1462,
+          0.98781
+        ]
+      },
+      "97": {
+        "forward": [
+          0.33353,
+          0.90664,
+          -0.25837
+        ],
+        "right": [
+          -0.93851,
+          0.34525,
+          0.0
+        ],
+        "up": [
+          0.0892,
+          0.24248,
+          0.96605
+        ]
+      },
+      "98": {
+        "forward": [
+          0.26556,
+          0.72623,
+          -0.63409
+        ],
+        "right": [
+          -0.93918,
+          0.34343,
+          0.0
+        ],
+        "up": [
+          0.21777,
+          0.59553,
+          0.77326
+        ]
+      },
+      "99": {
+        "forward": [
+          -0.46895,
+          0.76489,
+          -0.44163
+        ],
+        "right": [
+          -0.85253,
+          -0.52268,
+          0.0
+        ],
+        "up": [
+          -0.23083,
+          0.3765,
+          0.8972
+        ]
+      },
+      "100": {
+        "forward": [
+          -0.41937,
+          0.68543,
+          -0.59524
+        ],
+        "right": [
+          -0.853,
+          -0.5219,
+          0.0
+        ],
+        "up": [
+          -0.31066,
+          0.50774,
+          0.80355
+        ]
+      },
+      "101": {
+        "forward": [
+          -0.35398,
+          0.58188,
+          -0.7322
+        ],
+        "right": [
+          -0.85434,
+          -0.51972,
+          0.0
+        ],
+        "up": [
+          -0.38054,
+          0.62554,
+          0.68109
+        ]
+      },
+      "102": {
+        "forward": [
+          -0.25491,
+          0.40892,
+          -0.87625
+        ],
+        "right": [
+          -0.84862,
+          -0.52901,
+          0.0
+        ],
+        "up": [
+          -0.46354,
+          0.7436,
+          0.48186
+        ]
+      },
+      "103": {
+        "forward": [
+          -0.08999,
+          0.15186,
+          -0.9843
+        ],
+        "right": [
+          -0.99585,
+          0.0,
+          0.09105
+        ],
+        "up": [
+          0.01383,
+          0.9884,
+          0.15123
+        ]
+      },
+      "104": {
+        "forward": [
+          0.85328,
+          0.2829,
+          -0.43805
+        ],
+        "right": [
+          -0.3147,
+          0.94919,
+          0.0
+        ],
+        "up": [
+          0.41579,
+          0.13786,
+          0.89895
+        ]
+      },
+      "105": {
+        "forward": [
+          0.76047,
+          0.25199,
+          -0.59848
+        ],
+        "right": [
+          -0.31454,
+          0.94924,
+          0.0
+        ],
+        "up": [
+          0.5681,
+          0.18825,
+          0.80114
+        ]
+      },
+      "106": {
+        "forward": [
+          0.64852,
+          0.21295,
+          -0.7308
+        ],
+        "right": [
+          -0.31197,
+          0.95009,
+          0.0
+        ],
+        "up": [
+          0.69433,
+          0.22799,
+          0.68259
+        ]
+      },
+      "107": {
+        "forward": [
+          0.45705,
+          0.14881,
+          -0.8769
+        ],
+        "right": [
+          -0.30959,
+          0.95087,
+          0.0
+        ],
+        "up": [
+          0.83382,
+          0.27148,
+          0.48067
+        ]
+      },
+      "108": {
+        "forward": [
+          0.1687,
+          0.05623,
+          -0.98406
+        ],
+        "right": [
+          -0.98562,
+          0.0,
+          -0.16896
+        ],
+        "up": [
+          -0.0095,
+          0.99842,
+          0.05542
+        ]
+      },
+      "109": {
+        "forward": [
+          -0.46825,
+          0.76829,
+          -0.43643
+        ],
+        "right": [
+          -0.85391,
+          -0.52043,
+          0.0
+        ],
+        "up": [
+          -0.22713,
+          0.37267,
+          0.89974
+        ]
+      },
+      "110": {
+        "forward": [
+          -0.41581,
+          0.68247,
+          -0.60111
+        ],
+        "right": [
+          -0.85398,
+          -0.52031,
+          0.0
+        ],
+        "up": [
+          -0.31276,
+          0.51334,
+          0.79916
+        ]
+      },
+      "111": {
+        "forward": [
+          -0.3572,
+          0.58407,
+          -0.72888
+        ],
+        "right": [
+          -0.85311,
+          -0.52174,
+          0.0
+        ],
+        "up": [
+          -0.38028,
+          0.62181,
+          0.68464
+        ]
+      },
+      "112": {
+        "forward": [
+          -0.2511,
+          0.41138,
+          -0.87619
+        ],
+        "right": [
+          -0.85356,
+          -0.521,
+          0.0
+        ],
+        "up": [
+          -0.4565,
+          0.74788,
+          0.48196
+        ]
+      },
+      "113": {
+        "forward": [
+          -0.09504,
+          0.15095,
+          -0.98396
+        ],
+        "right": [
+          -0.99537,
+          0.0,
+          0.09614
+        ],
+        "up": [
+          0.01451,
+          0.98854,
+          0.15025
+        ]
+      },
+      "114": {
+        "forward": [
+          -0.77674,
+          -0.40248,
+          -0.48444
+        ],
+        "right": [
+          0.46007,
+          -0.88788,
+          0.0
+        ],
+        "up": [
+          -0.43012,
+          -0.22288,
+          0.87483
+        ]
+      },
+      "115": {
+        "forward": [
+          -0.67784,
+          -0.35082,
+          -0.64611
+        ],
+        "right": [
+          0.45964,
+          -0.8881,
+          0.0
+        ],
+        "up": [
+          -0.57381,
+          -0.29698,
+          0.76325
+        ]
+      },
+      "116": {
+        "forward": [
+          -0.56455,
+          -0.29245,
+          -0.77185
+        ],
+        "right": [
+          0.45998,
+          -0.88793,
+          0.0
+        ],
+        "up": [
+          -0.68535,
+          -0.35504,
+          0.6358
+        ]
+      },
+      "117": {
+        "forward": [
+          -0.38792,
+          -0.20089,
+          -0.89954
+        ],
+        "right": [
+          0.45985,
+          -0.88799,
+          0.0
+        ],
+        "up": [
+          -0.79878,
+          -0.41366,
+          0.43685
+        ]
+      },
+      "118": {
+        "forward": [
+          -0.13791,
+          -0.07151,
+          -0.98786
+        ],
+        "right": [
+          -0.9904,
+          0.0,
+          0.13827
+        ],
+        "up": [
+          -0.00989,
+          0.99744,
+          -0.07082
+        ]
+      },
+      "119": {
+        "forward": [
+          -0.17267,
+          -0.89356,
+          -0.41441
+        ],
+        "right": [
+          0.98184,
+          -0.18973,
+          0.0
+        ],
+        "up": [
+          -0.07862,
+          -0.40688,
+          0.91009
+        ]
+      },
+      "120": {
+        "forward": [
+          -0.15918,
+          -0.80452,
+          -0.5722
+        ],
+        "right": [
+          0.98098,
+          -0.1941,
+          0.0
+        ],
+        "up": [
+          -0.11106,
+          -0.56132,
+          0.82012
+        ]
+      },
+      "121": {
+        "forward": [
+          -0.13544,
+          -0.6959,
+          -0.70525
+        ],
+        "right": [
+          0.98158,
+          -0.19105,
+          0.0
+        ],
+        "up": [
+          -0.13473,
+          -0.69226,
+          0.70896
+        ]
+      },
+      "122": {
+        "forward": [
+          -0.09412,
+          -0.49675,
+          -0.86278
+        ],
+        "right": [
+          0.98252,
+          -0.18616,
+          0.0
+        ],
+        "up": [
+          -0.16062,
+          -0.84769,
+          0.50559
+        ]
+      },
+      "123": {
+        "forward": [
+          -0.03928,
+          -0.18516,
+          -0.98192
+        ],
+        "right": [
+          -0.9992,
+          0.0,
+          0.03997
+        ],
+        "up": [
+          -0.0074,
+          0.98271,
+          -0.18501
+        ]
+      },
+      "124": {
+        "forward": [
+          -0.8288,
+          0.3736,
+          -0.41655
+        ],
+        "right": [
+          -0.41095,
+          -0.91166,
+          0.0
+        ],
+        "up": [
+          -0.37975,
+          0.17118,
+          0.90911
+        ]
+      },
+      "125": {
+        "forward": [
+          -0.75028,
+          0.33633,
+          -0.56918
+        ],
+        "right": [
+          -0.40906,
+          -0.91251,
+          0.0
+        ],
+        "up": [
+          -0.51938,
+          0.23283,
+          0.82221
+        ]
+      },
+      "126": {
+        "forward": [
+          -0.64348,
+          0.2891,
+          -0.70877
+        ],
+        "right": [
+          -0.40981,
+          -0.91217,
+          0.0
+        ],
+        "up": [
+          -0.64651,
+          0.29046,
+          0.70544
+        ]
+      },
+      "127": {
+        "forward": [
+          -0.46277,
+          0.20509,
+          -0.86243
+        ],
+        "right": [
+          -0.40517,
+          -0.91424,
+          0.0
+        ],
+        "up": [
+          -0.78847,
+          0.34943,
+          0.50618
+        ]
+      },
+      "128": {
+        "forward": [
+          -0.17389,
+          0.07853,
+          -0.98163
+        ],
+        "right": [
+          -0.98467,
+          0.0,
+          0.17443
+        ],
+        "up": [
+          0.0137,
+          0.99691,
+          0.07733
+        ]
+      },
+      "129": {
+        "forward": [
+          -0.83028,
+          0.37427,
+          -0.41299
+        ],
+        "right": [
+          -0.41095,
+          -0.91166,
+          0.0
+        ],
+        "up": [
+          -0.3765,
+          0.16972,
+          0.91074
+        ]
+      },
+      "130": {
+        "forward": [
+          -0.74844,
+          0.33551,
+          -0.57208
+        ],
+        "right": [
+          -0.40906,
+          -0.91251,
+          0.0
+        ],
+        "up": [
+          -0.52203,
+          0.23401,
+          0.8202
+        ]
+      },
+      "131": {
+        "forward": [
+          -0.64561,
+          0.29006,
+          -0.70643
+        ],
+        "right": [
+          -0.40981,
+          -0.91217,
+          0.0
+        ],
+        "up": [
+          -0.64439,
+          0.28951,
+          0.70778
+        ]
+      },
+      "132": {
+        "forward": [
+          -0.46277,
+          0.20509,
+          -0.86243
+        ],
+        "right": [
+          -0.40517,
+          -0.91424,
+          0.0
+        ],
+        "up": [
+          -0.78847,
+          0.34943,
+          0.50618
+        ]
+      },
+      "133": {
+        "forward": [
+          -0.17294,
+          0.0781,
+          -0.98183
+        ],
+        "right": [
+          -0.98484,
+          0.0,
+          0.17347
+        ],
+        "up": [
+          0.01355,
+          0.99695,
+          0.07692
+        ]
+      },
+      "134": {
+        "forward": [
+          0.81465,
+          -0.22036,
+          -0.53645
+        ],
+        "right": [
+          0.26112,
+          0.96531,
+          -0.0
+        ],
+        "up": [
+          0.51784,
+          -0.14008,
+          0.84393
+        ]
+      },
+      "135": {
+        "forward": [
+          0.69233,
+          -0.18668,
+          -0.69702
+        ],
+        "right": [
+          0.26035,
+          0.96551,
+          -0.0
+        ],
+        "up": [
+          0.67298,
+          -0.18147,
+          0.71705
+        ]
+      },
+      "136": {
+        "forward": [
+          0.56216,
+          -0.15183,
+          -0.81297
+        ],
+        "right": [
+          0.26074,
+          0.96541,
+          -0.0
+        ],
+        "up": [
+          0.78485,
+          -0.21198,
+          0.5823
+        ]
+      },
+      "137": {
+        "forward": [
+          0.376,
+          -0.102,
+          -0.92099
+        ],
+        "right": [
+          -0.92582,
+          0.0,
+          -0.37797
+        ],
+        "up": [
+          0.03855,
+          0.99478,
+          -0.09443
+        ]
+      },
+      "138": {
+        "forward": [
+          0.13043,
+          -0.03438,
+          -0.99086
+        ],
+        "right": [
+          -0.99145,
+          0.0,
+          -0.13051
+        ],
+        "up": [
+          0.00449,
+          0.99941,
+          -0.03408
+        ]
+      },
+      "139": {
+        "forward": [
+          0.7148,
+          0.52895,
+          -0.45747
+        ],
+        "right": [
+          -0.59484,
+          0.80384,
+          0.0
+        ],
+        "up": [
+          0.36773,
+          0.27212,
+          0.88923
+        ]
+      },
+      "140": {
+        "forward": [
+          0.63003,
+          0.46669,
+          -0.6207
+        ],
+        "right": [
+          -0.59523,
+          0.80356,
+          0.0
+        ],
+        "up": [
+          0.49876,
+          0.36946,
+          0.78405
+        ]
+      },
+      "141": {
+        "forward": [
+          0.53175,
+          0.3926,
+          -0.75041
+        ],
+        "right": [
+          -0.59397,
+          0.80449,
+          0.0
+        ],
+        "up": [
+          0.60369,
+          0.44572,
+          0.66097
+        ]
+      },
+      "142": {
+        "forward": [
+          0.37102,
+          0.27423,
+          -0.88721
+        ],
+        "right": [
+          -0.59439,
+          0.80418,
+          0.0
+        ],
+        "up": [
+          0.71347,
+          0.52735,
+          0.46136
+        ]
+      },
+      "143": {
+        "forward": [
+          0.13525,
+          0.0958,
+          -0.98617
+        ],
+        "right": [
+          -0.99073,
+          0.0,
+          -0.13587
+        ],
+        "up": [
+          -0.01302,
+          0.9954,
+          0.09491
+        ]
+      },
+      "144": {
+        "forward": [
+          0.35305,
+          -0.81583,
+          -0.45801
+        ],
+        "right": [
+          0.91775,
+          0.39716,
+          -0.0
+        ],
+        "up": [
+          0.1819,
+          -0.42034,
+          0.88895
+        ]
+      },
+      "145": {
+        "forward": [
+          0.30853,
+          -0.7199,
+          -0.62173
+        ],
+        "right": [
+          0.91915,
+          0.39392,
+          -0.0
+        ],
+        "up": [
+          0.24491,
+          -0.57146,
+          0.78323
+        ]
+      },
+      "146": {
+        "forward": [
+          0.26259,
+          -0.6094,
+          -0.74812
+        ],
+        "right": [
+          0.91837,
+          0.39572,
+          -0.0
+        ],
+        "up": [
+          0.29605,
+          -0.68705,
+          0.66356
+        ]
+      },
+      "147": {
+        "forward": [
+          0.18314,
+          -0.42015,
+          -0.88878
+        ],
+        "right": [
+          0.9167,
+          0.39959,
+          -0.0
+        ],
+        "up": [
+          0.35514,
+          -0.81474,
+          0.45833
+        ]
+      },
+      "148": {
+        "forward": [
+          0.06756,
+          -0.15763,
+          -0.98518
+        ],
+        "right": [
+          -0.99766,
+          0.0,
+          -0.06841
+        ],
+        "up": [
+          0.01078,
+          0.9875,
+          -0.15726
+        ]
+      },
+      "149": {
+        "forward": [
+          0.35305,
+          -0.81583,
+          -0.45801
+        ],
+        "right": [
+          0.91775,
+          0.39716,
+          -0.0
+        ],
+        "up": [
+          0.1819,
+          -0.42034,
+          0.88895
+        ]
+      },
+      "150": {
+        "forward": [
+          0.30853,
+          -0.7199,
+          -0.62173
+        ],
+        "right": [
+          0.91915,
+          0.39392,
+          -0.0
+        ],
+        "up": [
+          0.24491,
+          -0.57146,
+          0.78323
+        ]
+      },
+      "151": {
+        "forward": [
+          0.26338,
+          -0.60627,
+          -0.75038
+        ],
+        "right": [
+          0.91719,
+          0.39845,
+          -0.0
+        ],
+        "up": [
+          0.29899,
+          -0.68824,
+          0.66101
+        ]
+      },
+      "152": {
+        "forward": [
+          0.1836,
+          -0.4266,
+          -0.88561
+        ],
+        "right": [
+          0.91854,
+          0.39532,
+          -0.0
+        ],
+        "up": [
+          0.3501,
+          -0.81347,
+          0.46444
+        ]
+      },
+      "153": {
+        "forward": [
+          0.06166,
+          -0.15135,
+          -0.98656
+        ],
+        "right": [
+          -0.99805,
+          0.0,
+          -0.06238
+        ],
+        "up": [
+          0.00944,
+          0.98848,
+          -0.15105
+        ]
+      },
+      "154": {
+        "forward": [
+          -0.51774,
+          0.81676,
+          -0.25464
+        ],
+        "right": [
+          -0.8446,
+          -0.53539,
+          0.0
+        ],
+        "up": [
+          -0.13633,
+          0.21507,
+          0.96703
+        ]
+      },
+      "155": {
+        "forward": [
+          -0.49747,
+          0.78382,
+          -0.3717
+        ],
+        "right": [
+          -0.84431,
+          -0.53586,
+          0.0
+        ],
+        "up": [
+          -0.19918,
+          0.31383,
+          0.92835
+        ]
+      },
+      "156": {
+        "forward": [
+          -0.46445,
+          0.73174,
+          -0.49885
+        ],
+        "right": [
+          -0.84429,
+          -0.53589,
+          0.0
+        ],
+        "up": [
+          -0.26733,
+          0.42117,
+          0.86669
+        ]
+      },
+      "157": {
+        "forward": [
+          -0.38381,
+          0.60458,
+          -0.69798
+        ],
+        "right": [
+          -0.84425,
+          -0.53595,
+          0.0
+        ],
+        "up": [
+          -0.37409,
+          0.58927,
+          0.71612
+        ]
+      },
+      "158": {
+        "forward": [
+          -0.16732,
+          0.2651,
+          -0.94959
+        ],
+        "right": [
+          -0.98483,
+          0.0,
+          0.17353
+        ],
+        "up": [
+          0.046,
+          0.96422,
+          0.26108
+        ]
+      },
+      "159": {
+        "forward": [
+          -0.89751,
+          0.09424,
+          -0.43081
+        ],
+        "right": [
+          -0.10443,
+          -0.99453,
+          0.0
+        ],
+        "up": [
+          -0.42845,
+          0.04499,
+          0.90244
+        ]
+      },
+      "160": {
+        "forward": [
+          -0.80297,
+          0.08429,
+          -0.59003
+        ],
+        "right": [
+          -0.1044,
+          -0.99454,
+          0.0
+        ],
+        "up": [
+          -0.5868,
+          0.0616,
+          0.80738
+        ]
+      },
+      "161": {
+        "forward": [
+          -0.68583,
+          0.07194,
+          -0.7242
+        ],
+        "right": [
+          -0.10432,
+          -0.99454,
+          0.0
+        ],
+        "up": [
+          -0.72025,
+          0.07555,
+          0.68959
+        ]
+      },
+      "162": {
+        "forward": [
+          -0.49033,
+          0.05272,
+          -0.86994
+        ],
+        "right": [
+          -0.10691,
+          -0.99427,
+          0.0
+        ],
+        "up": [
+          -0.86495,
+          0.09301,
+          0.49316
+        ]
+      },
+      "163": {
+        "forward": [
+          -0.1744,
+          0.01688,
+          -0.98453
+        ],
+        "right": [
+          -0.98467,
+          0.0,
+          0.17443
+        ],
+        "up": [
+          0.00294,
+          0.99986,
+          0.01662
+        ]
+      },
+      "164": {
+        "forward": [
+          0.29444,
+          0.85208,
+          -0.43273
+        ],
+        "right": [
+          -0.94516,
+          0.3266,
+          0.0
+        ],
+        "up": [
+          0.14133,
+          0.409,
+          0.90152
+        ]
+      },
+      "165": {
+        "forward": [
+          0.26762,
+          0.76272,
+          -0.58876
+        ],
+        "right": [
+          -0.9436,
+          0.33109,
+          0.0
+        ],
+        "up": [
+          0.19493,
+          0.55556,
+          0.80831
+        ]
+      },
+      "166": {
+        "forward": [
+          0.22386,
+          0.65251,
+          -0.72396
+        ],
+        "right": [
+          -0.94589,
+          0.3245,
+          0.0
+        ],
+        "up": [
+          0.23492,
+          0.68478,
+          0.68984
+        ]
+      },
+      "167": {
+        "forward": [
+          0.15953,
+          0.46263,
+          -0.87208
+        ],
+        "right": [
+          -0.94537,
+          0.32599,
+          0.0
+        ],
+        "up": [
+          0.28429,
+          0.82444,
+          0.48936
+        ]
+      },
+      "168": {
+        "forward": [
+          0.06183,
+          0.16864,
+          -0.98374
+        ],
+        "right": [
+          -0.99803,
+          0.0,
+          -0.06273
+        ],
+        "up": [
+          -0.01058,
+          0.98568,
+          0.16831
+        ]
+      },
+      "169": {
+        "forward": [
+          -0.89751,
+          0.09424,
+          -0.43081
+        ],
+        "right": [
+          -0.10443,
+          -0.99453,
+          0.0
+        ],
+        "up": [
+          -0.42845,
+          0.04499,
+          0.90244
+        ]
+      },
+      "170": {
+        "forward": [
+          -0.80297,
+          0.08429,
+          -0.59003
+        ],
+        "right": [
+          -0.1044,
+          -0.99454,
+          0.0
+        ],
+        "up": [
+          -0.5868,
+          0.0616,
+          0.80738
+        ]
+      },
+      "171": {
+        "forward": [
+          -0.68583,
+          0.07194,
+          -0.7242
+        ],
+        "right": [
+          -0.10432,
+          -0.99454,
+          0.0
+        ],
+        "up": [
+          -0.72025,
+          0.07555,
+          0.68959
+        ]
+      },
+      "172": {
+        "forward": [
+          -0.48631,
+          0.05286,
+          -0.87219
+        ],
+        "right": [
+          -0.10806,
+          -0.99414,
+          0.0
+        ],
+        "up": [
+          -0.86708,
+          0.09425,
+          0.48917
+        ]
+      },
+      "173": {
+        "forward": [
+          -0.17985,
+          0.01686,
+          -0.98355
+        ],
+        "right": [
+          -0.98369,
+          0.0,
+          0.17987
+        ],
+        "up": [
+          0.00303,
+          0.99986,
+          0.01659
+        ]
+      },
+      "174": {
+        "forward": [
+          -0.17436,
+          -0.98215,
+          -0.07063
+        ],
+        "right": [
+          0.9846,
+          -0.1748,
+          0.0
+        ],
+        "up": [
+          -0.01235,
+          -0.06954,
+          0.9975
+        ]
+      },
+      "175": {
+        "forward": [
+          -0.17431,
+          -0.97883,
+          -0.10727
+        ],
+        "right": [
+          0.98451,
+          -0.17532,
+          0.0
+        ],
+        "up": [
+          -0.01881,
+          -0.10561,
+          0.99423
+        ]
+      },
+      "176": {
+        "forward": [
+          -0.17406,
+          -0.97259,
+          -0.15421
+        ],
+        "right": [
+          0.98436,
+          -0.17617,
+          0.0
+        ],
+        "up": [
+          -0.02717,
+          -0.1518,
+          0.98804
+        ]
+      },
+      "177": {
+        "forward": [
+          -0.16948,
+          -0.95187,
+          -0.25538
+        ],
+        "right": [
+          0.98452,
+          -0.17529,
+          0.0
+        ],
+        "up": [
+          -0.04477,
+          -0.25143,
+          0.96684
+        ]
+      },
+      "178": {
+        "forward": [
+          -0.13519,
+          -0.7625,
+          -0.63271
+        ],
+        "right": [
+          0.98464,
+          -0.17458,
+          0.0
+        ],
+        "up": [
+          -0.11046,
+          -0.62299,
+          0.77439
+        ]
+      },
+      "179": {
+        "forward": [
+          0.59319,
+          -0.67469,
+          -0.43923
+        ],
+        "right": [
+          0.75101,
+          0.66029,
+          -0.0
+        ],
+        "up": [
+          0.29002,
+          -0.32987,
+          0.89838
+        ]
+      },
+      "180": {
+        "forward": [
+          0.5332,
+          -0.60489,
+          -0.59145
+        ],
+        "right": [
+          0.75016,
+          0.66125,
+          -0.0
+        ],
+        "up": [
+          0.3911,
+          -0.44368,
+          0.80634
+        ]
+      },
+      "181": {
+        "forward": [
+          0.4578,
+          -0.51081,
+          -0.72766
+        ],
+        "right": [
+          0.74469,
+          0.66741,
+          -0.0
+        ],
+        "up": [
+          0.48565,
+          -0.54188,
+          0.68594
+        ]
+      },
+      "182": {
+        "forward": [
+          0.31806,
+          -0.36577,
+          -0.87467
+        ],
+        "right": [
+          0.75461,
+          0.65618,
+          -0.0
+        ],
+        "up": [
+          0.57394,
+          -0.66003,
+          0.48472
+        ]
+      },
+      "183": {
+        "forward": [
+          0.11806,
+          -0.13492,
+          -0.9838
+        ],
+        "right": [
+          -0.99288,
+          0.0,
+          -0.11915
+        ],
+        "up": [
+          0.01608,
+          0.99086,
+          -0.13396
+        ]
+      },
+      "184": {
+        "forward": [
+          0.59729,
+          -0.67421,
+          -0.43439
+        ],
+        "right": [
+          0.74852,
+          0.66312,
+          -0.0
+        ],
+        "up": [
+          0.28805,
+          -0.32515,
+          0.90073
+        ]
+      },
+      "185": {
+        "forward": [
+          0.53179,
+          -0.60329,
+          -0.59435
+        ],
+        "right": [
+          0.75016,
+          0.66125,
+          -0.0
+        ],
+        "up": [
+          0.39302,
+          -0.44586,
+          0.80421
+        ]
+      },
+      "186": {
+        "forward": [
+          0.45286,
+          -0.51548,
+          -0.72746
+        ],
+        "right": [
+          0.75127,
+          0.65999,
+          -0.0
+        ],
+        "up": [
+          0.48012,
+          -0.54652,
+          0.68615
+        ]
+      },
+      "187": {
+        "forward": [
+          0.32344,
+          -0.36055,
+          -0.87487
+        ],
+        "right": [
+          0.74438,
+          0.66775,
+          -0.0
+        ],
+        "up": [
+          0.5842,
+          -0.65124,
+          0.48436
+        ]
+      },
+      "188": {
+        "forward": [
+          0.11251,
+          -0.13501,
+          -0.98444
+        ],
+        "right": [
+          -0.99353,
+          0.0,
+          -0.11355
+        ],
+        "up": [
+          0.01533,
+          0.99084,
+          -0.13414
+        ]
+      },
+      "189": {
+        "forward": [
+          -0.79319,
+          -0.42606,
+          -0.43512
+        ],
+        "right": [
+          0.4732,
+          -0.88096,
+          0.0
+        ],
+        "up": [
+          -0.38332,
+          -0.2059,
+          0.90037
+        ]
+      },
+      "190": {
+        "forward": [
+          -0.70746,
+          -0.3806,
+          -0.59552
+        ],
+        "right": [
+          0.47377,
+          -0.88065,
+          0.0
+        ],
+        "up": [
+          -0.52445,
+          -0.28214,
+          0.80334
+        ]
+      },
+      "191": {
+        "forward": [
+          -0.60245,
+          -0.32773,
+          -0.72776
+        ],
+        "right": [
+          0.47787,
+          -0.87843,
+          0.0
+        ],
+        "up": [
+          -0.63929,
+          -0.34777,
+          0.68583
+        ]
+      },
+      "192": {
+        "forward": [
+          -0.43108,
+          -0.22885,
+          -0.87281
+        ],
+        "right": [
+          0.46889,
+          -0.88326,
+          0.0
+        ],
+        "up": [
+          -0.77092,
+          -0.40925,
+          0.48806
+        ]
+      },
+      "193": {
+        "forward": [
+          -0.1511,
+          -0.08394,
+          -0.98495
+        ],
+        "right": [
+          -0.98844,
+          0.0,
+          0.15164
+        ],
+        "up": [
+          -0.01273,
+          0.99647,
+          -0.08297
+        ]
+      },
+      "194": {
+        "forward": [
+          0.72028,
+          0.55053,
+          -0.42204
+        ],
+        "right": [
+          -0.60726,
+          0.7945,
+          0.0
+        ],
+        "up": [
+          0.33531,
+          0.25629,
+          0.90658
+        ]
+      },
+      "195": {
+        "forward": [
+          0.64729,
+          0.49575,
+          -0.579
+        ],
+        "right": [
+          -0.60805,
+          0.7939,
+          0.0
+        ],
+        "up": [
+          0.45967,
+          0.35206,
+          0.81532
+        ]
+      },
+      "196": {
+        "forward": [
+          0.55634,
+          0.42484,
+          -0.71414
+        ],
+        "right": [
+          -0.60691,
+          0.79477,
+          0.0
+        ],
+        "up": [
+          0.56757,
+          0.43342,
+          0.7
+        ]
+      },
+      "197": {
+        "forward": [
+          0.39783,
+          0.30429,
+          -0.86553
+        ],
+        "right": [
+          -0.60753,
+          0.79429,
+          0.0
+        ],
+        "up": [
+          0.68749,
+          0.52584,
+          0.50086
+        ]
+      },
+      "198": {
+        "forward": [
+          0.14558,
+          0.1119,
+          -0.983
+        ],
+        "right": [
+          -0.98921,
+          0.0,
+          -0.1465
+        ],
+        "up": [
+          -0.01639,
+          0.99372,
+          0.11069
+        ]
+      },
+      "199": {
+        "forward": [
+          0.88296,
+          -0.22181,
+          -0.41375
+        ],
+        "right": [
+          0.24364,
+          0.96987,
+          -0.0
+        ],
+        "up": [
+          0.40128,
+          -0.10081,
+          0.91039
+        ]
+      },
+      "200": {
+        "forward": [
+          0.79872,
+          -0.20183,
+          -0.56684
+        ],
+        "right": [
+          0.24499,
+          0.96953,
+          -0.0
+        ],
+        "up": [
+          0.54956,
+          -0.13887,
+          0.82383
+        ]
+      },
+      "201": {
+        "forward": [
+          0.68478,
+          -0.17236,
+          -0.70807
+        ],
+        "right": [
+          0.24409,
+          0.96975,
+          -0.0
+        ],
+        "up": [
+          0.68666,
+          -0.17283,
+          0.70614
+        ]
+      },
+      "202": {
+        "forward": [
+          0.49727,
+          -0.12563,
+          -0.85845
+        ],
+        "right": [
+          0.24494,
+          0.96954,
+          -0.0
+        ],
+        "up": [
+          0.8323,
+          -0.21027,
+          0.5129
+        ]
+      },
+      "203": {
+        "forward": [
+          0.18507,
+          -0.05047,
+          -0.98143
+        ],
+        "right": [
+          -0.98268,
+          0.0,
+          -0.18531
+        ],
+        "up": [
+          0.00935,
+          0.99873,
+          -0.0496
+        ]
+      },
+      "204": {
+        "forward": [
+          0.88358,
+          -0.22304,
+          -0.41176
+        ],
+        "right": [
+          0.24475,
+          0.96959,
+          -0.0
+        ],
+        "up": [
+          0.39924,
+          -0.10078,
+          0.91129
+        ]
+      },
+      "205": {
+        "forward": [
+          0.79678,
+          -0.20134,
+          -0.56974
+        ],
+        "right": [
+          0.24499,
+          0.96953,
+          -0.0
+        ],
+        "up": [
+          0.55238,
+          -0.13958,
+          0.82182
+        ]
+      },
+      "206": {
+        "forward": [
+          0.6895,
+          -0.17237,
+          -0.70348
+        ],
+        "right": [
+          0.24254,
+          0.97014,
+          -0.0
+        ],
+        "up": [
+          0.68247,
+          -0.17062,
+          0.71072
+        ]
+      },
+      "207": {
+        "forward": [
+          0.4911,
+          -0.12539,
+          -0.86203
+        ],
+        "right": [
+          0.24738,
+          0.96892,
+          -0.0
+        ],
+        "up": [
+          0.83524,
+          -0.21325,
+          0.50685
+        ]
+      },
+      "208": {
+        "forward": [
+          0.18512,
+          -0.04488,
+          -0.98169
+        ],
+        "right": [
+          -0.98268,
+          0.0,
+          -0.18531
+        ],
+        "up": [
+          0.00832,
+          0.99899,
+          -0.0441
+        ]
+      },
+      "209": {
+        "forward": [
+          0.88358,
+          -0.22304,
+          -0.41176
+        ],
+        "right": [
+          0.24475,
+          0.96959,
+          -0.0
+        ],
+        "up": [
+          0.39924,
+          -0.10078,
+          0.91129
+        ]
+      },
+      "210": {
+        "forward": [
+          0.79678,
+          -0.20134,
+          -0.56974
+        ],
+        "right": [
+          0.24499,
+          0.96953,
+          -0.0
+        ],
+        "up": [
+          0.55238,
+          -0.13958,
+          0.82182
+        ]
+      },
+      "211": {
+        "forward": [
+          0.6895,
+          -0.17237,
+          -0.70348
+        ],
+        "right": [
+          0.24254,
+          0.97014,
+          -0.0
+        ],
+        "up": [
+          0.68247,
+          -0.17062,
+          0.71072
+        ]
+      },
+      "212": {
+        "forward": [
+          0.49332,
+          -0.12595,
+          -0.86068
+        ],
+        "right": [
+          0.24738,
+          0.96892,
+          -0.0
+        ],
+        "up": [
+          0.83393,
+          -0.21292,
+          0.50914
+        ]
+      },
+      "213": {
+        "forward": [
+          0.1841,
+          -0.04463,
+          -0.98189
+        ],
+        "right": [
+          -0.98287,
+          0.0,
+          -0.18429
+        ],
+        "up": [
+          0.00823,
+          0.999,
+          -0.04387
+        ]
+      },
+      "214": {
+        "forward": [
+          -0.91024,
+          0.08065,
+          -0.40615
+        ],
+        "right": [
+          -0.08826,
+          -0.9961,
+          0.0
+        ],
+        "up": [
+          -0.40457,
+          0.03585,
+          0.91381
+        ]
+      },
+      "215": {
+        "forward": [
+          -0.82323,
+          0.07326,
+          -0.56296
+        ],
+        "right": [
+          -0.08864,
+          -0.99606,
+          0.0
+        ],
+        "up": [
+          -0.56074,
+          0.0499,
+          0.82648
+        ]
+      },
+      "216": {
+        "forward": [
+          -0.71297,
+          0.06405,
+          -0.69827
+        ],
+        "right": [
+          -0.08948,
+          -0.99599,
+          0.0
+        ],
+        "up": [
+          -0.69547,
+          0.06248,
+          0.71584
+        ]
+      },
+      "217": {
+        "forward": [
+          -0.5145,
+          0.04494,
+          -0.85631
+        ],
+        "right": [
+          -0.08702,
+          -0.99621,
+          0.0
+        ],
+        "up": [
+          -0.85306,
+          0.07452,
+          0.51646
+        ]
+      },
+      "218": {
+        "forward": [
+          -0.19217,
+          0.01782,
+          -0.9812
+        ],
+        "right": [
+          -0.98136,
+          0.0,
+          0.1922
+        ],
+        "up": [
+          0.00342,
+          0.99984,
+          0.01748
+        ]
+      },
+      "219": {
+        "forward": [
+          -0.62845,
+          -0.65445,
+          -0.42041
+        ],
+        "right": [
+          0.72129,
+          -0.69263,
+          0.0
+        ],
+        "up": [
+          -0.29119,
+          -0.30324,
+          0.90733
+        ]
+      },
+      "220": {
+        "forward": [
+          -0.56419,
+          -0.59457,
+          -0.57287
+        ],
+        "right": [
+          0.7254,
+          -0.68833,
+          0.0
+        ],
+        "up": [
+          -0.39432,
+          -0.41556,
+          0.81965
+        ]
+      },
+      "221": {
+        "forward": [
+          -0.48398,
+          -0.51218,
+          -0.70953
+        ],
+        "right": [
+          0.72683,
+          -0.68682,
+          0.0
+        ],
+        "up": [
+          -0.48732,
+          -0.51571,
+          0.70467
+        ]
+      },
+      "222": {
+        "forward": [
+          -0.34555,
+          -0.36649,
+          -0.86387
+        ],
+        "right": [
+          0.72759,
+          -0.68601,
+          0.0
+        ],
+        "up": [
+          -0.59263,
+          -0.62855,
+          0.50371
+        ]
+      },
+      "223": {
+        "forward": [
+          -0.12912,
+          -0.13473,
+          -0.98243
+        ],
+        "right": [
+          -0.99147,
+          0.0,
+          0.13031
+        ],
+        "up": [
+          -0.01756,
+          0.99088,
+          -0.13358
+        ]
+      },
+      "224": {
+        "forward": [
+          -0.62403,
+          -0.6587,
+          -0.42035
+        ],
+        "right": [
+          0.72595,
+          -0.68774,
+          0.0
+        ],
+        "up": [
+          -0.2891,
+          -0.30516,
+          0.90736
+        ]
+      },
+      "225": {
+        "forward": [
+          -0.56419,
+          -0.59457,
+          -0.57287
+        ],
+        "right": [
+          0.7254,
+          -0.68833,
+          0.0
+        ],
+        "up": [
+          -0.39432,
+          -0.41556,
+          0.81965
+        ]
+      },
+      "226": {
+        "forward": [
+          -0.48237,
+          -0.51047,
+          -0.71185
+        ],
+        "right": [
+          0.72683,
+          -0.68682,
+          0.0
+        ],
+        "up": [
+          -0.48891,
+          -0.51739,
+          0.70233
+        ]
+      },
+      "227": {
+        "forward": [
+          -0.34779,
+          -0.3636,
+          -0.8642
+        ],
+        "right": [
+          0.72264,
+          -0.69122,
+          0.0
+        ],
+        "up": [
+          -0.59735,
+          -0.62451,
+          0.50315
+        ]
+      },
+      "228": {
+        "forward": [
+          -0.12912,
+          -0.13473,
+          -0.98243
+        ],
+        "right": [
+          -0.99147,
+          0.0,
+          0.13031
+        ],
+        "up": [
+          -0.01756,
+          0.99088,
+          -0.13358
+        ]
+      },
+      "229": {
+        "forward": [
+          -0.62959,
+          -0.65564,
+          -0.41683
+        ],
+        "right": [
+          0.72129,
+          -0.69263,
+          0.0
+        ],
+        "up": [
+          -0.28871,
+          -0.30066,
+          0.90898
+        ]
+      },
+      "230": {
+        "forward": [
+          -0.56279,
+          -0.59309,
+          -0.57577
+        ],
+        "right": [
+          0.7254,
+          -0.68833,
+          0.0
+        ],
+        "up": [
+          -0.39632,
+          -0.41766,
+          0.81761
+        ]
+      },
+      "231": {
+        "forward": [
+          -0.48398,
+          -0.51218,
+          -0.70953
+        ],
+        "right": [
+          0.72683,
+          -0.68682,
+          0.0
+        ],
+        "up": [
+          -0.48732,
+          -0.51571,
+          0.70467
+        ]
+      },
+      "232": {
+        "forward": [
+          -0.34555,
+          -0.36649,
+          -0.86387
+        ],
+        "right": [
+          0.72759,
+          -0.68601,
+          0.0
+        ],
+        "up": [
+          -0.59263,
+          -0.62855,
+          0.50371
+        ]
+      },
+      "233": {
+        "forward": [
+          -0.12912,
+          -0.13473,
+          -0.98243
+        ],
+        "right": [
+          -0.99147,
+          0.0,
+          0.13031
+        ],
+        "up": [
+          -0.01756,
+          0.99088,
+          -0.13358
+        ]
+      }
+    },
+    "attachment_points": [
+      {
+        "stem_placement_index": 1,
+        "socket": "leaf",
+        "position_m": [
+          -0.0035,
+          0.0009,
+          0.1094
+        ],
+        "rotation_deg": 0.0,
+        "cluster_id": "leaf_cluster_0001",
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.0,
+          "birth_age_fraction": 0.055556,
+          "leaf_age_fraction": 7.527778,
+          "development_fraction": 1,
+          "length_scale": 1.25,
+          "width_scale": 0.52,
+          "area_scale": 0.8125
+        },
+        "leaf_placement_index": 2
+      },
+      {
+        "stem_placement_index": 3,
+        "socket": "leaf",
+        "position_m": [
+          0.0037,
+          0.0008,
+          0.2552
+        ],
+        "rotation_deg": 137.5,
+        "cluster_id": "leaf_cluster_0002",
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.125,
+          "birth_age_fraction": 0.166667,
+          "leaf_age_fraction": 7.416667,
+          "development_fraction": 1,
+          "length_scale": 1.202392,
+          "width_scale": 0.491936,
+          "area_scale": 0.711215
+        },
+        "leaf_placement_index": 4
+      },
+      {
+        "stem_placement_index": 5,
+        "socket": "leaf",
+        "position_m": [
+          0.0045,
+          0.0078,
+          0.3801
+        ],
+        "rotation_deg": 275.0,
+        "cluster_id": "leaf_cluster_0003",
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.25,
+          "birth_age_fraction": 0.277778,
+          "leaf_age_fraction": 7.305556,
+          "development_fraction": 1,
+          "length_scale": 1.124361,
+          "width_scale": 0.474047,
+          "area_scale": 0.599284
+        },
+        "leaf_placement_index": 6
+      },
+      {
+        "stem_placement_index": 7,
+        "socket": "leaf",
+        "position_m": [
+          0.0116,
+          0.002,
+          0.4998
+        ],
+        "rotation_deg": 412.5,
+        "cluster_id": "leaf_cluster_0004",
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.375,
+          "birth_age_fraction": 0.388889,
+          "leaf_age_fraction": 7.194444,
+          "development_fraction": 1,
+          "length_scale": 1.028358,
+          "width_scale": 0.461415,
+          "area_scale": 0.487956
+        },
+        "leaf_placement_index": 8
+      },
+      {
+        "stem_placement_index": 9,
+        "socket": "leaf",
+        "position_m": [
+          0.0057,
+          0.0058,
+          0.652
+        ],
+        "rotation_deg": 550.0,
+        "cluster_id": "leaf_cluster_0005",
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.5,
+          "birth_age_fraction": 0.5,
+          "leaf_age_fraction": 7.083333,
+          "development_fraction": 1,
+          "length_scale": 0.918437,
+          "width_scale": 0.452943,
+          "area_scale": 0.38207
+        },
+        "leaf_placement_index": 10
+      },
+      {
+        "stem_placement_index": 11,
+        "leaf_placement_index": 12,
+        "socket": "leaf",
+        "position_m": [
+          -0.027,
+          -0.0199,
+          0.7716
+        ],
+        "rotation_deg": 578.0,
+        "cluster_id": "leaf_cluster_0006",
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.5,
+          "birth_age_fraction": 0.55,
+          "leaf_age_fraction": 7.033333,
+          "development_fraction": 1,
+          "length_scale": 0.596984,
+          "width_scale": 0.487785,
+          "area_scale": 0.173842
+        }
+      },
+      {
+        "stem_placement_index": 14,
+        "socket": "leaf",
+        "position_m": [
+          0.0058,
+          0.01,
+          0.8024
+        ],
+        "rotation_deg": 687.5,
+        "cluster_id": "leaf_cluster_0007",
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.625,
+          "birth_age_fraction": 0.611111,
+          "leaf_age_fraction": 6.972222,
+          "development_fraction": 1,
+          "length_scale": 0.796852,
+          "width_scale": 0.44864,
+          "area_scale": 0.284875
+        },
+        "leaf_placement_index": 15
+      },
+      {
+        "stem_placement_index": 16,
+        "socket": "leaf",
+        "position_m": [
+          0.0026,
+          0.0047,
+          0.9276
+        ],
+        "rotation_deg": 825.0,
+        "cluster_id": "leaf_cluster_0008",
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.75,
+          "birth_age_fraction": 0.722222,
+          "leaf_age_fraction": 6.861111,
+          "development_fraction": 1,
+          "length_scale": 0.665084,
+          "width_scale": 0.449568,
+          "area_scale": 0.19886
+        },
+        "leaf_placement_index": 17
+      },
+      {
+        "stem_placement_index": 19,
+        "socket": "leaf",
+        "position_m": [
+          -0.003,
+          0.0108,
+          1.0454
+        ],
+        "rotation_deg": 962.5,
+        "cluster_id": "leaf_cluster_0009",
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.875,
+          "birth_age_fraction": 0.833333,
+          "leaf_age_fraction": 6.75,
+          "development_fraction": 1,
+          "length_scale": 0.524196,
+          "width_scale": 0.458798,
+          "area_scale": 0.126069
+        },
+        "leaf_placement_index": 20
+      },
+      {
+        "stem_placement_index": 21,
+        "leaf_placement_index": 22,
+        "socket": "leaf",
+        "position_m": [
+          -0.033,
+          -0.016,
+          1.1679
+        ],
+        "rotation_deg": 934.5,
+        "cluster_id": "leaf_cluster_0010",
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.875,
+          "birth_age_fraction": 0.883333,
+          "leaf_age_fraction": 6.7,
+          "development_fraction": 1,
+          "length_scale": 0.340727,
+          "width_scale": 0.49409,
+          "area_scale": 0.057361
+        }
+      },
+      {
+        "stem_placement_index": 25,
+        "socket": "leaf",
+        "position_m": [
+          0.0047,
+          0.0083,
+          1.1742
+        ],
+        "rotation_deg": 1100.0,
+        "cluster_id": "leaf_cluster_0011",
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 1.0,
+          "birth_age_fraction": 0.944444,
+          "leaf_age_fraction": 6.638889,
+          "development_fraction": 1,
+          "length_scale": 0.375,
+          "width_scale": 0.485333,
+          "area_scale": 0.06825
+        },
+        "leaf_placement_index": 26
+      }
+    ],
+    "leaf_clusters": [
+      {
+        "id": "leaf_cluster_0001",
+        "host_placement_index": 1,
+        "position_m": [
+          -0.0035,
+          0.0009,
+          0.1094
+        ],
+        "estimated_leaf_count": 1,
+        "leaf_area_m2": 0.001579,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 1.0,
+        "explicit_samples": true,
+        "sample_placement_indices": [
+          2
+        ],
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.0,
+          "birth_age_fraction": 0.055556,
+          "leaf_age_fraction": 7.527778,
+          "development_fraction": 1,
+          "length_scale": 1.25,
+          "width_scale": 0.52,
+          "area_scale": 0.8125
+        }
+      },
+      {
+        "id": "leaf_cluster_0002",
+        "host_placement_index": 3,
+        "position_m": [
+          0.0037,
+          0.0008,
+          0.2552
+        ],
+        "estimated_leaf_count": 1,
+        "leaf_area_m2": 0.001383,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 1.0,
+        "explicit_samples": true,
+        "sample_placement_indices": [
+          4
+        ],
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.125,
+          "birth_age_fraction": 0.166667,
+          "leaf_age_fraction": 7.416667,
+          "development_fraction": 1,
+          "length_scale": 1.202392,
+          "width_scale": 0.491936,
+          "area_scale": 0.711215
+        }
+      },
+      {
+        "id": "leaf_cluster_0003",
+        "host_placement_index": 5,
+        "position_m": [
+          0.0045,
+          0.0078,
+          0.3801
+        ],
+        "estimated_leaf_count": 1,
+        "leaf_area_m2": 0.001165,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 1.0,
+        "explicit_samples": true,
+        "sample_placement_indices": [
+          6
+        ],
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.25,
+          "birth_age_fraction": 0.277778,
+          "leaf_age_fraction": 7.305556,
+          "development_fraction": 1,
+          "length_scale": 1.124361,
+          "width_scale": 0.474047,
+          "area_scale": 0.599284
+        }
+      },
+      {
+        "id": "leaf_cluster_0004",
+        "host_placement_index": 7,
+        "position_m": [
+          0.0116,
+          0.002,
+          0.4998
+        ],
+        "estimated_leaf_count": 1,
+        "leaf_area_m2": 0.000949,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 1.0,
+        "explicit_samples": true,
+        "sample_placement_indices": [
+          8
+        ],
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.375,
+          "birth_age_fraction": 0.388889,
+          "leaf_age_fraction": 7.194444,
+          "development_fraction": 1,
+          "length_scale": 1.028358,
+          "width_scale": 0.461415,
+          "area_scale": 0.487956
+        }
+      },
+      {
+        "id": "leaf_cluster_0005",
+        "host_placement_index": 9,
+        "position_m": [
+          0.0057,
+          0.0058,
+          0.652
+        ],
+        "estimated_leaf_count": 1,
+        "leaf_area_m2": 0.000743,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 1.0,
+        "explicit_samples": true,
+        "sample_placement_indices": [
+          10
+        ],
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.5,
+          "birth_age_fraction": 0.5,
+          "leaf_age_fraction": 7.083333,
+          "development_fraction": 1,
+          "length_scale": 0.918437,
+          "width_scale": 0.452943,
+          "area_scale": 0.38207
+        }
+      },
+      {
+        "id": "leaf_cluster_0006",
+        "host_placement_index": 11,
+        "position_m": [
+          -0.027,
+          -0.0199,
+          0.7716
+        ],
+        "estimated_leaf_count": 1,
+        "leaf_area_m2": 0.000338,
+        "branch_order": 1,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 1.0,
+        "explicit_samples": true,
+        "sample_placement_indices": [
+          12
+        ],
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.5,
+          "birth_age_fraction": 0.55,
+          "leaf_age_fraction": 7.033333,
+          "development_fraction": 1,
+          "length_scale": 0.596984,
+          "width_scale": 0.487785,
+          "area_scale": 0.173842
+        }
+      },
+      {
+        "id": "leaf_cluster_0007",
+        "host_placement_index": 14,
+        "position_m": [
+          0.0058,
+          0.01,
+          0.8024
+        ],
+        "estimated_leaf_count": 1,
+        "leaf_area_m2": 0.000554,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 1.0,
+        "explicit_samples": true,
+        "sample_placement_indices": [
+          15
+        ],
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.625,
+          "birth_age_fraction": 0.611111,
+          "leaf_age_fraction": 6.972222,
+          "development_fraction": 1,
+          "length_scale": 0.796852,
+          "width_scale": 0.44864,
+          "area_scale": 0.284875
+        }
+      },
+      {
+        "id": "leaf_cluster_0008",
+        "host_placement_index": 16,
+        "position_m": [
+          0.0026,
+          0.0047,
+          0.9276
+        ],
+        "estimated_leaf_count": 1,
+        "leaf_area_m2": 0.000387,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 1.0,
+        "explicit_samples": true,
+        "sample_placement_indices": [
+          17
+        ],
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.75,
+          "birth_age_fraction": 0.722222,
+          "leaf_age_fraction": 6.861111,
+          "development_fraction": 1,
+          "length_scale": 0.665084,
+          "width_scale": 0.449568,
+          "area_scale": 0.19886
+        }
+      },
+      {
+        "id": "leaf_cluster_0009",
+        "host_placement_index": 19,
+        "position_m": [
+          -0.003,
+          0.0108,
+          1.0454
+        ],
+        "estimated_leaf_count": 1,
+        "leaf_area_m2": 0.000245,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 1.0,
+        "explicit_samples": true,
+        "sample_placement_indices": [
+          20
+        ],
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.875,
+          "birth_age_fraction": 0.833333,
+          "leaf_age_fraction": 6.75,
+          "development_fraction": 1,
+          "length_scale": 0.524196,
+          "width_scale": 0.458798,
+          "area_scale": 0.126069
+        }
+      },
+      {
+        "id": "leaf_cluster_0010",
+        "host_placement_index": 21,
+        "position_m": [
+          -0.033,
+          -0.016,
+          1.1679
+        ],
+        "estimated_leaf_count": 1,
+        "leaf_area_m2": 0.000112,
+        "branch_order": 1,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 1.0,
+        "explicit_samples": true,
+        "sample_placement_indices": [
+          22
+        ],
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 0.875,
+          "birth_age_fraction": 0.883333,
+          "leaf_age_fraction": 6.7,
+          "development_fraction": 1,
+          "length_scale": 0.340727,
+          "width_scale": 0.49409,
+          "area_scale": 0.057361
+        }
+      },
+      {
+        "id": "leaf_cluster_0011",
+        "host_placement_index": 25,
+        "position_m": [
+          0.0047,
+          0.0083,
+          1.1742
+        ],
+        "estimated_leaf_count": 1,
+        "leaf_area_m2": 0.000133,
+        "branch_order": 0,
+        "health": 1.0,
+        "phenology_factor": 1.0,
+        "visual_density": 1.0,
+        "explicit_samples": true,
+        "sample_placement_indices": [
+          26
+        ],
+        "leaf_development": {
+          "model": "sequential_node_visual_proxy",
+          "node_rank": 1.0,
+          "birth_age_fraction": 0.944444,
+          "leaf_age_fraction": 6.638889,
+          "development_fraction": 1,
+          "length_scale": 0.375,
+          "width_scale": 0.485333,
+          "area_scale": 0.06825
+        }
+      }
+    ],
+    "stats": {
+      "root_architecture": "taproot",
+      "root_depth_source": "runtime_default",
+      "root_depth_m": 0.6,
+      "root_spread_m": 0.7299,
+      "root_length_m": 7.9963,
+      "root_segment_count": 205,
+      "root_support_node_count": 0,
+      "root_model_status": "architectural_proxy",
+      "root_visible_segment_count": 205,
+      "root_origin_z_m": 0.0,
+      "root_growth_origin_z_m": 0.0,
+      "plant_life_form": "therophyte",
+      "renewal_bud_count": 0,
+      "renewal_bud_depth_m": 0.0,
+      "renewal_bud_depth_source": "not_applicable",
+      "renewal_organ_kind": "none",
+      "solid_structure_count": 0,
+      "solid_structures": [],
+      "solid_structure_status": "not_supplied",
+      "rod_structure_count": 0,
+      "rod_structures": [],
+      "rod_structure_status": "not_supplied",
+      "environment": {},
+      "maturity": 1.0,
+      "life_history": "annual",
+      "life_phase": "reproductive",
+      "reproductive_factor": 1.0,
+      "senescence_factor": 0.0,
+      "placement_count": 234,
+      "leaf_count": 11,
+      "leaf_sample_count": 11,
+      "leaf_cluster_count": 11,
+      "estimated_leaf_count": 11,
+      "leaf_area_m2": 0.007588,
+      "leaf_fascicle_count": 0,
+      "leaf_fascicle_size": 0,
+      "estimated_fascicled_leaf_count": 0,
+      "stem_count": 11,
+      "branch_count": 2,
+      "axis_continuity": "other_unknown",
+      "branching_rhythm": "other_unknown",
+      "branching_timing": "other_unknown",
+      "lateral_axis_orientation": "mixed",
+      "flowering_position": "mixed",
+      "apical_control": 0.45,
+      "structural_axis_length_m": null,
+      "curved_segment_count": 11,
+      "model_dimensions": 3,
+      "projection": "orthographic",
+      "orientation_count": 234,
+      "representation": "module_placements_with_leaf_clusters"
+    }
+  },
+  "ecology": {
+    "species_id": "spec_torilis_arvensis",
+    "age_days": 227.5,
+    "maturity": 1.0,
+    "vitality": 0.7975,
+    "growth_rate": 0.4386,
+    "fecundity": 0.7975,
+    "mortality_risk": 0.2025,
+    "resource_demand": 0.352,
+    "leaf_area_proxy": 0.0061,
+    "estimated_leaf_count": 11,
+    "leaf_cluster_count": 11,
+    "structural_biomass_proxy": 0.7018,
+    "root_depth_m": 0.6,
+    "root_spread_m": 0.7299,
+    "root_length_m": 7.9963,
+    "root_depth_source": "runtime_default",
+    "root_model_status": "architectural_proxy",
+    "root_distribution": "central_crown",
+    "root_cluster_count": 0,
+    "root_cluster_spread_m": 0.0,
+    "root_system_span_m": 0.7299,
+    "disturbance_input": 0.0,
+    "disturbance_penalty": 0.0,
+    "resprouting": "absent",
+    "reproductive_mode": "sexual",
+    "pollination_availability": 1.0,
+    "pollination_environment_supplied": false,
+    "reproductive_assurance": 1.0,
+    "reproductive_assurance_status": "neutral_missing_environment",
+    "nitrogen_response": 1.0,
+    "phosphorus_response": 1.0,
+    "nitrogen_stress": 0.0,
+    "phosphorus_stress": 0.0,
+    "limiting_nutrient": "nitrogen",
+    "nitrogen_access_multiplier": 0.96,
+    "phosphorus_root_access_multiplier": 0.944784,
+    "mycorrhizal_phosphorus_multiplier": 1.0,
+    "nitrogen_fixation": "none",
+    "mycorrhizal_type": "other_unknown",
+    "root_architecture": "taproot",
+    "root_depth_class": "other_unknown",
+    "trait_provenance": {
+      "nitrogen_fixation": "authored",
+      "mycorrhizal_type": "neutral_missing_default",
+      "root_architecture": "authored",
+      "root_depth_class": "neutral_missing_default"
+    },
+    "model_status": "qualitative_bounded_runtime_response",
+    "nutrient_environment_status": {
+      "nitrogen": "unresolved_neutral",
+      "phosphorus": "unresolved_neutral"
+    },
+    "disturbance_response_status": "qualitative_runtime_default",
+    "stress_index": 0.0,
+    "life_history": {
+      "phase": "reproductive",
+      "reproductive_factor": 1.0,
+      "fruiting_factor": 0.3425,
+      "senescence_factor": 0.0,
+      "active_factor": 1.0
+    },
+    "detail_scope": "structural_and_repeated_organs",
+    "aggregation_scope": "representative_organism_to_population",
+    "status": "prototype_derived"
+  },
+  "seed": 303,
+  "age_days": 227.5,
+  "lod": 2
+}

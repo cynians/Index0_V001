@@ -16,6 +16,73 @@ __pycache__/
 # Logs
 # -----------------------------
 *.log
+.cache/
+artifacts/
+# Asset packs and other build output (tools/pack_assets.py)
+build/
+
+# -----------------------------
+# Tool output and downloads
+# -----------------------------
+# Files attached to Codex remote sessions
+.codex-remote-attachments/
+
+# -----------------------------
+# Assets: the loose files are the working copy; git commits one pack per
+# category in asset_packs/ instead (tools/pack_assets.py, run by the
+# pre-commit hook; `py -m tools.pack_assets --unpack` restores the files).
+# Caches, reports, plant design inputs and the downloaded map reference
+# data are not packed.
+# -----------------------------
+assets/
+
+# -----------------------------
+# Plant design passes (docs/Plant_Design_Process.md)
+# -----------------------------
+# Pass records and plans written during a pass
+docs/species_sim_*.md
+docs/plant_architecture_subpattern_plan.md
+# Per-species and per-field authoring scripts
+tools/author_abies_nordmanniana.py
+tools/author_acacia_dealbata_assets.py
+tools/author_acer_rubrum_assets.py
+tools/author_agathosma_mundii_assets.py
+tools/author_ginkgo_biloba.py
+tools/author_nypa_fruticans.py
+tools/author_oldeania_alpina.py
+tools/author_palhinhaea_cernua.py
+tools/author_philadelphus_coronarius.py
+tools/author_pinus_strobus.py
+tools/author_pinus_sylvestris.py
+tools/author_pinus_sylvestris_assets.py
+tools/author_pteridium_aquilinum.py
+tools/author_ptisana_howeana.py
+tools/author_scirpus_sylvaticus.py
+tools/author_sequoia_sempervirens.py
+tools/author_sequoia_sempervirens_leaf_asset.py
+tools/author_tree_axis_continuity.py
+tools/author_tree_crown_shape.py
+tools/author_tree_self_pruning.py
+tools/backfill_thermal_ranges.py
+
+# -----------------------------
+# One-off preview and experiment scripts (they write to artifacts/)
+# -----------------------------
+tools/render_*.py
+# ...except the ones tests or kept tools import
+!tools/render_species_views.py
+!tools/render_plant_biosim_check.py
+!tools/render_surface_growth.py
+!tools/render_vine_climbing.py
+!tools/render_vine_rod_climbing.py
+!tools/render_solid_structure_growth.py
+!tools/render_fungal_tree.py
+!tools/render_biosphere_botanical_garden.py
+!tools/render_authored_plant_caps.py
+!tools/render_vehicle_designer_preview.py
+tools/landscape_rendering.py
+tools/profile_worldgen_heightmap_row.py
+tools/fixtures/legacy_survey_fixture.py
 
 # -----------------------------
 # OS
